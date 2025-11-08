@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "NinjaTrader.Custom": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\Mac\\Home\\Documents\\NinjaTrader 8\\bin\\Custom",
+      "nativeDebugging": true
+    }
+  }
+}
