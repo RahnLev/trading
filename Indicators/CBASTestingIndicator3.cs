@@ -279,6 +279,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private Series<double> netFlowSeries;
         private bool bearPreSignalConditionLastBar = false;
+        private double lastEmaColorFlag = double.NaN;
         #endregion
 
         protected override void OnStateChange()
@@ -325,6 +326,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                 rangeATR = ATR(RangeAtrLen);
                 rangeSMA = SMA(Close, RangeMinLength);
                 rangeCountSeries = new Series<int>(this);
+
+                lastEmaColorFlag = double.NaN;
 
                 emaHighs = new EMA[energyPeriods.Length];
                 for (int i = 0; i < energyPeriods.Length; i++)
@@ -638,12 +641,40 @@ namespace NinjaTrader.NinjaScript.Indicators
                 LogDrawnSignal("BULL", Close[0], stNow, net);
                 double y1 = Low[0] - atr30[0] * 2.0;
                 Draw.TriangleUp(this, $"Buy_{CurrentBar}", false, 0, y1, Brushes.LimeGreen);
+                double bullLabelOffset = atr30[0] * 0.5;
+                Draw.Text(this,
+                    $"BullLabel_{CurrentBar}",
+                    false,
+                    $"Bar {CurrentBar}",
+                    0,
+                    y1 - bullLabelOffset,
+                    0,
+                    Brushes.LimeGreen,
+                    new NinjaTrader.Gui.Tools.SimpleFont("Arial", 10),
+                    TextAlignment.Center,
+                    Brushes.Transparent,
+                    Brushes.Transparent,
+                    0);
             }
             if (bear)
             {
                 LogDrawnSignal("BEAR", Close[0], stNow, net);
                 double y2 = High[0] + atr30[0] * 2.0;
                 Draw.TriangleDown(this, $"Sell_{CurrentBar}", false, 0, y2, Brushes.Red);
+                double bearLabelOffset = atr30[0] * 0.5;
+                Draw.Text(this,
+                    $"BearLabel_{CurrentBar}",
+                    false,
+                    $"Bar {CurrentBar}",
+                    0,
+                    y2 + bearLabelOffset,
+                    0,
+                    Brushes.Red,
+                    new NinjaTrader.Gui.Tools.SimpleFont("Arial", 10),
+                    TextAlignment.Center,
+                    Brushes.Transparent,
+                    Brushes.Transparent,
+                    0);
             }
 
             bool exitLong = false;
@@ -714,7 +745,25 @@ namespace NinjaTrader.NinjaScript.Indicators
             UpdateRangeDetectorPlots();
 
             if (EnableLogging)
-                MaybeLogRow(bull, bear, bearPreSignal, stNow, upperBand, lowerBand, ao.attract, ao.objection, net);
+            {
+                bool emaStackBull = ema10Close != null && ema10Close.IsValidDataPoint(0)
+                                    && ema20Close != null && ema20Close.IsValidDataPoint(0)
+                                    && Close[0] > ema10Close[0] && ema10Close[0] > ema20Close[0];
+                bool emaStackBear = ema10Close != null && ema10Close.IsValidDataPoint(0)
+                                    && ema20Close != null && ema20Close.IsValidDataPoint(0)
+                                    && Close[0] < ema10Close[0] && ema10Close[0] < ema20Close[0];
+
+                if (emaStackBull)
+                    lastEmaColorFlag = 1.0;
+                else if (emaStackBear)
+                    lastEmaColorFlag = 0.0;
+
+                double emaColorValue = double.IsNaN(lastEmaColorFlag)
+                    ? (emaStackBull ? 1.0 : (emaStackBear ? 0.0 : 0.0))
+                    : lastEmaColorFlag;
+
+                MaybeLogRow(bull, bear, bearPreSignal, emaColorValue, stNow, upperBand, lowerBand, ao.attract, ao.objection, net);
+            }
 
             if (!bear)
                 bearPreSignal = false;
@@ -992,6 +1041,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                         "attract",
                         "objection",
                         "netflow",
+                        "ema_color",
                         "supertrend",
                         "upper_band",
                         "lower_band",
@@ -1118,7 +1168,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
-        private void MaybeLogRow(bool bull, bool bear, bool bearPreSignal, double superTrendNow, double upperBand, double lowerBand,
+        private void MaybeLogRow(bool bull, bool bear, bool bearPreSignal, double emaColorValue, double superTrendNow, double upperBand, double lowerBand,
                                  double attract, double objection, double netFlow)
         {
             if (!logInitialized) return;
@@ -1169,6 +1219,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 attract: attract,
                 objection: objection,
                 netFlow: netFlow,
+                emaColorFlag: emaColorValue,
                 st: superTrendNow,
                 ub: upperBand,
                 lb: lowerBand,
@@ -1204,6 +1255,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             double attract,
             double objection,
             double netFlow,
+            double emaColorFlag,
             double st,
             double ub,
             double lb,
@@ -1237,6 +1289,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 CsvNum(attract),
                 CsvNum(objection),
                 CsvNum(netFlow),
+                CsvNum(emaColorFlag),
                 CsvNum(st),
                 CsvNum(ub),
                 CsvNum(lb),
@@ -1395,6 +1448,10 @@ namespace NinjaTrader.NinjaScript.Indicators
         #endregion
     }
 }
+
+
+
+
 
 #region NinjaScript generated code. Neither change nor remove.
 
