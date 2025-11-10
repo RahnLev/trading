@@ -138,12 +138,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         [NinjaScriptProperty]
         [Display(Name = "Log Signals Only", Order = 2, GroupName = "Logging")]
-        public bool LogSignalsOnly { get; set; } = true;
+        public bool LogSignalsOnly { get; set; } = false;
 
         [NinjaScriptProperty]
         [Range(0, 1000000)]
         [Display(Name = "Heartbeat Every N Bars (0 = off)", Order = 3, GroupName = "Logging")]
-        public int HeartbeatEveryNBars { get; set; } = 0;
+        public int HeartbeatEveryNBars { get; set; } = 1;
 
         [NinjaScriptProperty]
         [Display(Name = "Log Folder", Order = 4, GroupName = "Logging")]
@@ -224,6 +224,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool logInitialized = false;
         private string logPath = null;
         private int lastHeartbeatBar = -1;
+        private int lastLoggedBullBar = -1;
+        private int lastLoggedBearBar = -1;
+        private int lastLoggedBarClose = -1;
         private StreamWriter signalDrawWriter;
         private readonly object signalDrawLock = new object();
         private bool signalDrawInitialized = false;
@@ -902,27 +905,35 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             if (!logInitialized) return;
 
-            // Gate: only log on price change (intrabar), with optional heartbeat allowance
             if (CurrentBar != lastLoggedBarIndex)
-            {
                 lastLoggedBarIndex = CurrentBar;
-                lastLoggedClosePrice = double.NaN;
-            }
-            bool closeChanged = double.IsNaN(lastLoggedClosePrice) || !ApproximatelyEqual(Close[0], lastLoggedClosePrice);
+
+            bool barJustClosed = IsFirstTickOfBar && CurrentBar > 0;
 
             bool inBullRegime = Close[0] > superTrendNow;
             bool inBearRegime = Close[0] < superTrendNow;
 
             bool wantHeartbeat = HeartbeatEveryNBars > 0
-                                 && CurrentBar >= RangeMinLength
-                                 && (CurrentBar == 0 || (CurrentBar - lastHeartbeatBar) >= HeartbeatEveryNBars);
+                                  && CurrentBar >= RangeMinLength
+                                  && (CurrentBar == 0 || (CurrentBar - lastHeartbeatBar) >= HeartbeatEveryNBars);
 
-            bool baseCondition = bull || bear || (!LogSignalsOnly);
-            bool shouldLog = (baseCondition && closeChanged) || wantHeartbeat;
-            if (!shouldLog) return;
+            bool logBullSignal = bull && lastLoggedBullBar != CurrentBar;
+            bool logBearSignal = bear && lastLoggedBearBar != CurrentBar;
+            bool logSignal = logBullSignal || logBearSignal;
+            bool logBarClose = !LogSignalsOnly && barJustClosed && lastLoggedBarClose != CurrentBar;
+            bool logHeartbeat = wantHeartbeat && lastHeartbeatBar != CurrentBar;
 
-            if (wantHeartbeat)
+            if (!logSignal && !logBarClose && !logHeartbeat)
+                return;
+
+            if (logHeartbeat)
                 lastHeartbeatBar = CurrentBar;
+            if (logBarClose)
+                lastLoggedBarClose = CurrentBar;
+            if (logBullSignal)
+                lastLoggedBullBar = CurrentBar;
+            if (logBearSignal)
+                lastLoggedBearBar = CurrentBar;
 
             double atr30Val = atr30[0];
             double ema10 = ema10Close[0];
