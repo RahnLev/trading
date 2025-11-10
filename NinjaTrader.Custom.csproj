@@ -404,6 +404,7 @@
     <Compile Include="AddOns\Dtoscs.cs" />
     <Compile Include="AddOns\TelemetryClientcs.cs" />
     <Compile Include="Strategies\%40%40supertrendSTR.cs" />
+    <Compile Include="Strategies\%40%40CBASSuperTrendStrategy.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">

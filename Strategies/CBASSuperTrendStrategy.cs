@@ -66,7 +66,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         public double ExitLabelAtrOffset { get; set; } = 0.6;
 		
         [Display(Name = "Paused", GroupName = "Control", Order = 0)]
-        public bool Paused { get; set; } = false; // you can omit [NinjaScriptProperty] so it’s not user-editable
+        public bool Paused { get; set; } = false; // you can omit [NinjaScriptProperty] so it's not user-editable
         public void SetPaused(bool paused)
         {
             Paused = paused;
@@ -285,16 +285,12 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         public string LogFolder { get; set; } = @"C:\Mac\Home\Documents\NinjaTrader 8\Indicator_logs";
 
         [NinjaScriptProperty]
-        [Display(Name = "Use Stable Log File", Order = 5, GroupName = "Indicator")]
-        public bool UseStableLogFile { get; set; } = false;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Truncate Stable Log On Start", Order = 6, GroupName = "Indicator")]
-        public bool TruncateStableLogOnStart { get; set; } = false;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Log Drawn Signals", Order = 7, GroupName = "Indicator")]
+        [Display(Name = "Log Drawn Signals", Order = 5, GroupName = "Indicator")]
         public bool LogDrawnSignals { get; set; } = true;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Color Bars By Trend", Order = 6, GroupName = "Indicator")]
+        public bool ColorBarsByTrend { get; set; } = false;
 
         // Risk (base/manual)
         [NinjaScriptProperty]
@@ -778,7 +774,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
                 return;
 
             // If ChartControl exists, you marshal to UI (your existing pattern). For simple flags,
-            // it’s also safe to handle immediately without Dispatcher. Below keeps your pattern.
+            // it's also safe to handle immediately without Dispatcher. Below keeps your pattern.
             var dispatcher = ChartControl?.Dispatcher;
             Action handler = () =>
             {
@@ -1066,7 +1062,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
             }
 
 
-            // 9) Don’t overlap submissions
+            // 9) Don't overlap submissions
             if (EntryWorking())
                 return;
 
@@ -1261,7 +1257,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
                 return;
             }
 
-            // 14) IN POSITION: update lastSignalBar only when bar moves or we’ll act
+            // 14) IN POSITION: update lastSignalBar only when bar moves or we'll act
             if (!duplicate)
                 lastSignalBar = stamp;
 
@@ -2018,7 +2014,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
                 {
                     if (closingRequested)
                     {
-                        // We requested an exit and won’t resubmit the stop; clear caches
+                        // We requested an exit and won't resubmit the stop; clear caches
                         if (order.FromEntrySignal == "LongA") { slALong = null; longAStop = double.NaN; }
                         else if (order.FromEntrySignal == "LongB") { slBLong = null; longBStop = double.NaN; }
                         else if (order.FromEntrySignal == "ShortA") { slAShort = null; shortAStop = double.NaN; }
@@ -2089,7 +2085,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
             EnsureLegStopsCompact();
 
 
-            // Audit after we’ve reconciled order state
+            // Audit after we've reconciled order state
             AuditProtection("OnOrderUpdate", time);
 
             // Diagnostics for stop/target orders
@@ -2270,11 +2266,10 @@ st = CBASTestingIndicator3(
     logSignalsOnly: LogSignalsOnly,
     heartbeatEveryNBars: HeartbeatEveryNBars,
     logFolder: LogFolder,                          // string
-    useStableLogFile: UseStableLogFile,
-    truncateStableLogOnStart: TruncateStableLogOnStart,
     scaleOscillatorToATR: ScaleOscillatorToATR,
     oscAtrMult: OscAtrMult,
-    logDrawnSignals: LogDrawnSignals
+    logDrawnSignals: LogDrawnSignals,
+    colorBarsByTrend: ColorBarsByTrend
 );
 
 
