@@ -452,6 +452,11 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         [Range(1, 10)]
         [Display(Name = "Initial stop guard ticks", GroupName = "Risk", Order = 93)]
         public int InitialStopGuardTicks { get; set; } = 8; // MNQ: start with 4–6
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Debug Prints", Order = 32, GroupName = "Logging")]
+        public bool EnableDebugPrints { get; set; } = false;
+
         #endregion
         #region Privates
         // TPM (Ticks Per Minute) tracking
@@ -2269,7 +2274,8 @@ st = CBASTestingIndicator3(
     scaleOscillatorToATR: ScaleOscillatorToATR,
     oscAtrMult: OscAtrMult,
     logDrawnSignals: LogDrawnSignals,
-    colorBarsByTrend: ColorBarsByTrend
+    colorBarsByTrend: ColorBarsByTrend,
+    enableDebugPrints: EnableDebugPrints
 );
 
 
