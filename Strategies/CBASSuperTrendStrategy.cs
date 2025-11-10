@@ -491,6 +491,11 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         [Range(1, 10)]
         [Display(Name = "Initial stop guard ticks", GroupName = "Risk", Order = 93)]
         public int InitialStopGuardTicks { get; set; } = 8; // MNQ: start with 4–6
+
+        [NinjaScriptProperty]
+        [Display(Name = "Color Bars By Trend", Order = 42, GroupName = "Plots")]
+        public bool ColorBarsByTrend { get; set; } = true;
+
         #endregion
         #region Privates
         // TPM (Ticks Per Minute) tracking
@@ -2317,7 +2322,8 @@ st = CBASTestingIndicator3(
 	minAdxForSignals: MinAdxForSignals,
 	rapidReversalBars: RapidReversalBars,
 	filterLowScoreSignals: FilterLowScoreSignals,
-	filterContradictoryNetFlow: FilterContradictoryNetFlow
+	filterContradictoryNetFlow: FilterContradictoryNetFlow,
+	colorBarsByTrend: ColorBarsByTrend
 );
 
 

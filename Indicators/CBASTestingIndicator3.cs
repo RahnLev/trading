@@ -206,6 +206,10 @@ namespace NinjaTrader.NinjaScript.Indicators
         [NinjaScriptProperty]
         [Display(Name = "Filter Contradictory NetFlow", Order = 54, GroupName = "Filters")]
         public bool FilterContradictoryNetFlow { get; set; } = true;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Color Bars By Trend", Order = 31, GroupName = "Visual")]
+        public bool ColorBarsByTrend { get; set; } = false;
         #endregion
 
         #region privates
@@ -704,7 +708,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     Draw.Text(this, $"ExitShort_{CurrentBar}", "Exit Short", 0, yShort, Brushes.IndianRed);
             }
 
-            if (CurrentBar > 0)
+            if (ColorBarsByTrend && CurrentBar > 0)
                 BarBrushes[0] = Close[0] > superTrend[1] ? Brushes.Teal : Brushes.Red;
 
             // Energy EMAs visualization
@@ -746,21 +750,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             if (EnableLogging)
             {
-                bool emaStackBull = ema10Close != null && ema10Close.IsValidDataPoint(0)
-                                    && ema20Close != null && ema20Close.IsValidDataPoint(0)
-                                    && Close[0] > ema10Close[0] && ema10Close[0] > ema20Close[0];
-                bool emaStackBear = ema10Close != null && ema10Close.IsValidDataPoint(0)
-                                    && ema20Close != null && ema20Close.IsValidDataPoint(0)
-                                    && Close[0] < ema10Close[0] && ema10Close[0] < ema20Close[0];
-
-                if (emaStackBull)
-                    lastEmaColorFlag = 1.0;
-                else if (emaStackBear)
-                    lastEmaColorFlag = 0.0;
-
-                double emaColorValue = double.IsNaN(lastEmaColorFlag)
-                    ? (emaStackBull ? 1.0 : (emaStackBear ? 0.0 : 0.0))
-                    : lastEmaColorFlag;
+                double emaColorValue = ComputeEmaColorCount();
 
                 MaybeLogRow(bull, bear, bearPreSignal, emaColorValue, stNow, upperBand, lowerBand, ao.attract, ao.objection, net);
             }
@@ -1032,7 +1022,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                         "ts_local",
                         "bar_time_utc",
                         "bar_index",
-                        "instrument",
+                        //"instrument",
                         "open",
                         "high",
                         "low",
@@ -1150,7 +1140,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     CsvEscape(Time[0].ToString("yyyy-MM-dd HH:mm:ss.fff")),
                     CsvEscape(ToBarTimeUtc(Time[0]).ToString("o")),
                     CurrentBar.ToString(),
-                    CsvEscape(Instrument?.FullName ?? string.Empty),
+                    //CsvEscape(Instrument?.FullName ?? string.Empty),
                     CsvEscape(signalType),
                     CsvNum(price),
                     CsvNum(superTrendValue),
@@ -1209,7 +1199,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             WriteCsv(
                 barTimeUtc: ToBarTimeUtc(Time[0]),
                 barTimeLocal: Time[0],
-                instrument: Instrument?.FullName ?? "",
+                //instrument: Instrument?.FullName ?? "",
                 barIndex: CurrentBar,
                 open: Open[0],
                 high: High[0],
@@ -1245,7 +1235,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private void WriteCsv(
             DateTime barTimeUtc,
             DateTime barTimeLocal,
-            string instrument,
+            //string instrument,
             int barIndex,
             double open,
             double high,
@@ -1280,7 +1270,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 CsvEscape(barTimeLocal.ToString("yyyy-MM-dd HH:mm:ss.fff")),
                 CsvEscape(barTimeUtc.ToString("o")),
                 barIndex.ToString(),
-                CsvEscape(instrument ?? ""),
+                //CsvEscape(instrument ?? ""),
                 CsvNum(open),
                 CsvNum(high),
                 CsvNum(low),
@@ -1446,9 +1436,39 @@ namespace NinjaTrader.NinjaScript.Indicators
                 PlotBrushes[idx][0] = b;
         }
         #endregion
+
+        private double ComputeEmaColorCount()
+        {
+            if (emaHighs == null || emaHighs.Length == 0)
+                return double.IsNaN(lastEmaColorFlag) ? 0.0 : lastEmaColorFlag;
+
+            bool allValid = true;
+            int greenCount = 0;
+
+            for (int i = 0; i < emaHighs.Length; i++)
+            {
+                var ema = emaHighs[i];
+                if (ema == null || !ema.IsValidDataPoint(0))
+                {
+                    allValid = false;
+                    break;
+                }
+
+                double emaValue = ema[0];
+                if (!double.IsNaN(emaValue) && Close[0] >= emaValue)
+                    greenCount++;
+            }
+
+            if (allValid)
+            {
+                lastEmaColorFlag = greenCount;
+                return greenCount;
+            }
+
+            return double.IsNaN(lastEmaColorFlag) ? greenCount : lastEmaColorFlag;
+        }
     }
 }
-
 
 
 
@@ -1460,18 +1480,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private CBASTestingIndicator3[] cacheCBASTestingIndicator3;
-		public CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow)
+		public CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow, bool colorBarsByTrend)
 		{
-			return CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow);
+			return CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow, colorBarsByTrend);
 		}
 
-		public CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input, bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow)
+		public CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input, bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow, bool colorBarsByTrend)
 		{
 			if (cacheCBASTestingIndicator3 != null)
 				for (int idx = 0; idx < cacheCBASTestingIndicator3.Length; idx++)
-					if (cacheCBASTestingIndicator3[idx] != null && cacheCBASTestingIndicator3[idx].ShowExitLabels == showExitLabels && cacheCBASTestingIndicator3[idx].ExitLabelAtrOffset == exitLabelAtrOffset && cacheCBASTestingIndicator3[idx].UseRegimeStability == useRegimeStability && cacheCBASTestingIndicator3[idx].RegimeStabilityBars == regimeStabilityBars && cacheCBASTestingIndicator3[idx].UseScoringFilter == useScoringFilter && cacheCBASTestingIndicator3[idx].ScoreThreshold == scoreThreshold && cacheCBASTestingIndicator3[idx].UseSmoothedVpm == useSmoothedVpm && cacheCBASTestingIndicator3[idx].VpmEmaSpan == vpmEmaSpan && cacheCBASTestingIndicator3[idx].MinVpm == minVpm && cacheCBASTestingIndicator3[idx].MinAdx == minAdx && cacheCBASTestingIndicator3[idx].MomentumLookback == momentumLookback && cacheCBASTestingIndicator3[idx].ExtendedLogging == extendedLogging && cacheCBASTestingIndicator3[idx].LogDrawnSignals == logDrawnSignals && cacheCBASTestingIndicator3[idx].ComputeExitSignals == computeExitSignals && cacheCBASTestingIndicator3[idx].ExitProfitAtrMult == exitProfitAtrMult && cacheCBASTestingIndicator3[idx].InstanceId == instanceId && cacheCBASTestingIndicator3[idx].Sensitivity == sensitivity && cacheCBASTestingIndicator3[idx].EmaEnergy == emaEnergy && cacheCBASTestingIndicator3[idx].KeltnerLength == keltnerLength && cacheCBASTestingIndicator3[idx].AtrLength == atrLength && cacheCBASTestingIndicator3[idx].RangeMinLength == rangeMinLength && cacheCBASTestingIndicator3[idx].RangeWidthMult == rangeWidthMult && cacheCBASTestingIndicator3[idx].RangeAtrLen == rangeAtrLen && cacheCBASTestingIndicator3[idx].EnableLogging == enableLogging && cacheCBASTestingIndicator3[idx].LogSignalsOnly == logSignalsOnly && cacheCBASTestingIndicator3[idx].HeartbeatEveryNBars == heartbeatEveryNBars && cacheCBASTestingIndicator3[idx].LogFolder == logFolder && cacheCBASTestingIndicator3[idx].ScaleOscillatorToATR == scaleOscillatorToATR && cacheCBASTestingIndicator3[idx].UseBearPreSignal == useBearPreSignal && cacheCBASTestingIndicator3[idx].BearPreSignalBars == bearPreSignalBars && cacheCBASTestingIndicator3[idx].BearPreSignalNetFlowMax == bearPreSignalNetFlowMax && cacheCBASTestingIndicator3[idx].BearPreSignalMomentumMax == bearPreSignalMomentumMax && cacheCBASTestingIndicator3[idx].BearPreSignalRequireBelowEma10 == bearPreSignalRequireBelowEma10 && cacheCBASTestingIndicator3[idx].OscAtrMult == oscAtrMult && cacheCBASTestingIndicator3[idx].UseRedundantSignalFilter == useRedundantSignalFilter && cacheCBASTestingIndicator3[idx].MinAdxForSignals == minAdxForSignals && cacheCBASTestingIndicator3[idx].RapidReversalBars == rapidReversalBars && cacheCBASTestingIndicator3[idx].FilterLowScoreSignals == filterLowScoreSignals && cacheCBASTestingIndicator3[idx].FilterContradictoryNetFlow == filterContradictoryNetFlow && cacheCBASTestingIndicator3[idx].EqualsInput(input))
+					if (cacheCBASTestingIndicator3[idx] != null && cacheCBASTestingIndicator3[idx].ShowExitLabels == showExitLabels && cacheCBASTestingIndicator3[idx].ExitLabelAtrOffset == exitLabelAtrOffset && cacheCBASTestingIndicator3[idx].UseRegimeStability == useRegimeStability && cacheCBASTestingIndicator3[idx].RegimeStabilityBars == regimeStabilityBars && cacheCBASTestingIndicator3[idx].UseScoringFilter == useScoringFilter && cacheCBASTestingIndicator3[idx].ScoreThreshold == scoreThreshold && cacheCBASTestingIndicator3[idx].UseSmoothedVpm == useSmoothedVpm && cacheCBASTestingIndicator3[idx].VpmEmaSpan == vpmEmaSpan && cacheCBASTestingIndicator3[idx].MinVpm == minVpm && cacheCBASTestingIndicator3[idx].MinAdx == minAdx && cacheCBASTestingIndicator3[idx].MomentumLookback == momentumLookback && cacheCBASTestingIndicator3[idx].ExtendedLogging == extendedLogging && cacheCBASTestingIndicator3[idx].LogDrawnSignals == logDrawnSignals && cacheCBASTestingIndicator3[idx].ComputeExitSignals == computeExitSignals && cacheCBASTestingIndicator3[idx].ExitProfitAtrMult == exitProfitAtrMult && cacheCBASTestingIndicator3[idx].InstanceId == instanceId && cacheCBASTestingIndicator3[idx].Sensitivity == sensitivity && cacheCBASTestingIndicator3[idx].EmaEnergy == emaEnergy && cacheCBASTestingIndicator3[idx].KeltnerLength == keltnerLength && cacheCBASTestingIndicator3[idx].AtrLength == atrLength && cacheCBASTestingIndicator3[idx].RangeMinLength == rangeMinLength && cacheCBASTestingIndicator3[idx].RangeWidthMult == rangeWidthMult && cacheCBASTestingIndicator3[idx].RangeAtrLen == rangeAtrLen && cacheCBASTestingIndicator3[idx].EnableLogging == enableLogging && cacheCBASTestingIndicator3[idx].LogSignalsOnly == logSignalsOnly && cacheCBASTestingIndicator3[idx].HeartbeatEveryNBars == heartbeatEveryNBars && cacheCBASTestingIndicator3[idx].LogFolder == logFolder && cacheCBASTestingIndicator3[idx].ScaleOscillatorToATR == scaleOscillatorToATR && cacheCBASTestingIndicator3[idx].UseBearPreSignal == useBearPreSignal && cacheCBASTestingIndicator3[idx].BearPreSignalBars == bearPreSignalBars && cacheCBASTestingIndicator3[idx].BearPreSignalNetFlowMax == bearPreSignalNetFlowMax && cacheCBASTestingIndicator3[idx].BearPreSignalMomentumMax == bearPreSignalMomentumMax && cacheCBASTestingIndicator3[idx].BearPreSignalRequireBelowEma10 == bearPreSignalRequireBelowEma10 && cacheCBASTestingIndicator3[idx].OscAtrMult == oscAtrMult && cacheCBASTestingIndicator3[idx].UseRedundantSignalFilter == useRedundantSignalFilter && cacheCBASTestingIndicator3[idx].MinAdxForSignals == minAdxForSignals && cacheCBASTestingIndicator3[idx].RapidReversalBars == rapidReversalBars && cacheCBASTestingIndicator3[idx].FilterLowScoreSignals == filterLowScoreSignals && cacheCBASTestingIndicator3[idx].FilterContradictoryNetFlow == filterContradictoryNetFlow && cacheCBASTestingIndicator3[idx].ColorBarsByTrend == colorBarsByTrend && cacheCBASTestingIndicator3[idx].EqualsInput(input))
 						return cacheCBASTestingIndicator3[idx];
-			return CacheIndicator<CBASTestingIndicator3>(new CBASTestingIndicator3(){ ShowExitLabels = showExitLabels, ExitLabelAtrOffset = exitLabelAtrOffset, UseRegimeStability = useRegimeStability, RegimeStabilityBars = regimeStabilityBars, UseScoringFilter = useScoringFilter, ScoreThreshold = scoreThreshold, UseSmoothedVpm = useSmoothedVpm, VpmEmaSpan = vpmEmaSpan, MinVpm = minVpm, MinAdx = minAdx, MomentumLookback = momentumLookback, ExtendedLogging = extendedLogging, LogDrawnSignals = logDrawnSignals, ComputeExitSignals = computeExitSignals, ExitProfitAtrMult = exitProfitAtrMult, InstanceId = instanceId, Sensitivity = sensitivity, EmaEnergy = emaEnergy, KeltnerLength = keltnerLength, AtrLength = atrLength, RangeMinLength = rangeMinLength, RangeWidthMult = rangeWidthMult, RangeAtrLen = rangeAtrLen, EnableLogging = enableLogging, LogSignalsOnly = logSignalsOnly, HeartbeatEveryNBars = heartbeatEveryNBars, LogFolder = logFolder, ScaleOscillatorToATR = scaleOscillatorToATR, UseBearPreSignal = useBearPreSignal, BearPreSignalBars = bearPreSignalBars, BearPreSignalNetFlowMax = bearPreSignalNetFlowMax, BearPreSignalMomentumMax = bearPreSignalMomentumMax, BearPreSignalRequireBelowEma10 = bearPreSignalRequireBelowEma10, OscAtrMult = oscAtrMult, UseRedundantSignalFilter = useRedundantSignalFilter, MinAdxForSignals = minAdxForSignals, RapidReversalBars = rapidReversalBars, FilterLowScoreSignals = filterLowScoreSignals, FilterContradictoryNetFlow = filterContradictoryNetFlow }, input, ref cacheCBASTestingIndicator3);
+			return CacheIndicator<CBASTestingIndicator3>(new CBASTestingIndicator3(){ ShowExitLabels = showExitLabels, ExitLabelAtrOffset = exitLabelAtrOffset, UseRegimeStability = useRegimeStability, RegimeStabilityBars = regimeStabilityBars, UseScoringFilter = useScoringFilter, ScoreThreshold = scoreThreshold, UseSmoothedVpm = useSmoothedVpm, VpmEmaSpan = vpmEmaSpan, MinVpm = minVpm, MinAdx = minAdx, MomentumLookback = momentumLookback, ExtendedLogging = extendedLogging, LogDrawnSignals = logDrawnSignals, ComputeExitSignals = computeExitSignals, ExitProfitAtrMult = exitProfitAtrMult, InstanceId = instanceId, Sensitivity = sensitivity, EmaEnergy = emaEnergy, KeltnerLength = keltnerLength, AtrLength = atrLength, RangeMinLength = rangeMinLength, RangeWidthMult = rangeWidthMult, RangeAtrLen = rangeAtrLen, EnableLogging = enableLogging, LogSignalsOnly = logSignalsOnly, HeartbeatEveryNBars = heartbeatEveryNBars, LogFolder = logFolder, ScaleOscillatorToATR = scaleOscillatorToATR, UseBearPreSignal = useBearPreSignal, BearPreSignalBars = bearPreSignalBars, BearPreSignalNetFlowMax = bearPreSignalNetFlowMax, BearPreSignalMomentumMax = bearPreSignalMomentumMax, BearPreSignalRequireBelowEma10 = bearPreSignalRequireBelowEma10, OscAtrMult = oscAtrMult, UseRedundantSignalFilter = useRedundantSignalFilter, MinAdxForSignals = minAdxForSignals, RapidReversalBars = rapidReversalBars, FilterLowScoreSignals = filterLowScoreSignals, FilterContradictoryNetFlow = filterContradictoryNetFlow, ColorBarsByTrend = colorBarsByTrend }, input, ref cacheCBASTestingIndicator3);
 		}
 	}
 }
@@ -1480,14 +1500,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow, bool colorBarsByTrend)
 		{
-			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow);
+			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow, colorBarsByTrend);
 		}
 
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow, bool colorBarsByTrend)
 		{
-			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow);
+			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow, colorBarsByTrend);
 		}
 	}
 }
@@ -1496,14 +1516,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow, bool colorBarsByTrend)
 		{
-			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow);
+			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow, colorBarsByTrend);
 		}
 
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool logDrawnSignals, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, bool useBearPreSignal, int bearPreSignalBars, double bearPreSignalNetFlowMax, double bearPreSignalMomentumMax, bool bearPreSignalRequireBelowEma10, double oscAtrMult, bool useRedundantSignalFilter, double minAdxForSignals, int rapidReversalBars, bool filterLowScoreSignals, bool filterContradictoryNetFlow, bool colorBarsByTrend)
 		{
-			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow);
+			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, logDrawnSignals, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, useBearPreSignal, bearPreSignalBars, bearPreSignalNetFlowMax, bearPreSignalMomentumMax, bearPreSignalRequireBelowEma10, oscAtrMult, useRedundantSignalFilter, minAdxForSignals, rapidReversalBars, filterLowScoreSignals, filterContradictoryNetFlow, colorBarsByTrend);
 		}
 	}
 }
