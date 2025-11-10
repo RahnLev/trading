@@ -66,7 +66,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         public double ExitLabelAtrOffset { get; set; } = 0.6;
 		
         [Display(Name = "Paused", GroupName = "Control", Order = 0)]
-        public bool Paused { get; set; } = false; // you can omit [NinjaScriptProperty] so it's not user-editable
+        public bool Paused { get; set; } = false; // you can omit [NinjaScriptProperty] so it’s not user-editable
         public void SetPaused(bool paused)
         {
             Paused = paused;
@@ -221,60 +221,13 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         public bool ExtendedLogging { get; set; } = true;
 
         [NinjaScriptProperty]
-        [Display(Name = "Log Drawn Signals", Order = 11, GroupName = "CBAS Logging")]
-        public bool LogDrawnSignals { get; set; } = true;
+        [Display(Name = "Compute Exit Signals", Order = 11, GroupName = "CBAS Filters")]
+        public bool ComputeExitSignals { get; set; } = true;
 
         [NinjaScriptProperty]
         [Range(0.0, 1000.0)]
-        [Display(Name = "Exit Profit ATR Mult", Order = 13, GroupName = "CBAS Filters")]
+        [Display(Name = "Exit Profit ATR Mult", Order = 12, GroupName = "CBAS Filters")]
         public double ExitProfitAtrMult { get; set; } = 3.0;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use Bear Pre-Signal", Order = 14, GroupName = "CBAS Filters")]
-        public bool UseBearPreSignal { get; set; } = true;
-
-        [NinjaScriptProperty]
-        [Range(1, 50)]
-        [Display(Name = "Bear Pre-Signal Bars", Order = 15, GroupName = "CBAS Filters")]
-        public int BearPreSignalBars { get; set; } = 3;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Bear Pre-Signal NetFlow Max", Order = 16, GroupName = "CBAS Filters")]
-        public double BearPreSignalNetFlowMax { get; set; } = -0.5;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Bear Pre-Signal Momentum Max", Order = 17, GroupName = "CBAS Filters")]
-        public double BearPreSignalMomentumMax { get; set; } = 0.0;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Bear Pre-Signal Require Below EMA10", Order = 18, GroupName = "CBAS Filters")]
-        public bool BearPreSignalRequireBelowEma10 { get; set; } = true;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Use Redundant Signal Filter", Order = 19, GroupName = "CBAS Filters")]
-        public bool UseRedundantSignalFilter { get; set; } = true;
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "Min ADX for Signals", Order = 20, GroupName = "CBAS Filters")]
-        public double MinAdxForSignals { get; set; } = 25.0;
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "Rapid Reversal Bars", Order = 21, GroupName = "CBAS Filters")]
-        public int RapidReversalBars { get; set; } = 10;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Filter Low Score Signals", Order = 22, GroupName = "CBAS Filters")]
-        public bool FilterLowScoreSignals { get; set; } = true;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Filter Contradictory NetFlow", Order = 23, GroupName = "CBAS Filters")]
-        public bool FilterContradictoryNetFlow { get; set; } = true;
-
-        [NinjaScriptProperty]
-        [Display(Name = "Compute Exit Signals", Order = 12, GroupName = "CBAS Filters")]
-        public bool ComputeExitSignals { get; set; } = true;
 
 
 
@@ -330,6 +283,18 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         [NinjaScriptProperty]
         [Display(Name = "Log Folder", Order = 4, GroupName = "Indicator")]
         public string LogFolder { get; set; } = @"C:\Mac\Home\Documents\NinjaTrader 8\Indicator_logs";
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Stable Log File", Order = 5, GroupName = "Indicator")]
+        public bool UseStableLogFile { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Truncate Stable Log On Start", Order = 6, GroupName = "Indicator")]
+        public bool TruncateStableLogOnStart { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Log Drawn Signals", Order = 7, GroupName = "Indicator")]
+        public bool LogDrawnSignals { get; set; } = true;
 
         // Risk (base/manual)
         [NinjaScriptProperty]
@@ -491,11 +456,6 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         [Range(1, 10)]
         [Display(Name = "Initial stop guard ticks", GroupName = "Risk", Order = 93)]
         public int InitialStopGuardTicks { get; set; } = 8; // MNQ: start with 4–6
-
-        [NinjaScriptProperty]
-        [Display(Name = "Color Bars By Trend", Order = 42, GroupName = "Plots")]
-        public bool ColorBarsByTrend { get; set; } = true;
-
         #endregion
         #region Privates
         // TPM (Ticks Per Minute) tracking
@@ -818,7 +778,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
                 return;
 
             // If ChartControl exists, you marshal to UI (your existing pattern). For simple flags,
-            // it's also safe to handle immediately without Dispatcher. Below keeps your pattern.
+            // it’s also safe to handle immediately without Dispatcher. Below keeps your pattern.
             var dispatcher = ChartControl?.Dispatcher;
             Action handler = () =>
             {
@@ -1106,7 +1066,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
             }
 
 
-            // 9) Don't overlap submissions
+            // 9) Don’t overlap submissions
             if (EntryWorking())
                 return;
 
@@ -1301,7 +1261,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
                 return;
             }
 
-            // 14) IN POSITION: update lastSignalBar only when bar moves or we'll act
+            // 14) IN POSITION: update lastSignalBar only when bar moves or we’ll act
             if (!duplicate)
                 lastSignalBar = stamp;
 
@@ -2058,7 +2018,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
                 {
                     if (closingRequested)
                     {
-                        // We requested an exit and won't resubmit the stop; clear caches
+                        // We requested an exit and won’t resubmit the stop; clear caches
                         if (order.FromEntrySignal == "LongA") { slALong = null; longAStop = double.NaN; }
                         else if (order.FromEntrySignal == "LongB") { slBLong = null; longBStop = double.NaN; }
                         else if (order.FromEntrySignal == "ShortA") { slAShort = null; shortAStop = double.NaN; }
@@ -2129,7 +2089,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
             EnsureLegStopsCompact();
 
 
-            // Audit after we've reconciled order state
+            // Audit after we’ve reconciled order state
             AuditProtection("OnOrderUpdate", time);
 
             // Diagnostics for stop/target orders
@@ -2296,7 +2256,6 @@ st = CBASTestingIndicator3(
     minAdx: MinAdx,
     momentumLookback: MomentumLookback,
     extendedLogging: ExtendedLogging,
-    logDrawnSignals: LogDrawnSignals,
     computeExitSignals: ComputeExitSignals,
     exitProfitAtrMult: ExitProfitAtrMult,
     instanceId: InstanceId,                         // string
@@ -2311,19 +2270,11 @@ st = CBASTestingIndicator3(
     logSignalsOnly: LogSignalsOnly,
     heartbeatEveryNBars: HeartbeatEveryNBars,
     logFolder: LogFolder,                          // string
-	scaleOscillatorToATR: ScaleOscillatorToATR,
-	oscAtrMult: OscAtrMult,
-	useBearPreSignal: UseBearPreSignal,
-	bearPreSignalBars: BearPreSignalBars,
-	bearPreSignalNetFlowMax: BearPreSignalNetFlowMax,
-	bearPreSignalMomentumMax: BearPreSignalMomentumMax,
-	bearPreSignalRequireBelowEma10: BearPreSignalRequireBelowEma10,
-	useRedundantSignalFilter: UseRedundantSignalFilter,
-	minAdxForSignals: MinAdxForSignals,
-	rapidReversalBars: RapidReversalBars,
-	filterLowScoreSignals: FilterLowScoreSignals,
-	filterContradictoryNetFlow: FilterContradictoryNetFlow,
-	colorBarsByTrend: ColorBarsByTrend
+    useStableLogFile: UseStableLogFile,
+    truncateStableLogOnStart: TruncateStableLogOnStart,
+    scaleOscillatorToATR: ScaleOscillatorToATR,
+    oscAtrMult: OscAtrMult,
+    logDrawnSignals: LogDrawnSignals
 );
 
 
