@@ -202,6 +202,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private double lastEmaColorCount = double.NaN;
         private int emaColorPrevValue = -1;
+        private int emaColorPrevPrevValue = -1;
         private int emaColorBullPeak = -1;
         private int emaColorBearDropPrev = -1;
         private int emaColorBearDropCount = 0;
@@ -516,6 +517,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             double momentumVal = (momentum != null && !double.IsNaN(momentum[0])) ? momentum[0] : double.NaN;
             int emaColorInt = (int)Math.Round(emaColorCount);
             int prevEmaColorInt = emaColorPrevValue < 0 ? emaColorInt : emaColorPrevValue;
+            int prevPrevEmaColorInt = emaColorPrevPrevValue < 0 ? prevEmaColorInt : emaColorPrevPrevValue;
             if (emaColorBullPeak < 0)
                 emaColorBullPeak = emaColorInt;
             if (emaColorInt >= emaColorBullPeak)
@@ -533,7 +535,15 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (emaColorInt == 15)
             {
                 if (prevEmaColorInt <= 0 || emaColorBullPeak == 15)
+                {
                     bullFromEmaColor = true;
+                    if (prevEmaColorInt <= 0)
+                    {
+                        forceBullSignal = true;
+                        if (EnableDebugPrints && debugBullReason == null)
+                            debugBullReason = "[BULL-FORCE-EMA15]";
+                    }
+                }
 
                 if (CurrentBar >= 2 && Close[0] < Close[1] && Close[1] < Close[2])
                     bearFromEmaColor = true;
@@ -571,7 +581,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 if (!bearFromEmaColor && prevEmaColorInt >= 14 && emaColorInt <= 1)
+                {
                     bearFromEmaColor = true;
+                    forceBearSignal = true;
+                    if (EnableDebugPrints && debugBearReason == null)
+                        debugBearReason = "[BEAR-FORCE-EMA0]";
+                }
             }
 
             bool canCheckHistory = CurrentBar >= 2;
@@ -637,6 +652,24 @@ namespace NinjaTrader.NinjaScript.Indicators
                     debugBearReason = $"[NETFLOW-BEAR] emaColor={emaColorInt} net={net:F2}";
             }
 
+            bool extremeBearSwitch = prevPrevEmaColorInt >= 15 && prevEmaColorInt <= 10 && emaColorInt <= 0;
+            if (extremeBearSwitch)
+            {
+                bearFromEmaColor = true;
+                forceBearSignal = true;
+                if (EnableDebugPrints && debugBearReason == null)
+                    debugBearReason = "[EXTREME-BEAR] emaColor 15→≤10→≤0";
+            }
+
+            bool extremeBullSwitch = prevPrevEmaColorInt <= 0 && prevEmaColorInt >= 10 && emaColorInt >= 15;
+            if (extremeBullSwitch)
+            {
+                bullFromEmaColor = true;
+                forceBullSignal = true;
+                if (EnableDebugPrints && debugBullReason == null)
+                    debugBullReason = "[EXTREME-BULL] emaColor 0→≥10→≥15";
+            }
+
             bool redAfterGreen = canCheckHistory && Close[1] > Open[1] && Close[0] < Open[0];
             bool greenAfterRed = canCheckHistory && Close[1] < Open[1] && Close[0] > Open[0];
             double candleDrop = Open[0] - Close[0];
@@ -677,6 +710,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (bearFromEmaColor)
                 bear = true;
 
+            emaColorPrevPrevValue = emaColorPrevValue;
             emaColorPrevValue = emaColorInt;
 
             if (UseScoringFilter)
@@ -752,7 +786,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     y1 - labelOffset,
                     0,
                     Brushes.LimeGreen,
-                    new SimpleFont("Arial", 10),
+                    new SimpleFont("Arial", 12),
                     TextAlignment.Center,
                     Brushes.Transparent,
                     Brushes.Transparent,
@@ -772,7 +806,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     y2 + labelOffset,
                     0,
                     Brushes.Red,
-                    new SimpleFont("Arial", 10),
+                    new SimpleFont("Arial", 12),
                     TextAlignment.Center,
                     Brushes.Transparent,
                     Brushes.Transparent,
