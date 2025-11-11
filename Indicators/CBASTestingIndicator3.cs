@@ -267,6 +267,10 @@ namespace NinjaTrader.NinjaScript.Indicators
         private double cachedEmaColorValue = double.NaN;
         private bool cachedBullSignal = false;
         private bool cachedBearSignal = false;
+        private bool cachedBullRaw = false;
+        private bool cachedBearRaw = false;
+        private string cachedBullReason = string.Empty;
+        private string cachedBearReason = string.Empty;
         private int lastLoggedBullSignalBar = -1;
         private int lastLoggedBearSignalBar = -1;
         #endregion
@@ -417,6 +421,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 cachedBarClose = Close[0];
                 cachedBullSignal = false;
                 cachedBearSignal = false;
+                cachedBullRaw = false;
+                cachedBearRaw = false;
+                cachedBullReason = string.Empty;
+                cachedBearReason = string.Empty;
                 hasCachedBar = true;
 
                 if (EnableDebugPrints)
@@ -504,12 +512,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 momentum[0] = double.NaN;
             }
 
-            bool bullCrossRaw = CrossAbove(Close, superTrend, 1);
-            bool bearCrossRaw = CrossBelow(Close, superTrend, 1);
-
-            bull = bullCrossRaw;
-            bear = bearCrossRaw;
-
             // Attract/Objection/NetFlow computed early so signal logging has values
             double emaColorCount = ComputeEmaColorCount();
             var ao = ComputeAttractObjection(UseSmoothedVpm);
@@ -529,8 +531,26 @@ namespace NinjaTrader.NinjaScript.Indicators
             bool bearFromEmaColor = false;
             bool forceBullSignal = false;
             bool forceBearSignal = false;
-            string debugBullReason = null;
-            string debugBearReason = null;
+            string debugBullReason = string.Empty;
+            string debugBearReason = string.Empty;
+            void AddReason(ref string target, string reason)
+            {
+                if (string.IsNullOrEmpty(reason))
+                    return;
+                if (!string.IsNullOrEmpty(target))
+                    target += "|";
+                target += reason;
+            }
+
+            bool bullCrossRaw = CrossAbove(Close, superTrend, 1);
+            bool bearCrossRaw = CrossBelow(Close, superTrend, 1);
+
+            bull = bullCrossRaw;
+            bear = bearCrossRaw;
+            if (bullCrossRaw)
+                AddReason(ref debugBullReason, "[CROSS]");
+            if (bearCrossRaw)
+                AddReason(ref debugBearReason, "[CROSS]");
 
             if (emaColorInt == 15)
             {
@@ -540,9 +560,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                     if (prevEmaColorInt <= 0)
                     {
                         forceBullSignal = true;
-                        if (EnableDebugPrints && debugBullReason == null)
-                            debugBullReason = "[BULL-FORCE-EMA15]";
+                        AddReason(ref debugBullReason, "[BULL-FORCE-EMA15]");
+                        if (EnableDebugPrints)
+                            Print($"[BULL-FORCE-EMA15] bar={CurrentBar} emaColorPrev={prevEmaColorInt}");
                     }
+                    else
+                        AddReason(ref debugBullReason, "[EMA15-STABLE]");
                 }
 
                 if (CurrentBar >= 2 && Close[0] < Close[1] && Close[1] < Close[2])
@@ -584,8 +607,9 @@ namespace NinjaTrader.NinjaScript.Indicators
                 {
                     bearFromEmaColor = true;
                     forceBearSignal = true;
-                    if (EnableDebugPrints && debugBearReason == null)
-                        debugBearReason = "[BEAR-FORCE-EMA0]";
+                    AddReason(ref debugBearReason, "[BEAR-FORCE-EMA0]");
+                    if (EnableDebugPrints)
+                        Print($"[BEAR-FORCE-EMA0] bar={CurrentBar} emaColorPrev={prevEmaColorInt}");
                 }
             }
 
@@ -624,32 +648,36 @@ namespace NinjaTrader.NinjaScript.Indicators
             {
                 bullFromEmaColor = true;
                 forceBullSignal = true;
+                AddReason(ref debugBullReason, $"[EARLY-BULL] emaColor={emaColorInt} net={net:F2}");
                 if (EnableDebugPrints)
-                    debugBullReason = $"[EARLY-BULL] emaColor={emaColorInt} net={net:F2}";
+                    Print($"[EARLY-BULL] bar={CurrentBar} emaColor={emaColorInt} net={net:F2}");
             }
 
             if (earlyBearTrigger)
             {
                 bearFromEmaColor = true;
                 forceBearSignal = true;
+                AddReason(ref debugBearReason, $"[EARLY-BEAR] emaColor={emaColorInt} net={net:F2}");
                 if (EnableDebugPrints)
-                    debugBearReason = $"[EARLY-BEAR] emaColor={emaColorInt} net={net:F2}";
+                    Print($"[EARLY-BEAR] bar={CurrentBar} emaColor={emaColorInt} net={net:F2}");
             }
 
             if (netflowBullTrigger)
             {
                 bullFromEmaColor = true;
                 forceBullSignal = true;
-                if (EnableDebugPrints && debugBullReason == null)
-                    debugBullReason = $"[NETFLOW-BULL] emaColor={emaColorInt} net={net:F2}";
+                AddReason(ref debugBullReason, $"[NETFLOW-BULL] emaColor={emaColorInt} net={net:F2}");
+                if (EnableDebugPrints)
+                    Print($"[NETFLOW-BULL] bar={CurrentBar} emaColor={emaColorInt} net={net:F2}");
             }
 
             if (netflowBearTrigger)
             {
                 bearFromEmaColor = true;
                 forceBearSignal = true;
-                if (EnableDebugPrints && debugBearReason == null)
-                    debugBearReason = $"[NETFLOW-BEAR] emaColor={emaColorInt} net={net:F2}";
+                AddReason(ref debugBearReason, $"[NETFLOW-BEAR] emaColor={emaColorInt} net={net:F2}");
+                if (EnableDebugPrints)
+                    Print($"[NETFLOW-BEAR] bar={CurrentBar} emaColor={emaColorInt} net={net:F2}");
             }
 
             bool extremeBearSwitch = prevPrevEmaColorInt >= 15 && prevEmaColorInt <= 10 && emaColorInt <= 0;
@@ -685,25 +713,43 @@ namespace NinjaTrader.NinjaScript.Indicators
             {
                 bearFromEmaColor = false;
                 forceBearSignal = false;
+                AddReason(ref debugBearReason, "[GUARD-EMA15]");
+                if (EnableDebugPrints)
+                    Print($"[GUARD-EMA15] bar={CurrentBar} drop={candleDrop:F2} thresh={bearThreshold:F2}");
             }
 
             if (emaColorInt <= 0 && (!greenCandle || candleRise < bullThreshold))
             {
                 bullFromEmaColor = false;
                 forceBullSignal = false;
+                AddReason(ref debugBullReason, "[GUARD-EMA0]");
+                if (EnableDebugPrints)
+                    Print($"[GUARD-EMA0] bar={CurrentBar} rise={candleRise:F2} thresh={bullThreshold:F2}");
             }
 
             if (bearFromEmaColor && emaColorInt >= 15 && (!redCandle || candleDrop < bearThreshold || net > -0.5))
+            {
                 bearFromEmaColor = false;
+                AddReason(ref debugBearReason, "[GUARD-NETFLOW]");
+            }
 
             if (bullFromEmaColor && emaColorInt <= 0 && (!greenCandle || candleRise < bullThreshold || net < 0.5))
+            {
                 bullFromEmaColor = false;
+                AddReason(ref debugBullReason, "[GUARD-NETFLOW]");
+            }
 
             if (bear && emaColorInt >= 15 && (!redCandle || candleDrop < bearThreshold || net > -0.5))
+            {
                 bear = false;
+                AddReason(ref debugBearReason, "[GUARD-EMA15-FINAL]");
+            }
 
             if (bull && emaColorInt <= 0 && (!greenCandle || candleRise < bullThreshold || net < 0.5))
+            {
                 bull = false;
+                AddReason(ref debugBullReason, "[GUARD-EMA0-FINAL]");
+            }
 
             if (bullFromEmaColor)
                 bull = true;
@@ -742,7 +788,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                     prospectiveBullCount = Math.Max(prospectiveBullCount, requiredBars);
                 bool allowBull = lastPlottedSignal != LastSignalType.Bull && (forceBullSignal || prospectiveBullCount >= requiredBars);
                 if (lastPlottedSignal == LastSignalType.Bull || !allowBull)
+                {
+                    AddReason(ref debugBullReason, forceBullSignal ? "[THROTTLE-BYPASS]" : "[THROTTLE]");
                     bull = false;
+                }
             }
 
             if (bear)
@@ -752,7 +801,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                     prospectiveBearCount = Math.Max(prospectiveBearCount, requiredBars);
                 bool allowBear = lastPlottedSignal != LastSignalType.Bear && (forceBearSignal || prospectiveBearCount >= requiredBars);
                 if (lastPlottedSignal == LastSignalType.Bear || !allowBear)
+                {
+                    AddReason(ref debugBearReason, forceBearSignal ? "[THROTTLE-BYPASS]" : "[THROTTLE]");
                     bear = false;
+                }
             }
 
             if (bull && bear)
@@ -846,6 +898,11 @@ namespace NinjaTrader.NinjaScript.Indicators
                     Draw.Text(this, $"ExitShort_{CurrentBar}", "Exit Short", 0, yShort, Brushes.IndianRed);
             }
 
+            if (string.IsNullOrEmpty(debugBullReason))
+                debugBullReason = bull ? "[PLOT]" : (bullCrossRaw ? "[SUPPRESSED]" : string.Empty);
+            if (string.IsNullOrEmpty(debugBearReason))
+                debugBearReason = bear ? "[PLOT]" : (bearCrossRaw ? "[SUPPRESSED]" : string.Empty);
+
             cachedSuperTrend = stNow;
             cachedUpperBand = upperBand;
             cachedLowerBand = lowerBand;
@@ -856,6 +913,10 @@ namespace NinjaTrader.NinjaScript.Indicators
             cachedEmaColorValue = emaColorCount;
             cachedBullSignal = bull;
             cachedBearSignal = bear;
+            cachedBullRaw = bullCrossRaw;
+            cachedBearRaw = bearCrossRaw;
+            cachedBullReason = debugBullReason;
+            cachedBearReason = debugBearReason;
             cachedBarClose = Close[0];
 
             if (ColorBarsByTrend && CurrentBar > 0)
@@ -1133,6 +1194,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                         "lower_band",
                         "bull_cross",
                         "bear_cross",
+                        "bull_cross_raw",
+                        "bear_cross_raw",
+                        "bull_reason",
+                        "bear_reason",
                         "regime",
                         "atr30",
                         "ema10",
@@ -1157,7 +1222,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     if (ExtendedLogging)
                     {
                         header += "," + string.Join(",",
-                            "vpm_smooth",
+                            //"vpm_smooth",
                             "score_bull",
                             "score_bear",
                             "adx",
@@ -1211,6 +1276,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                         cachedBarClose,
                         cachedBullSignal,
                         cachedBearSignal,
+                        cachedBullRaw,
+                        cachedBearRaw,
+                        cachedBullReason,
+                        cachedBearReason,
                         cachedSuperTrend,
                         cachedUpperBand,
                         cachedLowerBand,
@@ -1317,7 +1386,10 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
-        private void MaybeLogRow(int barIndex, DateTime barTimeLocal, double barOpen, double barHigh, double barLow, double barClose, bool bull, bool bear, double superTrendNow, double upperBand, double lowerBand,
+        private void MaybeLogRow(int barIndex, DateTime barTimeLocal, double barOpen, double barHigh, double barLow, double barClose,
+                                 bool bull, bool bear, bool bullRaw, bool bearRaw,
+                                 string bullReason, string bearReason,
+                                 double superTrendNow, double upperBand, double lowerBand,
                                  double attract, double objection, double netFlow, double momentumVal, double emaColorValue)
         {
             if (!logInitialized) return;
@@ -1356,6 +1428,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 lb: lowerBand,
                 bull: bull,
                 bear: bear,
+                bullRaw: bullRaw,
+                bearRaw: bearRaw,
+                bullReason: bullReason,
+                bearReason: bearReason,
                 regime: inBullRegime ? "BULL" : inBearRegime ? "BEAR" : "FLAT",
                 atr30: atr30Val,
                 ema10: ema10,
@@ -1389,6 +1465,10 @@ namespace NinjaTrader.NinjaScript.Indicators
             double lb,
             bool bull,
             bool bear,
+            bool bullRaw,
+            bool bearRaw,
+            string bullReason,
+            string bearReason,
             string regime,
             double atr30,
             double ema10,
@@ -1423,6 +1503,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 CsvNum(lb),
                 bull ? "1" : "0",
                 bear ? "1" : "0",
+                bullRaw ? "1" : "0",
+                bearRaw ? "1" : "0",
+                CsvEscape(bullReason ?? ""),
+                CsvEscape(bearReason ?? ""),
                 CsvEscape(regime ?? ""),
                 CsvNum(atr30),
                 CsvNum(ema10),
