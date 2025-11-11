@@ -236,7 +236,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         [NinjaScriptProperty]
         [Range(0.5, 10)]
         [Display(Name = "Sensitivity", Order = 1, GroupName = "Indicator")]
-        public double Sensitivity { get; set; } = 1.5;
+        public double Sensitivity { get; set; } = 3.4;
 
         [NinjaScriptProperty]
         [Display(Name = "EMA Energy", Order = 2, GroupName = "Indicator")]
@@ -266,6 +266,62 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         [Range(1, int.MaxValue)]
         [Display(Name = "Range ATR Length", Order = 7, GroupName = "Indicator")]
         public int RangeAtrLen { get; set; } = 500;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull NetFlow Min", Order = 1, GroupName = "Realtime Filters")]
+        public double RealtimeBullNetflowMin { get; set; } = 1.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull Objection Max", Order = 2, GroupName = "Realtime Filters")]
+        public double RealtimeBullObjectionMax { get; set; } = 3.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull EMA Color Min", Order = 3, GroupName = "Realtime Filters")]
+        public double RealtimeBullEmaColorMin { get; set; } = 8.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Bull Attract Filter", Order = 4, GroupName = "Realtime Filters")]
+        public bool RealtimeBullUseAttract { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull Attract Min", Order = 5, GroupName = "Realtime Filters")]
+        public double RealtimeBullAttractMin { get; set; } = 4.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull Score Min (0 = ignore)", Order = 6, GroupName = "Realtime Filters")]
+        public double RealtimeBullScoreMin { get; set; } = 0.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear NetFlow Max", Order = 7, GroupName = "Realtime Filters")]
+        public double RealtimeBearNetflowMax { get; set; } = -0.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear Objection Min", Order = 8, GroupName = "Realtime Filters")]
+        public double RealtimeBearObjectionMin { get; set; } = 4.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear EMA Color Max", Order = 9, GroupName = "Realtime Filters")]
+        public double RealtimeBearEmaColorMax { get; set; } = 6.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Bear Price/Band Filter", Order = 10, GroupName = "Realtime Filters")]
+        public bool RealtimeBearUsePriceToBand { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear Price/Band Max", Order = 11, GroupName = "Realtime Filters")]
+        public double RealtimeBearPriceToBandMax { get; set; } = 0.3;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear Score Min (0 = ignore)", Order = 12, GroupName = "Realtime Filters")]
+        public double RealtimeBearScoreMin { get; set; } = 0.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Flat Tolerance (points)", Order = 13, GroupName = "Realtime Filters")]
+        public double RealtimeFlatTolerance { get; set; } = 0.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show Realtime State Plot", Order = 14, GroupName = "Realtime Filters")]
+        public bool ShowRealtimeStatePlot { get; set; } = false;
 
         [NinjaScriptProperty]
         [Display(Name = "Enable Logging", Order = 1, GroupName = "Indicator")]
@@ -2275,6 +2331,20 @@ st = CBASTestingIndicator3(
     oscAtrMult: OscAtrMult,
     logDrawnSignals: LogDrawnSignals,
     colorBarsByTrend: ColorBarsByTrend,
+    realtimeBullNetflowMin: RealtimeBullNetflowMin,
+    realtimeBullObjectionMax: RealtimeBullObjectionMax,
+    realtimeBullEmaColorMin: RealtimeBullEmaColorMin,
+    realtimeBullUseAttract: RealtimeBullUseAttract,
+    realtimeBullAttractMin: RealtimeBullAttractMin,
+    realtimeBullScoreMin: RealtimeBullScoreMin,
+    realtimeBearNetflowMax: RealtimeBearNetflowMax,
+    realtimeBearObjectionMin: RealtimeBearObjectionMin,
+    realtimeBearEmaColorMax: RealtimeBearEmaColorMax,
+    realtimeBearUsePriceToBand: RealtimeBearUsePriceToBand,
+    realtimeBearPriceToBandMax: RealtimeBearPriceToBandMax,
+    realtimeBearScoreMin: RealtimeBearScoreMin,
+    realtimeFlatTolerance: RealtimeFlatTolerance,
+    showRealtimeStatePlot: ShowRealtimeStatePlot,
     enableDebugPrints: EnableDebugPrints
 );
 

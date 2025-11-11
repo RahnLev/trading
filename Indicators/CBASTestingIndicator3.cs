@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
@@ -100,7 +101,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         [NinjaScriptProperty]
         [Range(0.5, 10)]
         [Display(Name = "Sensitivity", Order = 1, GroupName = "Parameters")]
-        public double Sensitivity { get; set; } = 2.8;
+        public double Sensitivity { get; set; } = 3.4;
 
         [NinjaScriptProperty]
         [Display(Name = "EMA Energy", Order = 2, GroupName = "Parameters")]
@@ -170,12 +171,70 @@ namespace NinjaTrader.NinjaScript.Indicators
         [NinjaScriptProperty]
         [Display(Name = "Color Bars By Trend", Order = 42, GroupName = "Visual")]
         public bool ColorBarsByTrend { get; set; } = false;
+
+        // Realtime filter thresholds derived from log analysis
+        [NinjaScriptProperty]
+        [Display(Name = "Bull NetFlow Min", Order = 1, GroupName = "Realtime Filters")]
+        public double RealtimeBullNetflowMin { get; set; } = 1.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull Objection Max", Order = 2, GroupName = "Realtime Filters")]
+        public double RealtimeBullObjectionMax { get; set; } = 3.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull EMA Color Min", Order = 3, GroupName = "Realtime Filters")]
+        public double RealtimeBullEmaColorMin { get; set; } = 8.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Bull Attract Filter", Order = 4, GroupName = "Realtime Filters")]
+        public bool RealtimeBullUseAttract { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull Attract Min", Order = 5, GroupName = "Realtime Filters")]
+        public double RealtimeBullAttractMin { get; set; } = 4.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bull Score Min (0 = ignore)", Order = 6, GroupName = "Realtime Filters")]
+        public double RealtimeBullScoreMin { get; set; } = 0.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear NetFlow Max", Order = 7, GroupName = "Realtime Filters")]
+        public double RealtimeBearNetflowMax { get; set; } = -0.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear Objection Min", Order = 8, GroupName = "Realtime Filters")]
+        public double RealtimeBearObjectionMin { get; set; } = 4.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear EMA Color Max", Order = 9, GroupName = "Realtime Filters")]
+        public double RealtimeBearEmaColorMax { get; set; } = 6.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Bear Price/Band Filter", Order = 10, GroupName = "Realtime Filters")]
+        public bool RealtimeBearUsePriceToBand { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear Price/Band Max", Order = 11, GroupName = "Realtime Filters")]
+        public double RealtimeBearPriceToBandMax { get; set; } = 0.3;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Bear Score Min (0 = ignore)", Order = 12, GroupName = "Realtime Filters")]
+        public double RealtimeBearScoreMin { get; set; } = 0.0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Flat Tolerance (points)", Order = 13, GroupName = "Realtime Filters")]
+        public double RealtimeFlatTolerance { get; set; } = 0.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Show Realtime State Plot", Order = 14, GroupName = "Realtime Filters")]
+        public bool ShowRealtimeStatePlot { get; set; } = false;
         #endregion
 
         #region privates
         private int plotAttract;
         private int plotObjection;
         private int plotNetFlow;
+        private int plotRealtimeState;
 
         private bool bull;
         private bool bear;
@@ -206,6 +265,14 @@ namespace NinjaTrader.NinjaScript.Indicators
         private int emaColorBullPeak = -1;
         private int emaColorBearDropPrev = -1;
         private int emaColorBearDropCount = 0;
+        private enum RealtimeSignalState { Flat = 0, Bull = 1, Bear = -1 }
+        private RealtimeSignalState currentRealtimeState = RealtimeSignalState.Flat;
+        private string currentRealtimeReason = string.Empty;
+        private int currentBullScore = 0;
+        private int currentBearScore = 0;
+        private bool currentBullRangeBreak = false;
+        private bool currentBearRangeBreak = false;
+
         private enum LastSignalType { None, Bull, Bear }
         private LastSignalType lastPlottedSignal = LastSignalType.None;
         private int consecutiveBullBars = 0;
@@ -271,6 +338,12 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool cachedBearRaw = false;
         private string cachedBullReason = string.Empty;
         private string cachedBearReason = string.Empty;
+        private RealtimeSignalState cachedRealtimeState = RealtimeSignalState.Flat;
+        private string cachedRealtimeReason = string.Empty;
+        private int cachedBullScore = 0;
+        private int cachedBearScore = 0;
+        private bool cachedBullRangeBreak = false;
+        private bool cachedBearRangeBreak = false;
         private int lastLoggedBullSignalBar = -1;
         private int lastLoggedBearSignalBar = -1;
         #endregion
@@ -302,6 +375,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 AddPlot(Brushes.DodgerBlue, "RangeTop");
                 AddPlot(Brushes.DodgerBlue, "RangeBottom");
                 AddPlot(Brushes.DodgerBlue, "RangeMid");
+                AddPlot(Brushes.Transparent, "RealtimeState");
 
             }
             else if (State == State.DataLoaded)
@@ -334,12 +408,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                 plotRangeTop = FindPlot("RangeTop");
                 plotRangeBottom = FindPlot("RangeBottom");
                 plotRangeMid = FindPlot("RangeMid");
+                plotRealtimeState = FindPlot("RealtimeState");
 
                 plotAttract = FindPlot("Attract");
                 plotObjection = FindPlot("Objection");
                 plotNetFlow = FindPlot("NetFlow");
 
-                if (new[] { plotSuperTrend, plotUpperBand, plotLowerBand, plotRangeTop, plotRangeBottom, plotRangeMid, plotAttract, plotObjection, plotNetFlow }.Any(x => x < 0))
+                if (new[] { plotSuperTrend, plotUpperBand, plotLowerBand, plotRangeTop, plotRangeBottom, plotRangeMid, plotRealtimeState, plotAttract, plotObjection, plotNetFlow }.Any(x => x < 0))
                     Print("[CBASTestingIndicator3] Plot index mapping error: one or more plots not found by name.");
 
                 InitLogger();
@@ -759,23 +834,40 @@ namespace NinjaTrader.NinjaScript.Indicators
             emaColorPrevPrevValue = emaColorPrevValue;
             emaColorPrevValue = emaColorInt;
 
+            bool bullRangeBreakScore;
+            int bullScoreValue = ComputeScore(bullCrossRaw, false, stNow, vpmUse, out bullRangeBreakScore);
+            bool bearRangeBreakScore;
+            int bearScoreValue = ComputeScore(false, bearCrossRaw, stNow, vpmUse, out bearRangeBreakScore);
+            currentBullScore = bullScoreValue;
+            currentBearScore = bearScoreValue;
+            currentBullRangeBreak = bullRangeBreakScore;
+            currentBearRangeBreak = bearRangeBreakScore;
+
+            double priceToBandVal = priceToBand != null ? priceToBand[0] : double.NaN;
+            double ocDiff = Close[0] - Open[0];
+            var realtimeState = EvaluateRealtimeState(net, ao.objection, emaColorInt, priceToBandVal, ao.attract, bullScoreValue, bearScoreValue, ocDiff);
+            currentRealtimeState = realtimeState.State;
+            currentRealtimeReason = realtimeState.Reason;
+
             if (UseScoringFilter)
             {
-                vpmUse = UseSmoothedVpm
-                    ? (vpmEmaInd != null && vpmEmaInd.IsValidDataPoint(0) ? vpmEmaInd[0] : double.NaN)
-                    : vpmSeries[0];
-
-                double stNowLocal = this.superTrendNow;
-
-                bool rbBull, rbBear;
-                int bullScore = ComputeScore(bullCrossRaw, false, stNowLocal, vpmUse, out rbBull);
-                int bearScore = ComputeScore(false, bearCrossRaw, stNowLocal, vpmUse, out rbBear);
-
-                if (bull) bull = bullScore >= ScoreThreshold;
-                if (bear) bear = bearScore >= ScoreThreshold;
+                if (bull) bull = bullScoreValue >= ScoreThreshold;
+                if (bear) bear = bearScoreValue >= ScoreThreshold;
 
                 if (bullCrossRaw || bearCrossRaw)
-                    Print($"[SC] Bar {CurrentBar} bullScore={bullScore} bearScore={bearScore} thr={ScoreThreshold} -> bull={bull} bear={bear}");
+                    Print($"[SC] Bar {CurrentBar} bullScore={bullScoreValue} bearScore={bearScoreValue} thr={ScoreThreshold} -> bull={bull} bear={bear}");
+            }
+
+            if (bull && currentRealtimeState != RealtimeSignalState.Bull)
+            {
+                AddReason(ref debugBullReason, currentRealtimeState == RealtimeSignalState.Bear ? "[RT-BEAR]" : "[RT-FLAT]");
+                bull = false;
+            }
+
+            if (bear && currentRealtimeState != RealtimeSignalState.Bear)
+            {
+                AddReason(ref debugBearReason, currentRealtimeState == RealtimeSignalState.Bull ? "[RT-BULL]" : "[RT-FLAT]");
+                bear = false;
             }
 
             int prospectiveBullCount = bull ? consecutiveBullBars + 1 : 0;
@@ -903,6 +995,41 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (string.IsNullOrEmpty(debugBearReason))
                 debugBearReason = bear ? "[PLOT]" : (bearCrossRaw ? "[SUPPRESSED]" : string.Empty);
 
+            if (plotRealtimeState >= 0)
+            {
+                double plotValue = double.NaN;
+                if (ShowRealtimeStatePlot)
+                {
+                    switch (currentRealtimeState)
+                    {
+                        case RealtimeSignalState.Bull:
+                            plotValue = 1.0;
+                            PlotBrushes[plotRealtimeState][0] = Brushes.LimeGreen;
+                            break;
+                        case RealtimeSignalState.Bear:
+                            plotValue = -1.0;
+                            PlotBrushes[plotRealtimeState][0] = Brushes.Red;
+                            break;
+                        default:
+                            plotValue = 0.0;
+                            PlotBrushes[plotRealtimeState][0] = Brushes.Gray;
+                            break;
+                    }
+                }
+                else
+                {
+                    PlotBrushes[plotRealtimeState][0] = Brushes.Transparent;
+                }
+
+                SetPlotVal(plotRealtimeState, ShowRealtimeStatePlot ? plotValue : double.NaN);
+            }
+
+            cachedRealtimeState = currentRealtimeState;
+            cachedRealtimeReason = currentRealtimeReason;
+            cachedBullScore = currentBullScore;
+            cachedBearScore = currentBearScore;
+            cachedBullRangeBreak = currentBullRangeBreak;
+            cachedBearRangeBreak = currentBearRangeBreak;
             cachedSuperTrend = stNow;
             cachedUpperBand = upperBand;
             cachedLowerBand = lowerBand;
@@ -936,7 +1063,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (ScaleOscillatorToATR)
             {
                 // Scale around supertrend using ATR so it's visible on price panel
-                double basePx = stNow;
+                double basePx = double.IsNaN(stNow) ? Close[0] : stNow;
                 double scale = Math.Max(1e-9, atr30[0]) * OscAtrMult;
 
                 double attractScaled = basePx + scale * (ao.attract - 5.0);     // center around base
@@ -985,7 +1112,11 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private (double attract, double objection) ComputeAttractObjection(bool useSmoothedVpm = true)
         {
-            double st = this.superTrendNow;
+            double st = superTrend[0];
+            if (double.IsNaN(st))
+                st = this.superTrendNow;
+            if (double.IsNaN(st))
+                st = Close[0];
 
             bool bullRegime = !double.IsNaN(st) && Close[0] > st;
             bool bearRegime = !double.IsNaN(st) && Close[0] < st;
@@ -1131,6 +1262,155 @@ namespace NinjaTrader.NinjaScript.Indicators
             return true;
         }
 
+        private (RealtimeSignalState State, string Reason) EvaluateRealtimeState(
+            double net,
+            double objection,
+            int emaColor,
+            double priceToBandVal,
+            double attractVal,
+            int bullScore,
+            int bearScore,
+            double ocDiff)
+        {
+            var bullReasons = new List<string>();
+            var bullFailures = new List<string>();
+            bool bullCandidate = true;
+
+            if (!double.IsNaN(net) && net >= RealtimeBullNetflowMin)
+                bullReasons.Add($"net>={RealtimeBullNetflowMin:F2}");
+            else
+            {
+                bullCandidate = false;
+                bullFailures.Add($"net<{RealtimeBullNetflowMin:F2}");
+            }
+
+            if (!double.IsNaN(objection) && objection <= RealtimeBullObjectionMax)
+                bullReasons.Add($"obj<={RealtimeBullObjectionMax:F2}");
+            else
+            {
+                bullCandidate = false;
+                bullFailures.Add($"obj>{RealtimeBullObjectionMax:F2}");
+            }
+
+            if (emaColor >= RealtimeBullEmaColorMin)
+                bullReasons.Add($"ema>={RealtimeBullEmaColorMin:F0}");
+            else
+            {
+                bullCandidate = false;
+                bullFailures.Add($"ema<{RealtimeBullEmaColorMin:F0}");
+            }
+
+            if (RealtimeBullUseAttract)
+            {
+                if (!double.IsNaN(attractVal) && attractVal >= RealtimeBullAttractMin)
+                    bullReasons.Add($"att>={RealtimeBullAttractMin:F2}");
+                else
+                {
+                    bullCandidate = false;
+                    bullFailures.Add($"att<{RealtimeBullAttractMin:F2}");
+                }
+            }
+
+            if (RealtimeBullScoreMin > 0.0)
+            {
+                if (bullScore >= RealtimeBullScoreMin)
+                    bullReasons.Add($"score>={RealtimeBullScoreMin:F0}");
+                else
+                {
+                    bullCandidate = false;
+                    bullFailures.Add($"score<{RealtimeBullScoreMin:F0}");
+                }
+            }
+
+            if (bullCandidate)
+            {
+                string reason = bullReasons.Count > 0 ? string.Join("|", bullReasons) : "criteria";
+                return (RealtimeSignalState.Bull, $"BULL|{reason}");
+            }
+
+            var bearReasons = new List<string>();
+            var bearFailures = new List<string>();
+            bool bearCandidate = true;
+
+            if (!double.IsNaN(net) && net <= RealtimeBearNetflowMax)
+                bearReasons.Add($"net<={RealtimeBearNetflowMax:F2}");
+            else
+            {
+                bearCandidate = false;
+                bearFailures.Add($"net>{RealtimeBearNetflowMax:F2}");
+            }
+
+            if (!double.IsNaN(objection) && objection >= RealtimeBearObjectionMin)
+                bearReasons.Add($"obj>={RealtimeBearObjectionMin:F2}");
+            else
+            {
+                bearCandidate = false;
+                bearFailures.Add($"obj<{RealtimeBearObjectionMin:F2}");
+            }
+
+            if (emaColor <= RealtimeBearEmaColorMax)
+                bearReasons.Add($"ema<={RealtimeBearEmaColorMax:F0}");
+            else
+            {
+                bearCandidate = false;
+                bearFailures.Add($"ema>{RealtimeBearEmaColorMax:F0}");
+            }
+
+            if (RealtimeBearUsePriceToBand)
+            {
+                if (!double.IsNaN(priceToBandVal) && priceToBandVal <= RealtimeBearPriceToBandMax)
+                    bearReasons.Add($"ptb<={RealtimeBearPriceToBandMax:F2}");
+                else
+                {
+                    bearCandidate = false;
+                    bearFailures.Add($"ptb>{RealtimeBearPriceToBandMax:F2}");
+                }
+            }
+
+            if (RealtimeBearScoreMin > 0.0)
+            {
+                if (bearScore >= RealtimeBearScoreMin)
+                    bearReasons.Add($"score>={RealtimeBearScoreMin:F0}");
+                else
+                {
+                    bearCandidate = false;
+                    bearFailures.Add($"score<{RealtimeBearScoreMin:F0}");
+                }
+            }
+
+            if (bearCandidate)
+            {
+                string reason = bearReasons.Count > 0 ? string.Join("|", bearReasons) : "criteria";
+                return (RealtimeSignalState.Bear, $"BEAR|{reason}");
+            }
+
+            var flatParts = new List<string>();
+            if (bullFailures.Count > 0)
+                flatParts.Add("BULL_FAIL:" + string.Join("&", bullFailures));
+            if (bearFailures.Count > 0)
+                flatParts.Add("BEAR_FAIL:" + string.Join("&", bearFailures));
+            string failures = flatParts.Count > 0 ? string.Join("|", flatParts) : string.Empty;
+
+            if (RealtimeFlatTolerance >= 0 && Math.Abs(ocDiff) <= RealtimeFlatTolerance)
+                return (RealtimeSignalState.Flat, $"FLAT|diff={ocDiff:F2}{(failures.Length > 0 ? "|" + failures : string.Empty)}");
+
+            string dirTag = ocDiff > 0 ? "NONE_UP" : "NONE_DOWN";
+            return (RealtimeSignalState.Flat, $"{dirTag}|diff={ocDiff:F2}{(failures.Length > 0 ? "|" + failures : string.Empty)}");
+        }
+
+        private static string GetRealtimeStateLabel(RealtimeSignalState state)
+        {
+            switch (state)
+            {
+                case RealtimeSignalState.Bull:
+                    return "BULL";
+                case RealtimeSignalState.Bear:
+                    return "BEAR";
+                default:
+                    return "FLAT";
+            }
+        }
+
         private int ComputeScore(bool bullCross, bool bearCross, double stNow, double vpmUse, out bool rangeBreak)
         {
             int score = 0;
@@ -1198,6 +1478,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                         "bear_cross_raw",
                         "bull_reason",
                         "bear_reason",
+                        "realtime_state",
+                        "realtime_reason",
                         "regime",
                         "atr30",
                         "ema10",
@@ -1280,6 +1562,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                         cachedBearRaw,
                         cachedBullReason,
                         cachedBearReason,
+                        GetRealtimeStateLabel(cachedRealtimeState),
+                        cachedRealtimeReason,
+                        cachedBullScore,
+                        cachedBearScore,
+                        cachedBullRangeBreak,
+                        cachedBearRangeBreak,
                         cachedSuperTrend,
                         cachedUpperBand,
                         cachedLowerBand,
@@ -1389,6 +1677,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         private void MaybeLogRow(int barIndex, DateTime barTimeLocal, double barOpen, double barHigh, double barLow, double barClose,
                                  bool bull, bool bear, bool bullRaw, bool bearRaw,
                                  string bullReason, string bearReason,
+                                 string realtimeState, string realtimeReason,
+                                 int bullScore, int bearScore,
+                                 bool bullRangeBreak, bool bearRangeBreak,
                                  double superTrendNow, double upperBand, double lowerBand,
                                  double attract, double objection, double netFlow, double momentumVal, double emaColorValue)
         {
@@ -1432,6 +1723,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                 bearRaw: bearRaw,
                 bullReason: bullReason,
                 bearReason: bearReason,
+                realtimeState: realtimeState,
+                realtimeReason: realtimeReason,
+                bullScore: bullScore,
+                bearScore: bearScore,
+                bullRangeBreak: bullRangeBreak,
+                bearRangeBreak: bearRangeBreak,
                 regime: inBullRegime ? "BULL" : inBearRegime ? "BEAR" : "FLAT",
                 atr30: atr30Val,
                 ema10: ema10,
@@ -1469,6 +1766,12 @@ namespace NinjaTrader.NinjaScript.Indicators
             bool bearRaw,
             string bullReason,
             string bearReason,
+            string realtimeState,
+            string realtimeReason,
+            int bullScore,
+            int bearScore,
+            bool bullRangeBreak,
+            bool bearRangeBreak,
             string regime,
             double atr30,
             double ema10,
@@ -1507,6 +1810,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                 bearRaw ? "1" : "0",
                 CsvEscape(bullReason ?? ""),
                 CsvEscape(bearReason ?? ""),
+                CsvEscape(realtimeState ?? ""),
+                CsvEscape(realtimeReason ?? ""),
                 CsvEscape(regime ?? ""),
                 CsvNum(atr30),
                 CsvNum(ema10),
@@ -1534,9 +1839,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double vpmSmooth = (UseSmoothedVpm && vpmEmaInd != null && CurrentBar >= VpmEmaSpan - 1) ? vpmEmaInd[0] : double.NaN;
                 double vpmUse = UseSmoothedVpm ? vpmSmooth : vpmRaw;
 
-                bool dummyBull, dummyBear;
-                int scBull = ComputeScore(bull, false, this.superTrendNow, vpmUse, out dummyBull);
-                int scBear = ComputeScore(false, bear, this.superTrendNow, vpmUse, out dummyBear);
+                int scBull = bullScore;
+                int scBear = bearScore;
 
                 double adxVal = (adx14 != null && CurrentBar >= 14 - 1) ? adx14[0] : double.NaN;
                 double atrRatioVal = (CurrentBar >= 30 - 1) ? atrRatio[0] : double.NaN;
@@ -1545,8 +1849,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double momentumValExt = (CurrentBar >= MomentumLookback) ? momentum[0] : double.NaN;
                 double emaColorExt = ComputeEmaColorCount();
 
-                bool rangeBreak = (!double.IsNaN(rangeMax) && Close[0] > rangeMax)
-                               || (!double.IsNaN(rangeMin) && Close[0] < rangeMin);
+                bool rangeBreak = bullRangeBreak || bearRangeBreak;
 
                 bool exitLong = false, exitShort = false;
                 if (ComputeExitSignals)
@@ -1556,7 +1859,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 line += "," + string.Join(",",
-                    //CsvNum(vpmSmooth),
+                    CsvNum(vpmSmooth),
                     scBull.ToString(),
                     scBear.ToString(),
                     CsvNum(adxVal),
@@ -1770,12 +2073,6 @@ namespace NinjaTrader.NinjaScript.Indicators
     }
 }
 
-
-
-
-
-
-
 #region NinjaScript generated code. Neither change nor remove.
 
 namespace NinjaTrader.NinjaScript.Indicators
@@ -1783,18 +2080,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private CBASTestingIndicator3[] cacheCBASTestingIndicator3;
-		public CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend)
+		public CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot)
 		{
-			return CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend);
+			return CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot);
 		}
 
-		public CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input, bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend)
+		public CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input, bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot)
 		{
 			if (cacheCBASTestingIndicator3 != null)
 				for (int idx = 0; idx < cacheCBASTestingIndicator3.Length; idx++)
-					if (cacheCBASTestingIndicator3[idx] != null && cacheCBASTestingIndicator3[idx].ShowExitLabels == showExitLabels && cacheCBASTestingIndicator3[idx].ExitLabelAtrOffset == exitLabelAtrOffset && cacheCBASTestingIndicator3[idx].UseRegimeStability == useRegimeStability && cacheCBASTestingIndicator3[idx].RegimeStabilityBars == regimeStabilityBars && cacheCBASTestingIndicator3[idx].UseScoringFilter == useScoringFilter && cacheCBASTestingIndicator3[idx].ScoreThreshold == scoreThreshold && cacheCBASTestingIndicator3[idx].UseSmoothedVpm == useSmoothedVpm && cacheCBASTestingIndicator3[idx].VpmEmaSpan == vpmEmaSpan && cacheCBASTestingIndicator3[idx].MinVpm == minVpm && cacheCBASTestingIndicator3[idx].MinAdx == minAdx && cacheCBASTestingIndicator3[idx].MomentumLookback == momentumLookback && cacheCBASTestingIndicator3[idx].ExtendedLogging == extendedLogging && cacheCBASTestingIndicator3[idx].ComputeExitSignals == computeExitSignals && cacheCBASTestingIndicator3[idx].ExitProfitAtrMult == exitProfitAtrMult && cacheCBASTestingIndicator3[idx].InstanceId == instanceId && cacheCBASTestingIndicator3[idx].Sensitivity == sensitivity && cacheCBASTestingIndicator3[idx].EmaEnergy == emaEnergy && cacheCBASTestingIndicator3[idx].KeltnerLength == keltnerLength && cacheCBASTestingIndicator3[idx].AtrLength == atrLength && cacheCBASTestingIndicator3[idx].RangeMinLength == rangeMinLength && cacheCBASTestingIndicator3[idx].RangeWidthMult == rangeWidthMult && cacheCBASTestingIndicator3[idx].RangeAtrLen == rangeAtrLen && cacheCBASTestingIndicator3[idx].EnableLogging == enableLogging && cacheCBASTestingIndicator3[idx].LogSignalsOnly == logSignalsOnly && cacheCBASTestingIndicator3[idx].HeartbeatEveryNBars == heartbeatEveryNBars && cacheCBASTestingIndicator3[idx].LogFolder == logFolder && cacheCBASTestingIndicator3[idx].ScaleOscillatorToATR == scaleOscillatorToATR && cacheCBASTestingIndicator3[idx].OscAtrMult == oscAtrMult && cacheCBASTestingIndicator3[idx].LogDrawnSignals == logDrawnSignals && cacheCBASTestingIndicator3[idx].EnableDebugPrints == enableDebugPrints && cacheCBASTestingIndicator3[idx].ColorBarsByTrend == colorBarsByTrend && cacheCBASTestingIndicator3[idx].EqualsInput(input))
+					if (cacheCBASTestingIndicator3[idx] != null && cacheCBASTestingIndicator3[idx].ShowExitLabels == showExitLabels && cacheCBASTestingIndicator3[idx].ExitLabelAtrOffset == exitLabelAtrOffset && cacheCBASTestingIndicator3[idx].UseRegimeStability == useRegimeStability && cacheCBASTestingIndicator3[idx].RegimeStabilityBars == regimeStabilityBars && cacheCBASTestingIndicator3[idx].UseScoringFilter == useScoringFilter && cacheCBASTestingIndicator3[idx].ScoreThreshold == scoreThreshold && cacheCBASTestingIndicator3[idx].UseSmoothedVpm == useSmoothedVpm && cacheCBASTestingIndicator3[idx].VpmEmaSpan == vpmEmaSpan && cacheCBASTestingIndicator3[idx].MinVpm == minVpm && cacheCBASTestingIndicator3[idx].MinAdx == minAdx && cacheCBASTestingIndicator3[idx].MomentumLookback == momentumLookback && cacheCBASTestingIndicator3[idx].ExtendedLogging == extendedLogging && cacheCBASTestingIndicator3[idx].ComputeExitSignals == computeExitSignals && cacheCBASTestingIndicator3[idx].ExitProfitAtrMult == exitProfitAtrMult && cacheCBASTestingIndicator3[idx].InstanceId == instanceId && cacheCBASTestingIndicator3[idx].Sensitivity == sensitivity && cacheCBASTestingIndicator3[idx].EmaEnergy == emaEnergy && cacheCBASTestingIndicator3[idx].KeltnerLength == keltnerLength && cacheCBASTestingIndicator3[idx].AtrLength == atrLength && cacheCBASTestingIndicator3[idx].RangeMinLength == rangeMinLength && cacheCBASTestingIndicator3[idx].RangeWidthMult == rangeWidthMult && cacheCBASTestingIndicator3[idx].RangeAtrLen == rangeAtrLen && cacheCBASTestingIndicator3[idx].EnableLogging == enableLogging && cacheCBASTestingIndicator3[idx].LogSignalsOnly == logSignalsOnly && cacheCBASTestingIndicator3[idx].HeartbeatEveryNBars == heartbeatEveryNBars && cacheCBASTestingIndicator3[idx].LogFolder == logFolder && cacheCBASTestingIndicator3[idx].ScaleOscillatorToATR == scaleOscillatorToATR && cacheCBASTestingIndicator3[idx].OscAtrMult == oscAtrMult && cacheCBASTestingIndicator3[idx].LogDrawnSignals == logDrawnSignals && cacheCBASTestingIndicator3[idx].EnableDebugPrints == enableDebugPrints && cacheCBASTestingIndicator3[idx].ColorBarsByTrend == colorBarsByTrend && cacheCBASTestingIndicator3[idx].RealtimeBullNetflowMin == realtimeBullNetflowMin && cacheCBASTestingIndicator3[idx].RealtimeBullObjectionMax == realtimeBullObjectionMax && cacheCBASTestingIndicator3[idx].RealtimeBullEmaColorMin == realtimeBullEmaColorMin && cacheCBASTestingIndicator3[idx].RealtimeBullUseAttract == realtimeBullUseAttract && cacheCBASTestingIndicator3[idx].RealtimeBullAttractMin == realtimeBullAttractMin && cacheCBASTestingIndicator3[idx].RealtimeBullScoreMin == realtimeBullScoreMin && cacheCBASTestingIndicator3[idx].RealtimeBearNetflowMax == realtimeBearNetflowMax && cacheCBASTestingIndicator3[idx].RealtimeBearObjectionMin == realtimeBearObjectionMin && cacheCBASTestingIndicator3[idx].RealtimeBearEmaColorMax == realtimeBearEmaColorMax && cacheCBASTestingIndicator3[idx].RealtimeBearUsePriceToBand == realtimeBearUsePriceToBand && cacheCBASTestingIndicator3[idx].RealtimeBearPriceToBandMax == realtimeBearPriceToBandMax && cacheCBASTestingIndicator3[idx].RealtimeBearScoreMin == realtimeBearScoreMin && cacheCBASTestingIndicator3[idx].RealtimeFlatTolerance == realtimeFlatTolerance && cacheCBASTestingIndicator3[idx].ShowRealtimeStatePlot == showRealtimeStatePlot && cacheCBASTestingIndicator3[idx].EqualsInput(input))
 						return cacheCBASTestingIndicator3[idx];
-			return CacheIndicator<CBASTestingIndicator3>(new CBASTestingIndicator3(){ ShowExitLabels = showExitLabels, ExitLabelAtrOffset = exitLabelAtrOffset, UseRegimeStability = useRegimeStability, RegimeStabilityBars = regimeStabilityBars, UseScoringFilter = useScoringFilter, ScoreThreshold = scoreThreshold, UseSmoothedVpm = useSmoothedVpm, VpmEmaSpan = vpmEmaSpan, MinVpm = minVpm, MinAdx = minAdx, MomentumLookback = momentumLookback, ExtendedLogging = extendedLogging, ComputeExitSignals = computeExitSignals, ExitProfitAtrMult = exitProfitAtrMult, InstanceId = instanceId, Sensitivity = sensitivity, EmaEnergy = emaEnergy, KeltnerLength = keltnerLength, AtrLength = atrLength, RangeMinLength = rangeMinLength, RangeWidthMult = rangeWidthMult, RangeAtrLen = rangeAtrLen, EnableLogging = enableLogging, LogSignalsOnly = logSignalsOnly, HeartbeatEveryNBars = heartbeatEveryNBars, LogFolder = logFolder, ScaleOscillatorToATR = scaleOscillatorToATR, OscAtrMult = oscAtrMult, LogDrawnSignals = logDrawnSignals, EnableDebugPrints = enableDebugPrints, ColorBarsByTrend = colorBarsByTrend }, input, ref cacheCBASTestingIndicator3);
+			return CacheIndicator<CBASTestingIndicator3>(new CBASTestingIndicator3(){ ShowExitLabels = showExitLabels, ExitLabelAtrOffset = exitLabelAtrOffset, UseRegimeStability = useRegimeStability, RegimeStabilityBars = regimeStabilityBars, UseScoringFilter = useScoringFilter, ScoreThreshold = scoreThreshold, UseSmoothedVpm = useSmoothedVpm, VpmEmaSpan = vpmEmaSpan, MinVpm = minVpm, MinAdx = minAdx, MomentumLookback = momentumLookback, ExtendedLogging = extendedLogging, ComputeExitSignals = computeExitSignals, ExitProfitAtrMult = exitProfitAtrMult, InstanceId = instanceId, Sensitivity = sensitivity, EmaEnergy = emaEnergy, KeltnerLength = keltnerLength, AtrLength = atrLength, RangeMinLength = rangeMinLength, RangeWidthMult = rangeWidthMult, RangeAtrLen = rangeAtrLen, EnableLogging = enableLogging, LogSignalsOnly = logSignalsOnly, HeartbeatEveryNBars = heartbeatEveryNBars, LogFolder = logFolder, ScaleOscillatorToATR = scaleOscillatorToATR, OscAtrMult = oscAtrMult, LogDrawnSignals = logDrawnSignals, EnableDebugPrints = enableDebugPrints, ColorBarsByTrend = colorBarsByTrend, RealtimeBullNetflowMin = realtimeBullNetflowMin, RealtimeBullObjectionMax = realtimeBullObjectionMax, RealtimeBullEmaColorMin = realtimeBullEmaColorMin, RealtimeBullUseAttract = realtimeBullUseAttract, RealtimeBullAttractMin = realtimeBullAttractMin, RealtimeBullScoreMin = realtimeBullScoreMin, RealtimeBearNetflowMax = realtimeBearNetflowMax, RealtimeBearObjectionMin = realtimeBearObjectionMin, RealtimeBearEmaColorMax = realtimeBearEmaColorMax, RealtimeBearUsePriceToBand = realtimeBearUsePriceToBand, RealtimeBearPriceToBandMax = realtimeBearPriceToBandMax, RealtimeBearScoreMin = realtimeBearScoreMin, RealtimeFlatTolerance = realtimeFlatTolerance, ShowRealtimeStatePlot = showRealtimeStatePlot }, input, ref cacheCBASTestingIndicator3);
 		}
 	}
 }
@@ -1803,14 +2100,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot)
 		{
-			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend);
+			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot);
 		}
 
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot)
 		{
-			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend);
+			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot);
 		}
 	}
 }
@@ -1819,14 +2116,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot)
 		{
-			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend);
+			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot);
 		}
 
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool enableDebugPrints, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot)
 		{
-			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend);
+			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, enableDebugPrints, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot);
 		}
 	}
 }
