@@ -324,6 +324,15 @@ public double NetFlowAtrMult { get; set; } = 0.5;
         public bool ShowRealtimeStatePlot { get; set; } = false;
 
         [NinjaScriptProperty]
+        [Display(Name = "Plot Realtime Signals", Order = 15, GroupName = "Realtime Filters")]
+        public bool PlotRealtimeSignals { get; set; } = true;
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "Flip Confirmation Bars", Order = 16, GroupName = "Realtime Filters")]
+        public int FlipConfirmationBars { get; set; } = 1;
+
+        [NinjaScriptProperty]
         [Display(Name = "Enable Logging", Order = 1, GroupName = "Indicator")]
         public bool EnableLogging { get; set; } = true;
 
@@ -2330,6 +2339,7 @@ st = CBASTestingIndicator3(
     scaleOscillatorToATR: ScaleOscillatorToATR,
     oscAtrMult: OscAtrMult,
     logDrawnSignals: LogDrawnSignals,
+    enableDebugPrints: EnableDebugPrints,
     colorBarsByTrend: ColorBarsByTrend,
     realtimeBullNetflowMin: RealtimeBullNetflowMin,
     realtimeBullObjectionMax: RealtimeBullObjectionMax,
@@ -2345,7 +2355,8 @@ st = CBASTestingIndicator3(
     realtimeBearScoreMin: RealtimeBearScoreMin,
     realtimeFlatTolerance: RealtimeFlatTolerance,
     showRealtimeStatePlot: ShowRealtimeStatePlot,
-    enableDebugPrints: EnableDebugPrints
+    plotRealtimeSignals: PlotRealtimeSignals,
+    flipConfirmationBars: FlipConfirmationBars
 );
 
 
