@@ -1117,7 +1117,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                         "ts_local",
                         "bar_time_utc",
                         "bar_index",
-                        "instrument",
+                        //"instrument",
                         "open",
                         "high",
                         "low",
@@ -1142,15 +1142,15 @@ namespace NinjaTrader.NinjaScript.Indicators
                         "range_min",
                         "range_mid",
                         "range_os",
-                        "range_count",
-                        "param_Sensitivity",
-                        "param_KeltnerLength",
-                        "param_RangeMinLength",
-                        "param_RangeWidthMult",
-                        "param_RangeAtrLen",
-                        "param_EnableLogging",
-                        "param_LogSignalsOnly",
-                        "param_HeartbeatEveryNBars"
+                        "range_count"
+                        //"param_Sensitivity",
+                        //"param_KeltnerLength",
+                        //"param_RangeMinLength",
+                        //"param_RangeWidthMult",
+                        //"param_RangeAtrLen",
+                        //"param_EnableLogging",
+                        //"param_LogSignalsOnly",
+                        //"param_HeartbeatEveryNBars"
                         //"param_LogFolder"
                     );
 
@@ -1164,7 +1164,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                             "atr_ratio",
                             "ema_spread",
                             "price_to_band",
-                            "momentum",
+                            "momentum_ext",
                             "range_break",
                             "exit_long",
                             "exit_short"
@@ -1407,7 +1407,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 CsvEscape(barTimeLocal.ToString("yyyy-MM-dd HH:mm:ss.fff")),
                 CsvEscape(barTimeUtc.ToString("o")),
                 barIndex.ToString(),
-                CsvEscape(instrument ?? ""),
+                //CsvEscape(instrument ?? ""),
                 CsvNum(open),
                 CsvNum(high),
                 CsvNum(low),
@@ -1432,15 +1432,15 @@ namespace NinjaTrader.NinjaScript.Indicators
                 CsvNum(rMin),
                 CsvNum(rMid),
                 rOs.ToString(),
-                (rCount == int.MinValue ? "" : rCount.ToString()),
-                CsvNum(Sensitivity),
-                KeltnerLength.ToString(),
-                RangeMinLength.ToString(),
-                CsvNum(RangeWidthMult),
-                RangeAtrLen.ToString(),
-                (EnableLogging ? "1" : "0"),
-                (LogSignalsOnly ? "1" : "0"),
-                HeartbeatEveryNBars.ToString()
+                (rCount == int.MinValue ? "" : rCount.ToString())
+                //CsvNum(Sensitivity),
+                //KeltnerLength.ToString(),
+                //RangeMinLength.ToString(),
+                //CsvNum(RangeWidthMult),
+                //RangeAtrLen.ToString(),
+                //(EnableLogging ? "1" : "0"),
+                //(LogSignalsOnly ? "1" : "0"),
+                //HeartbeatEveryNBars.ToString()
                 //CsvEscape(string.IsNullOrEmpty(LogFolder) ? Path.Combine(Globals.UserDataDir, "Indicator_logs") : LogFolder)
             );
 
@@ -1472,7 +1472,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 line += "," + string.Join(",",
-                    CsvNum(vpmSmooth),
+                    //CsvNum(vpmSmooth),
                     scBull.ToString(),
                     scBear.ToString(),
                     CsvNum(adxVal),
