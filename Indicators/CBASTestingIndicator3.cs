@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Windows;                   // MessageBox
 using System.Windows.Media;
@@ -11,6 +12,7 @@ using System.Xml.Linq;
 using NinjaTrader.Core;
 using NinjaTrader.Data;
 using NinjaTrader.Gui;
+using NinjaTrader.Gui.Chart;
 using NinjaTrader.Gui.Tools;            // NTWindow (if you use it)
 using NinjaTrader.NinjaScript;
 using NinjaTrader.NinjaScript.AddOns;   // CBASTerminalWindow
@@ -243,6 +245,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private int plotAttract;
         private int plotObjection;
         private int plotNetFlow;
+        private bool lastRenderWasPricePanel = true;
         private int plotRealtimeState;
 
         private bool bull;
@@ -325,6 +328,13 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool debugLogInitialized = false;
         private readonly object debugLogLock = new object();
         private string debugLogPath = null;
+        
+        // Scaling debug logger
+        private StreamWriter scalingDebugWriter;
+        private bool scalingDebugInitialized = false;
+        private readonly object scalingDebugLock = new object();
+        private string scalingDebugPath = null;
+        private int lastScalingDebugBar = -1;
 
         // Logging gate for "only on price change"
         private int cachedBarIndex = -1;
@@ -423,8 +433,16 @@ namespace NinjaTrader.NinjaScript.Indicators
                 plotObjection = FindPlot("Objection");
                 plotNetFlow = FindPlot("NetFlow");
 
+                // Debug: Always print plot indices to identify issues
+                Print($"[CBASTestingIndicator3] Plot indices found: Attract={plotAttract}, Objection={plotObjection}, NetFlow={plotNetFlow}");
+                
                 if (new[] { plotSuperTrend, plotUpperBand, plotLowerBand, plotRangeTop, plotRangeBottom, plotRangeMid, plotRealtimeState, plotAttract, plotObjection, plotNetFlow }.Any(x => x < 0))
-                    Print("[CBASTestingIndicator3] Plot index mapping error: one or more plots not found by name.");
+                {
+                    Print($"[CBASTestingIndicator3] ERROR: One or more plot indices are invalid!");
+                    Print($"[CBASTestingIndicator3] SuperTrend={plotSuperTrend}, UpperBand={plotUpperBand}, LowerBand={plotLowerBand}");
+                    Print($"[CBASTestingIndicator3] RangeTop={plotRangeTop}, RangeBottom={plotRangeBottom}, RangeMid={plotRangeMid}");
+                    Print($"[CBASTestingIndicator3] RealtimeState={plotRealtimeState}, Attract={plotAttract}, Objection={plotObjection}, NetFlow={plotNetFlow}");
+                }
 
                 InitLogger();
                 if (LogDrawnSignals)
@@ -486,6 +504,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                         debugLogWriter = null;
                         debugLogInitialized = false;
                     }
+                    lock (scalingDebugLock)
+                    {
+                        scalingDebugWriter?.Flush();
+                        scalingDebugWriter?.Dispose();
+                        scalingDebugWriter = null;
+                        scalingDebugInitialized = false;
+                    }
                 }
                 catch { /* ignore */ }
             }
@@ -527,6 +552,18 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (CurrentBar < Math.Max(2, KeltnerLength))
             {
                 InitializeFirstBars(cachedBarOpen, cachedBarHigh, cachedBarLow);
+                // Initialize oscillator plots to NaN on early bars
+                if (ScaleOscillatorToATR)
+                {
+                    SetPlotVal(plotAttract, double.NaN);
+                    SetPlotVal(plotObjection, double.NaN);
+                    SetPlotVal(plotNetFlow, double.NaN);
+                }
+                // Always initialize RealtimeState plot to NaN to prevent it showing near zero
+                if (plotRealtimeState >= 0 && !ShowRealtimeStatePlot)
+                {
+                    SetPlotVal(plotRealtimeState, double.NaN);
+                }
                 return;
             }
 
@@ -535,6 +572,9 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             if (LogDrawnSignals && !signalDrawInitialized)
                 InitSignalDrawLogger();
+
+            if (!scalingDebugInitialized)
+                InitScalingDebugLogger();
 
             // Bands and supertrend
             double rangeC = 2.0 * (cachedBarHigh - cachedBarLow);
@@ -959,6 +999,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (bull)
             {
                 double y1 = Low[0] - atr30[0] * 2.0;
+                string emaColorHistory = FormatEmaColorHistory(prevPrevEmaColorInt, prevEmaColorInt, emaColorInt);
                 Draw.TriangleUp(this, $"Buy_{CurrentBar}", false, 0, y1, Brushes.LimeGreen);
                 double labelOffset = atr30[0] * 0.5;
                 Draw.Text(this,
@@ -974,11 +1015,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                     Brushes.Transparent,
                     Brushes.Transparent,
                     0);
-                LogDrawnSignal("BULL", Close[0], stNow, net);
+                LogDrawnSignal("BULL", Close[0], stNow, net, emaColorHistory);
             }
             if (bear)
             {
                 double y2 = High[0] + atr30[0] * 2.0;
+                string emaColorHistory = FormatEmaColorHistory(prevPrevEmaColorInt, prevEmaColorInt, emaColorInt);
                 Draw.TriangleDown(this, $"Sell_{CurrentBar}", false, 0, y2, Brushes.Red);
                 double labelOffset = atr30[0] * 0.5;
                 Draw.Text(this,
@@ -994,7 +1036,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     Brushes.Transparent,
                     Brushes.Transparent,
                     0);
-                LogDrawnSignal("BEAR", Close[0], stNow, net);
+                LogDrawnSignal("BEAR", Close[0], stNow, net, emaColorHistory);
             }
 
             if (bull)
@@ -1036,9 +1078,10 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             if (plotRealtimeState >= 0)
             {
-                double plotValue = double.NaN;
+                // Always set RealtimeState plot to NaN when not shown to prevent it appearing near zero
                 if (ShowRealtimeStatePlot)
                 {
+                    double plotValue = double.NaN;
                     switch (currentRealtimeState)
                     {
                         case RealtimeSignalState.Bull:
@@ -1054,13 +1097,14 @@ namespace NinjaTrader.NinjaScript.Indicators
                             PlotBrushes[plotRealtimeState][0] = Brushes.Gray;
                             break;
                     }
+                    SetPlotVal(plotRealtimeState, plotValue);
                 }
                 else
                 {
+                    // Explicitly hide the plot by setting to NaN and making it transparent
+                    SetPlotVal(plotRealtimeState, double.NaN);
                     PlotBrushes[plotRealtimeState][0] = Brushes.Transparent;
                 }
-
-                SetPlotVal(plotRealtimeState, ShowRealtimeStatePlot ? plotValue : double.NaN);
             }
 
             cachedRealtimeState = currentRealtimeState;
@@ -1099,28 +1143,140 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             // Attract/Objection/NetFlow visualisation
 
+            double plotAttractVal = double.NaN;
+            double plotObjectionVal = double.NaN;
+            double plotNetFlowVal = double.NaN;
+            double barRange = 0;
+            double scale = 0;
+            double scalingBasePx = 0;
+            double attractScaled = 0;
+            double objectionScaled = 0;
+            double netScaled = 0;
+
             if (ScaleOscillatorToATR)
             {
-                // Scale around supertrend using ATR so it's visible on price panel
-                double basePx = double.IsNaN(stNow) ? Close[0] : stNow;
-                double scale = Math.Max(1e-9, atr30[0]) * OscAtrMult;
+                // Always scale relative to price using ATR, regardless of panel
+                // This ensures all plots are visible and consistent
+                double atr30Val = (atr30 != null && CurrentBar >= 30 - 1) ? atr30[0] : double.NaN;
+                scalingBasePx = Close[0];
+                
+                if (double.IsNaN(atr30Val) || atr30Val <= 0)
+                {
+                    // Fallback to bar range if ATR not available
+                    barRange = Math.Max(1e-6, High[0] - Low[0]);
+                    scale = barRange * OscAtrMult * 10.0; // Use 10x multiplier for bar range fallback
+                }
+                else
+                {
+                    // Use ATR with moderate multiplier - when IsOverlay=true, plots need visible offset
+                    // Price is ~25,000, so use ATR-based scaling that creates reasonable spread
+                    scale = atr30Val * OscAtrMult * 10.0; // 10x ATR creates moderate spread
+                    barRange = High[0] - Low[0]; // Still log bar range for debugging
+                }
+                
+                // Scale attract/objection (0-10 range) to oscillate around price
+                // Normalize to -1 to +1 range, then apply scale
+                attractScaled = scalingBasePx + scale * (ao.attract - 5.0) / 5.0;
+                // Objection typically runs 0-5, so shift midpoint lower to allow it to go above price
+                // Use 2.5 as midpoint instead of 5.0 so objection can go above price when > 2.5
+                objectionScaled = scalingBasePx + scale * (ao.objection - 2.5) / 5.0;
+                // Scale netflow (typically -5 to +5) - use different offset to ensure it's always distinct
+                // Offset netflow by 1.5x scale to separate it from attract/objection
+                netScaled = scalingBasePx + scale * 1.5 * net / 5.0;
+                
+                plotAttractVal = attractScaled;
+                plotObjectionVal = objectionScaled;
+                plotNetFlowVal = netScaled;
 
-                double attractScaled = basePx + scale * (ao.attract - 5.0);     // center around base
-                double objectionScaled = basePx + scale * (ao.objection - 5.0);
-                double netScaled = basePx + scale * net;
-
-                SetPlotVal(plotAttract, attractScaled);
-                SetPlotVal(plotObjection, objectionScaled);
-                SetPlotVal(plotNetFlow, netScaled);
+                // Explicitly set all three plots with scaled values
+                // Ensure all plots are set even if values are at base price
+                if (plotAttract >= 0)
+                {
+                    SetPlotVal(plotAttract, attractScaled);
+                }
+                else
+                {
+                    Print($"[CBASTestingIndicator3] WARNING: plotAttract index is invalid ({plotAttract}), cannot set plot value!");
+                }
+                if (plotObjection >= 0)
+                {
+                    SetPlotVal(plotObjection, objectionScaled);
+                }
+                else
+                {
+                    Print($"[CBASTestingIndicator3] WARNING: plotObjection index is invalid ({plotObjection}), cannot set plot value!");
+                }
+                if (plotNetFlow >= 0)
+                {
+                    SetPlotVal(plotNetFlow, netScaled);
+                }
+                else
+                {
+                    Print($"[CBASTestingIndicator3] WARNING: plotNetFlow index is invalid ({plotNetFlow}), cannot set plot value!");
+                }
             }
             else
             {
-                SetPlotVal(plotAttract, ao.attract);
-                SetPlotVal(plotObjection, ao.objection);
-                SetPlotVal(plotNetFlow, net);
+                plotAttractVal = ao.attract;
+                plotObjectionVal = ao.objection;
+                plotNetFlowVal = net;
+                
+                // Explicitly set all three plots with raw values
+                if (plotAttract >= 0)
+                    SetPlotVal(plotAttract, ao.attract);
+                if (plotObjection >= 0)
+                    SetPlotVal(plotObjection, ao.objection);
+                if (plotNetFlow >= 0)
+                    SetPlotVal(plotNetFlow, net);
+            }
+
+            // Log scaling debug info - only once per bar to avoid huge log files
+            if (scalingDebugInitialized && scalingDebugWriter != null && CurrentBar != lastScalingDebugBar)
+            {
+                try
+                {
+                    double atr30Val = (atr30 != null && CurrentBar >= 30 - 1) ? atr30[0] : double.NaN;
+                    string line = string.Join(",",
+                        CurrentBar.ToString(),
+                        CsvNum(Close[0]),
+                        CsvNum(High[0]),
+                        CsvNum(Low[0]),
+                        CsvNum(atr30Val),
+                        CsvNum(OscAtrMult),
+                        ScaleOscillatorToATR ? "1" : "0",
+                        lastRenderWasPricePanel ? "1" : "0",
+                        CsvNum(ao.attract),
+                        CsvNum(ao.objection),
+                        CsvNum(net),
+                        CsvNum(barRange),
+                        CsvNum(scale),
+                        CsvNum(scalingBasePx),
+                        CsvNum(attractScaled),
+                        CsvNum(objectionScaled),
+                        CsvNum(netScaled),
+                        CsvNum(plotAttractVal),
+                        CsvNum(plotObjectionVal),
+                        CsvNum(plotNetFlowVal)
+                    );
+                    lock (scalingDebugLock)
+                    {
+                        scalingDebugWriter.WriteLine(line);
+                        lastScalingDebugBar = CurrentBar;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Print($"[CBASTestingIndicator3] Scaling debug log write failed: {ex.Message}");
+                }
             }
 
             SetPlotBrush(plotNetFlow, net >= 0 ? Brushes.DodgerBlue : Brushes.DarkOrange);
+
+            // Diagnostic: Log actual plot values being set (only on bar close to avoid spam)
+            if (CurrentBar != lastScalingDebugBar && CurrentBar > 0 && CurrentBar % 100 == 0)
+            {
+                Print($"[CBASTestingIndicator3] Bar {CurrentBar} Plot Values: Attract={plotAttractVal:F2} (index={plotAttract}), Objection={plotObjectionVal:F2} (index={plotObjection}), NetFlow={plotNetFlowVal:F2} (index={plotNetFlow})");
+            }
 
             // Range detector updates
             UpdateRangeDetectorPlots();
@@ -1646,7 +1802,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 {
                     lock (signalDrawLock)
                     {
-                        signalDrawWriter.WriteLine("ts_local,bar_time_utc,bar_index,instrument,signal_type,price,supertrend,volume,netflow");
+                        signalDrawWriter.WriteLine("ts_local,bar_time_utc,bar_index,instrument,signal_type,price,supertrend,volume,netflow,ema_color_hist");
                     }
                 }
 
@@ -1692,6 +1848,44 @@ namespace NinjaTrader.NinjaScript.Indicators
             {
                 Print($"[CBASTestingIndicator3] Debug log init failed: {ex.Message}");
                 debugLogInitialized = false;
+            }
+        }
+
+        private void InitScalingDebugLogger()
+        {
+            if (scalingDebugInitialized)
+                return;
+
+            try
+            {
+                string folder = string.IsNullOrWhiteSpace(LogFolder)
+                    ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
+                    : LogFolder;
+
+                Directory.CreateDirectory(folder);
+
+                scalingDebugPath = Path.Combine(folder, $"{Name}_{Instrument?.FullName}_scaling_debug.csv");
+                bool fileExists = File.Exists(scalingDebugPath);
+                scalingDebugWriter = new StreamWriter(scalingDebugPath, append: false, encoding: Encoding.UTF8)
+                {
+                    AutoFlush = true
+                };
+                scalingDebugInitialized = true;
+
+                if (!fileExists)
+                {
+                    lock (scalingDebugLock)
+                    {
+                        scalingDebugWriter.WriteLine("bar_index,close,high,low,atr30,oscAtrMult,scaleOscillatorToATR,lastRenderWasPricePanel,raw_attract,raw_objection,raw_netflow,barRange,scale,scalingBasePx,scaled_attract,scaled_objection,scaled_netflow,plot_attract_val,plot_objection_val,plot_netflow_val");
+                    }
+                }
+
+                Print($"[CBASTestingIndicator3] Scaling debug logging to: {scalingDebugPath}");
+            }
+            catch (Exception ex)
+            {
+                Print($"[CBASTestingIndicator3] Scaling debug log init failed: {ex.Message}");
+                scalingDebugInitialized = false;
             }
         }
 
@@ -1931,7 +2125,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
-        private void LogDrawnSignal(string signalType, double price, double superTrendValue, double netFlow)
+        private void LogDrawnSignal(string signalType, double price, double superTrendValue, double netFlow, string emaColorHistory)
         {
             if (!LogDrawnSignals || !signalDrawInitialized || signalDrawWriter == null)
                 return;
@@ -1958,7 +2152,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                     CsvNum(price),
                     CsvNum(superTrendValue),
                     CsvNum(Volume[0]),
-                    CsvNum(netFlow));
+                    CsvNum(netFlow),
+                    CsvEscape(emaColorHistory ?? string.Empty));
 
                 lock (signalDrawLock)
                 {
@@ -2078,6 +2273,22 @@ namespace NinjaTrader.NinjaScript.Indicators
                 PlotBrushes[idx][0] = b;
         }
 
+        private static int ClampEmaColor(int value)
+        {
+            if (value < 0) return 0;
+            if (value > 15) return 15;
+            return value;
+        }
+
+        private static string FormatEmaColorHistory(int prevPrev, int prev, int current)
+        {
+            int cc = ClampEmaColor(current);
+            int bb = ClampEmaColor(prev >= 0 ? prev : current);
+            int aaSource = prevPrev >= 0 ? prevPrev : (prev >= 0 ? prev : current);
+            int aa = ClampEmaColor(aaSource);
+            return $"{aa}_{bb}_{cc}";
+        }
+
         private double ComputeEmaColorCount()
         {
             if (emaHighs == null || emaHighs.Length == 0)
@@ -2109,8 +2320,42 @@ namespace NinjaTrader.NinjaScript.Indicators
             return double.IsNaN(lastEmaColorCount) ? greenCount : lastEmaColorCount;
         }
         #endregion
+
+        protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
+        {
+            if (chartControl != null && chartScale != null)
+            {
+                try
+                {
+                    ChartPanel panel = chartControl.ChartPanels[chartScale.PanelIndex];
+                    bool? reflected = null;
+                    if (panel != null)
+                    {
+                        PropertyInfo prop = panel.GetType().GetProperty("IsPricePanel", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                        if (prop != null && prop.PropertyType == typeof(bool))
+                        {
+                            reflected = (bool)prop.GetValue(panel);
+                        }
+                    }
+
+                    if (reflected.HasValue)
+                        lastRenderWasPricePanel = reflected.Value;
+                    else
+                        lastRenderWasPricePanel = (chartScale.PanelIndex == 0 && DrawOnPricePanel);
+                }
+                catch
+                {
+                    lastRenderWasPricePanel = chartScale.PanelIndex == 0 && DrawOnPricePanel;
+                }
+            }
+
+            base.OnRender(chartControl, chartScale);
+        }
     }
 }
+
+
+
 
 #region NinjaScript generated code. Neither change nor remove.
 
