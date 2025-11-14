@@ -322,6 +322,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private int lastLoggedBearBar = -1;
         private int lastLoggedBarClose = -1;
         private StreamWriter signalDrawWriter;
+        private string runTimestamp = string.Empty; // Timestamp for this run to make logs unique
         private readonly object signalDrawLock = new object();
         private bool signalDrawInitialized = false;
         private string signalDrawPath = null;
@@ -1657,6 +1658,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             try
             {
+                // Set run timestamp on first logger initialization (used for both main log and signals log)
+                if (string.IsNullOrEmpty(runTimestamp))
+                {
+                    runTimestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                }
+
                 string folder = string.IsNullOrWhiteSpace(LogFolder)
                     ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
                     : LogFolder;
@@ -1806,6 +1813,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             try
             {
+                // Set run timestamp on first logger initialization (used for both main log and signals log)
+                if (string.IsNullOrEmpty(runTimestamp))
+                {
+                    runTimestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+                }
+
                 string folder = string.IsNullOrWhiteSpace(LogFolder)
                     ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
                     : LogFolder;
@@ -2123,6 +2136,10 @@ namespace NinjaTrader.NinjaScript.Indicators
             string baseName = $"{nameSegment}_{instrumentSegment}";
             if (!string.IsNullOrEmpty(instanceSegment))
                 baseName += $"_{instanceSegment}";
+            
+            // Add timestamp to make each run unique (prevents overwriting previous logs)
+            if (!string.IsNullOrEmpty(runTimestamp))
+                baseName += $"_{runTimestamp}";
 
             return baseName;
         }
