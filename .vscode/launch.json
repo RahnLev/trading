@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to NinjaTrader",
+            "type": "clr",
+            "request": "attach",
+            "processName": "NinjaTrader"
+        },
+        {
+            "name": "Attach to NinjaTrader (Pick Process)",
+            "type": "clr",
+            "request": "attach",
+            "processId": "${command:pickProcess}"
+        }
+    ]
+}
+

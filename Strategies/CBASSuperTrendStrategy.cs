@@ -1050,11 +1050,65 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
+            // Force indicator update early to trigger its OnBarUpdate and logging initialization
+            // This must happen BEFORE any early returns to ensure the indicator processes every bar
+            if (st != null)
+            {
+                try
+                {
+                    // Access indicator to force its OnBarUpdate to be called
+                    // This ensures the indicator processes the bar and can log data
+                    // Access both Values and the signal properties to ensure OnBarUpdate is called
+                    // ========== BREAKPOINT #8 (was #9) ==========
+                    // INSTRUCTION: This is the PRIMARY place to check indicator access
+                    // Step into this line - should trigger indicator's OnBarUpdate()
+                    // Verify in Call Stack that CBASTestingIndicator3.OnBarUpdate() is in the stack
+                    // Check CurrentBar to see which bar is being processed
+                    // This is called on EVERY bar, so it should trigger indicator logging
+                    // PUT BREAKPOINT HERE
+                    var _ = st.Values[0][0];
+                    var __ = st.BullSignal; // Access BullSignal to ensure indicator is fully updated
+                    var ___ = st.BearSignal; // Access BearSignal to ensure indicator is fully updated
+                    
+                    // Note: Logging initialization now happens in indicator's State.DataLoaded
+                    // This ensures it works even when used from strategy
+                    
+                    // Periodic diagnostic: print indicator state every 100 bars to track if logging stops
+                    if (CurrentBar < 10 || (CurrentBar % 100 == 0 && CurrentBar > 0))
+                    {
+                        Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: Accessed indicator, EnableLogging={EnableLogging}, LogDrawnSignals={LogDrawnSignals}, LogFolder={LogFolder ?? "null"}");
+                        Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: Indicator properties - st.EnableLogging={st.EnableLogging}, st.LogDrawnSignals={st.LogDrawnSignals}, st.LogFolder={st.LogFolder ?? "null"}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: Error accessing indicator: {ex.Message}");
+                    Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: StackTrace: {ex.StackTrace ?? "null"}");
+                }
+            }
+            else
+            {
+                if (CurrentBar < 10 || (CurrentBar % 100 == 0 && CurrentBar > 0))
+                {
+                    Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: WARNING - Indicator 'st' is null!");
+                }
+            }
+            
             // 1) BarsRequiredToTrade
             if (CurrentBar < Math.Max(BarsRequiredToTrade, 5))
             {
                 pendingLong = pendingShort = false;
                 return;
+            }
+            
+            // Debug: Validate state periodically or on errors
+            if (DebugLogSignals && (CurrentBar < 20 || (CurrentBar % 500 == 0)))
+            {
+                if (!ValidateStrategyState(out string issues))
+                {
+                    Print($"[VALIDATION] Bar {CurrentBar}: Issues found - {issues}");
+                    DebugStrategyState("PeriodicCheck");
+                }
             }
             // 2) Pause
             if (Paused) return;
@@ -2174,6 +2228,24 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     string baseDir = NinjaTrader.Core.Globals.UserDataDir; // Documents\NinjaTrader 8\
                     string folder = Path.Combine(baseDir, "strategy_logs");
+                    
+                    // Normalize path separators for the current OS
+                    // Convert Windows-style paths like \\Mac\Home\Documents\... to /Users/mm/Documents/...
+                    if (Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX)
+                    {
+                        folder = folder.Replace('\\', '/');
+                        // Handle Windows-style network paths: \\Mac\Home\Documents\... -> /Users/mm/Documents/...
+                        if (folder.StartsWith("//Mac/Home/") || folder.StartsWith("\\Mac\\Home\\"))
+                        {
+                            folder = folder.Replace("//Mac/Home/", "/Users/mm/").Replace("\\Mac\\Home\\", "/Users/mm/");
+                        }
+                        // Handle C:\Users\... paths
+                        if (folder.StartsWith("C:/Users/") || folder.StartsWith("C:\\Users\\"))
+                        {
+                            folder = folder.Replace("C:/Users/", "/Users/").Replace("C:\\Users\\", "/Users/");
+                        }
+                    }
+                    folder = Path.GetFullPath(folder);
                     Directory.CreateDirectory(folder);
 
                     string fileName = string.Format(
@@ -2319,9 +2391,10 @@ st = CBASTestingIndicator3(
     logSignalsOnly: LogSignalsOnly,
     heartbeatEveryNBars: HeartbeatEveryNBars,
     logFolder: LogFolder,                          // string
-    scaleOscillatorToATR: ScaleOscillatorToATR,
+	scaleOscillatorToATR: ScaleOscillatorToATR,
     oscAtrMult: OscAtrMult,
     logDrawnSignals: LogDrawnSignals,
+    debugLogSignalCheck: DebugLogSignals,  // Pass strategy's DebugLogSignals to indicator
     colorBarsByTrend: ColorBarsByTrend,
     realtimeBullNetflowMin: RealtimeBullNetflowMin,
     realtimeBullObjectionMax: RealtimeBullObjectionMax,
@@ -2341,9 +2414,64 @@ st = CBASTestingIndicator3(
     flipConfirmationBars: FlipConfirmationBars
 );
 
-
-
-
+                // COMPREHENSIVE PROPERTY VERIFICATION
+                Print($"[Strategy] State.DataLoaded: ========== PROPERTY VERIFICATION ==========");
+                Print($"[Strategy] State.DataLoaded: Strategy Properties:");
+                Print($"[Strategy] State.DataLoaded:   EnableLogging = {EnableLogging}");
+                Print($"[Strategy] State.DataLoaded:   LogSignalsOnly = {LogSignalsOnly}");
+                Print($"[Strategy] State.DataLoaded:   HeartbeatEveryNBars = {HeartbeatEveryNBars}");
+                Print($"[Strategy] State.DataLoaded:   LogFolder = {LogFolder ?? "null"}");
+                Print($"[Strategy] State.DataLoaded:   LogDrawnSignals = {LogDrawnSignals}");
+                Print($"[Strategy] State.DataLoaded:   DebugLogSignals = {DebugLogSignals} (passed to indicator as DebugLogSignalCheck)");
+                Print($"[Strategy] State.DataLoaded: Indicator Properties:");
+                Print($"[Strategy] State.DataLoaded:   st.EnableLogging = {st.EnableLogging}");
+                Print($"[Strategy] State.DataLoaded:   st.LogSignalsOnly = {st.LogSignalsOnly}");
+                Print($"[Strategy] State.DataLoaded:   st.HeartbeatEveryNBars = {st.HeartbeatEveryNBars}");
+                Print($"[Strategy] State.DataLoaded:   st.LogFolder = {st.LogFolder ?? "null"}");
+                Print($"[Strategy] State.DataLoaded:   st.LogDrawnSignals = {st.LogDrawnSignals}");
+                Print($"[Strategy] State.DataLoaded:   st.DebugLogSignalCheck = {st.DebugLogSignalCheck}");
+                Print($"[Strategy] State.DataLoaded: ==========================================");
+                
+                // CRITICAL: Verify property matching - cached indicators might have different settings
+                bool propertiesMatch = true;
+                if (st.EnableLogging != EnableLogging)
+                {
+                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - EnableLogging mismatch! Strategy={EnableLogging}, Indicator={st.EnableLogging}");
+                    propertiesMatch = false;
+                }
+                if (st.LogSignalsOnly != LogSignalsOnly)
+                {
+                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - LogSignalsOnly mismatch! Strategy={LogSignalsOnly}, Indicator={st.LogSignalsOnly}");
+                    propertiesMatch = false;
+                }
+                if (st.HeartbeatEveryNBars != HeartbeatEveryNBars)
+                {
+                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - HeartbeatEveryNBars mismatch! Strategy={HeartbeatEveryNBars}, Indicator={st.HeartbeatEveryNBars}");
+                    propertiesMatch = false;
+                }
+                if (st.LogDrawnSignals != LogDrawnSignals)
+                {
+                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - LogDrawnSignals mismatch! Strategy={LogDrawnSignals}, Indicator={st.LogDrawnSignals}");
+                    propertiesMatch = false;
+                }
+                if (st.LogFolder != LogFolder)
+                {
+                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - LogFolder mismatch! Strategy={LogFolder ?? "null"}, Indicator={st.LogFolder ?? "null"}");
+                    propertiesMatch = false;
+                }
+                if (st.DebugLogSignalCheck != DebugLogSignals)
+                {
+                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - DebugLogSignalCheck mismatch! Strategy={DebugLogSignals}, Indicator={st.DebugLogSignalCheck}");
+                    propertiesMatch = false;
+                }
+                if (propertiesMatch)
+                {
+                    Print($"[Strategy] State.DataLoaded: ✅ All logging properties match correctly");
+                }
+                
+                // NOTE: Do NOT access indicator Values here in State.DataLoaded - it causes NullReferenceException
+                // The indicator is not fully initialized yet. It will be accessed naturally in OnBarUpdate()
+                // where breakpoint #9 is located, which will properly trigger the indicator's OnBarUpdate()
 
                 //st = CBASTestingIndicator3(InstanceId, Sensitivity, EmaEnergy, KeltnerLength, AtrLength, RangeMinLength, RangeWidthMult, RangeAtrLen, EnableLogging, LogSignalsOnly, HeartbeatEveryNBars, LogFolder);
                 atr = ATR(14);
@@ -3675,6 +3803,118 @@ IsOrderActive(slALong) || IsOrderActive(slAShort) || IsOrderActive(slBLong) || I
             }
         }
 
+        #region Debugging Helpers
+        /// <summary>
+        /// Comprehensive debugging method to diagnose strategy state
+        /// Call this from OnBarUpdate or OnExecutionUpdate when issues occur
+        /// </summary>
+        private void DebugStrategyState(string context = "")
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine($"[DEBUG {context}] ========== Strategy State ==========");
+                sb.AppendLine($"Bar: {CurrentBar}, Time: {Time[0]:O}");
+                sb.AppendLine($"State: {State}, Position: {Position.MarketPosition}, Qty: {Position.Quantity}");
+                
+                // Indicator state
+                if (st != null)
+                {
+                    sb.AppendLine($"Indicator (st): NOT NULL");
+                    try
+                    {
+                        sb.AppendLine($"  BullSignal: {st.BullSignal}, BearSignal: {st.BearSignal}");
+                        sb.AppendLine($"  Values[0][0]: {st.Values[0][0]:F2}");
+                        sb.AppendLine($"  EnableLogging: {st.EnableLogging}");
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.AppendLine($"  ERROR accessing indicator: {ex.Message}");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine($"Indicator (st): NULL ⚠️");
+                }
+                
+                // Order state
+                sb.AppendLine($"Orders:");
+                sb.AppendLine($"  longAEntry: {IsOrderActive(longAEntry)}");
+                sb.AppendLine($"  longBEntryOrder: {IsOrderActive(longBEntryOrder)}");
+                sb.AppendLine($"  shortAEntry: {IsOrderActive(shortAEntry)}");
+                sb.AppendLine($"  shortBEntryOrder: {IsOrderActive(shortBEntryOrder)}");
+                sb.AppendLine($"  slALong: {IsOrderActive(slALong)}, Price: {longAStop:F2}");
+                sb.AppendLine($"  slAShort: {IsOrderActive(slAShort)}, Price: {shortAStop:F2}");
+                sb.AppendLine($"  slBLong: {IsOrderActive(slBLong)}");
+                sb.AppendLine($"  slBShort: {IsOrderActive(slBShort)}");
+                
+                // Leg state
+                sb.AppendLine($"Legs:");
+                sb.AppendLine($"  LongA: Open={isLongALegOpen}, Qty={qtyLongAOpen}, Trail={longATrailMode}");
+                sb.AppendLine($"  LongB: Open={isLongBLegOpen}, Qty={qtyLongBOpen}");
+                sb.AppendLine($"  ShortA: Open={isShortALegOpen}, Qty={qtyShortAOpen}, Trail={shortATrailMode}");
+                sb.AppendLine($"  ShortB: Open={isShortBLegOpen}, Qty={qtyShortBOpen}");
+                
+                // Flags
+                sb.AppendLine($"Flags:");
+                sb.AppendLine($"  Paused: {Paused}");
+                sb.AppendLine($"  pendingLong: {pendingLong}, pendingShort: {pendingShort}");
+                sb.AppendLine($"  flattenRequest: {flattenRequest}");
+                
+                // ATR
+                if (atr != null && CurrentBar > 0)
+                {
+                    sb.AppendLine($"ATR[0]: {atr[0]:F2}");
+                }
+                else
+                {
+                    sb.AppendLine($"ATR: {(atr == null ? "NULL" : "Not ready")}");
+                }
+                
+                sb.AppendLine($"==========================================");
+                Print(sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                Print($"[DEBUG ERROR] Failed to dump state: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+        
+        /// <summary>
+        /// Quick debug check for common issues
+        /// </summary>
+        private bool ValidateStrategyState(out string issues)
+        {
+            var issueList = new List<string>();
+            
+            if (st == null)
+                issueList.Add("Indicator 'st' is null");
+            
+            if (atr == null && CurrentBar > 14)
+                issueList.Add("ATR indicator is null after warmup");
+            
+            if (Instrument == null)
+                issueList.Add("Instrument is null");
+            
+            if (CurrentBar < 0)
+                issueList.Add($"CurrentBar is negative: {CurrentBar}");
+            
+            if (st != null)
+            {
+                try
+                {
+                    var _ = st.Values[0][0];
+                }
+                catch (Exception ex)
+                {
+                    issueList.Add($"Cannot access st.Values[0][0]: {ex.Message}");
+                }
+            }
+            
+            issues = string.Join("; ", issueList);
+            return issueList.Count == 0;
+        }
+        #endregion
 
     }
 }

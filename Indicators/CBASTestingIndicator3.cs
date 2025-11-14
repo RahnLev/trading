@@ -166,6 +166,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         [Display(Name = "Log Drawn Signals", Order = 31, GroupName = "Logging")]
         public bool LogDrawnSignals { get; set; } = true;
 
+        [NinjaScriptProperty]
+        [Display(Name = "Debug: log SignalCheck", Order = 32, GroupName = "Logging")]
+        public bool DebugLogSignalCheck { get; set; } = false;
 
         [NinjaScriptProperty]
         [Display(Name = "Color Bars By Trend", Order = 42, GroupName = "Visual")]
@@ -292,6 +295,11 @@ namespace NinjaTrader.NinjaScript.Indicators
         private int consecutiveBearBars = 0;
         private int pendingBearReversalBars = 0;
         private int pendingBullReversalBars = 0;
+
+        // Debug throttles for SignalCheck logging
+        private bool dbgLastBull = false, dbgLastBear = false, dbgLastFirstTick = false;
+        private int dbgLastBar = -1;
+        private DateTime dbgLastPrintUtc = DateTime.MinValue;
 
         private EMA ema10Close;
         private EMA ema20Close;
@@ -449,12 +457,73 @@ namespace NinjaTrader.NinjaScript.Indicators
                     // One or more plot indices are invalid
                 }
 
-                // Don't initialize logging here - wait for OnBarUpdate when properties are definitely set
-                // InitLogger() will be called in OnBarUpdate if EnableLogging is true
-                // if (EnableLogging)
-                //     InitLogger();
-                // if (LogDrawnSignals)
-                //     InitSignalDrawLogger();
+                // Initialize logging early when used from strategy
+                // This ensures logging works even if OnBarUpdate isn't called immediately
+                if (EnableLogging)
+                {
+                    try
+                    {
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: Attempting early logging initialization for strategy use");
+                        InitLogger();
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: Early logging initialization {(logInitialized ? "SUCCESS" : "FAILED")}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: Early logging init failed: {ex.Message}");
+                        // Will retry in OnBarUpdate
+                    }
+                }
+                
+                if (LogDrawnSignals)
+                {
+                    try
+                    {
+                        InitSignalDrawLogger();
+                    }
+                    catch (Exception ex)
+                    {
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: Early signal draw logging init failed: {ex.Message}");
+                        // Will retry in OnBarUpdate
+                    }
+                }
+                
+                // CRITICAL TEST: Write a test file immediately to verify path works
+                // This helps diagnose why logs aren't created when run from strategy
+                if (EnableLogging)
+                {
+                    try
+                    {
+                        string testFolder = string.IsNullOrWhiteSpace(LogFolder)
+                            ? Path.Combine(Globals.UserDataDir, "indicators_log")
+                            : LogFolder;
+                        
+                        // Normalize path for macOS
+                        bool isMacOS = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
+                        if (isMacOS)
+                        {
+                            testFolder = testFolder.Replace('\\', '/');
+                            if (testFolder.StartsWith("//Mac/Home/"))
+                                testFolder = testFolder.Replace("//Mac/Home/", "/Users/mm/");
+                            if (testFolder.StartsWith("C:/Users/"))
+                                testFolder = testFolder.Replace("C:/Users/", "/Users/");
+                            while (testFolder.Contains("//") && !testFolder.StartsWith("//"))
+                                testFolder = testFolder.Replace("//", "/");
+                        }
+                        
+                        Directory.CreateDirectory(testFolder);
+                        string testFile = isMacOS 
+                            ? testFolder + "/PATH_TEST_StateDataLoaded_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"
+                            : Path.Combine(testFolder, "PATH_TEST_StateDataLoaded_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
+                        
+                        File.WriteAllText(testFile, $"Test file from State.DataLoaded\nTime: {DateTime.Now:yyyy-MM-dd HH:mm:ss}\nEnableLogging: {EnableLogging}\nLogFolder: {LogFolder ?? "null"}\nGlobals.UserDataDir: {Globals.UserDataDir ?? "null"}\nNormalized folder: {testFolder}");
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: PATH TEST SUCCESS - Test file written to: {testFile}");
+                    }
+                    catch (Exception testEx)
+                    {
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: PATH TEST FAILED - {testEx.GetType().Name}: {testEx.Message}");
+                        Print($"[CBASTestingIndicator3] State.DataLoaded: PATH TEST StackTrace: {testEx.StackTrace ?? "null"}");
+                    }
+                }
 
                 instrumentName = Instrument?.FullName ?? "N/A";
                 adx14 = ADX(14);
@@ -518,25 +587,145 @@ namespace NinjaTrader.NinjaScript.Indicators
             // Initialize debug logging first (always enabled for troubleshooting)
             if (!debugLogInitialized)
             {
-                Print($"[CBASTestingIndicator3] OnBarUpdate: Initializing debug logger. CurrentBar={CurrentBar}, State={State}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate: Initializing debug logger. CurrentBar={CurrentBar}, State={State}, EnableLogging={EnableLogging}, LogDrawnSignals={LogDrawnSignals}, LogFolder={LogFolder ?? "null"}");
                 InitDebugLogger();
+            }
+
+            // Log property values on first bar to verify they're set correctly
+            if (CurrentBar == 0)
+            {
+                // ========== BREAKPOINT #1 ==========
+                // INSTRUCTION: Check property values in Locals window:
+                // - EnableLogging (should be true)
+                // - LogDrawnSignals (should be true)
+                // - LogFolder (check if null or has value)
+                // - LogSignalsOnly (check value)
+                // - Globals.UserDataDir (should not be null)
+                // PUT BREAKPOINT HERE
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ========== COMPREHENSIVE PROPERTY VERIFICATION ==========");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Parameters ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Sensitivity = {Sensitivity}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: EmaEnergy = {EmaEnergy}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: KeltnerLength = {KeltnerLength}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: AtrLength = {AtrLength}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Range Detector ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeMinLength = {RangeMinLength}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeWidthMult = {RangeWidthMult}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeAtrLen = {RangeAtrLen}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Filters ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseRegimeStability = {UseRegimeStability}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RegimeStabilityBars = {RegimeStabilityBars}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseScoringFilter = {UseScoringFilter}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScoreThreshold = {ScoreThreshold}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseSmoothedVpm = {UseSmoothedVpm}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: VpmEmaSpan = {VpmEmaSpan}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinVpm = {MinVpm}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinAdx = {MinAdx}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MomentumLookback = {MomentumLookback}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ComputeExitSignals = {ComputeExitSignals}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitProfitAtrMult = {ExitProfitAtrMult}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowExitLabels = {ShowExitLabels}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitLabelAtrOffset = {ExitLabelAtrOffset}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Realtime Filters ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullNetflowMin = {RealtimeBullNetflowMin}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullObjectionMax = {RealtimeBullObjectionMax}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullEmaColorMin = {RealtimeBullEmaColorMin}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullUseAttract = {RealtimeBullUseAttract}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullAttractMin = {RealtimeBullAttractMin}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullScoreMin = {RealtimeBullScoreMin}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearNetflowMax = {RealtimeBearNetflowMax}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearObjectionMin = {RealtimeBearObjectionMin}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearEmaColorMax = {RealtimeBearEmaColorMax}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearUsePriceToBand = {RealtimeBearUsePriceToBand}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearPriceToBandMax = {RealtimeBearPriceToBandMax}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearScoreMin = {RealtimeBearScoreMin}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeFlatTolerance = {RealtimeFlatTolerance}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowRealtimeStatePlot = {ShowRealtimeStatePlot}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: PlotRealtimeSignals = {PlotRealtimeSignals}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: FlipConfirmationBars = {FlipConfirmationBars}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Plots ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScaleOscillatorToATR = {ScaleOscillatorToATR}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: OscAtrMult = {OscAtrMult}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ColorBarsByTrend = {ColorBarsByTrend}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Logging ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: EnableLogging = {EnableLogging}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogSignalsOnly = {LogSignalsOnly}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: HeartbeatEveryNBars = {HeartbeatEveryNBars}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogFolder = {LogFolder ?? "null"}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogDrawnSignals = {LogDrawnSignals}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: DebugLogSignalCheck = {DebugLogSignalCheck}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExtendedLogging = {ExtendedLogging}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: InstanceId = {InstanceId ?? "null"}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Internal State ---");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: logInitialized = {logInitialized}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: signalDrawInitialized = {signalDrawInitialized}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Globals.UserDataDir = {Globals.UserDataDir ?? "null"}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ==========================================");
             }
 
             // Initialize logging as early as possible (before any early returns)
             if (EnableLogging && !logInitialized)
             {
+                // ========== BREAKPOINT #2 ==========
+                // INSTRUCTION: Verify condition is true:
+                // - EnableLogging should be true
+                // - logInitialized should be false
+                // - Step into InitLogger() to continue debugging
+                // PUT BREAKPOINT HERE
+                Print($"[CBASTestingIndicator3] OnBarUpdate: Calling InitLogger. CurrentBar={CurrentBar}, EnableLogging={EnableLogging}");
+                InitLogger();  // STEP INTO HERE
+            }
+            // Safety check: if EnableLogging is true but logInitialized is still false after InitLogger, try again periodically
+            if (EnableLogging && !logInitialized && CurrentBar % 100 == 0 && CurrentBar > 0)
+            {
+                Print($"[CBASTestingIndicator3] OnBarUpdate: WARNING - EnableLogging=true but logInitialized=false after InitLogger, attempting to re-initialize. CurrentBar={CurrentBar}");
+                InitLogger();
+            }
+            // Safety check: if logWriter is null but logInitialized is true, something went wrong - try to re-initialize
+            if (EnableLogging && logInitialized && logWriter == null && CurrentBar % 100 == 0 && CurrentBar > 0)
+            {
+                Print($"[CBASTestingIndicator3] OnBarUpdate: WARNING - logInitialized=true but logWriter=null, attempting to re-initialize. CurrentBar={CurrentBar}");
+                logInitialized = false; // Reset flag to allow re-initialization
                 InitLogger();
             }
 
             if (LogDrawnSignals && !signalDrawInitialized)
             {
+                Print($"[CBASTestingIndicator3] OnBarUpdate: Calling InitSignalDrawLogger. CurrentBar={CurrentBar}, LogDrawnSignals={LogDrawnSignals}");
                 InitSignalDrawLogger();
+            }
+            // Safety check: if LogDrawnSignals is true but signalDrawInitialized is still false after InitSignalDrawLogger, try again periodically
+            if (LogDrawnSignals && !signalDrawInitialized && CurrentBar % 100 == 0 && CurrentBar > 0)
+            {
+                Print($"[CBASTestingIndicator3] OnBarUpdate: WARNING - LogDrawnSignals=true but signalDrawInitialized=false after InitSignalDrawLogger, attempting to re-initialize. CurrentBar={CurrentBar}");
+                InitSignalDrawLogger();
+            }
+
+            // Periodic diagnostic: print logging state every 100 bars to track if logging stops
+            if (CurrentBar % 100 == 0 && CurrentBar > 0)
+            {
+                Print($"[CBASTestingIndicator3] OnBarUpdate Bar {CurrentBar}: EnableLogging={EnableLogging}, logInitialized={logInitialized}, hasCachedBar={hasCachedBar}, cachedBarIndex={cachedBarIndex}, LogSignalsOnly={LogSignalsOnly}");
             }
 
             if (CurrentBar != cachedBarIndex)
             {
                 if (hasCachedBar && EnableLogging)
+                {
+                    // Diagnostic: print before flushing to confirm it's being called
+                    if (CurrentBar % 100 == 0 || CurrentBar < 10)
+                    {
+                        Print($"[CBASTestingIndicator3] OnBarUpdate Bar {CurrentBar}: About to flush cached bar {cachedBarIndex}, logInitialized={logInitialized}");
+                    }
                     FlushCachedBar();
+                }
+                else if (hasCachedBar && !EnableLogging && CurrentBar % 100 == 0)
+                {
+                    Print($"[CBASTestingIndicator3] OnBarUpdate Bar {CurrentBar}: WARNING - hasCachedBar=true but EnableLogging=false, skipping flush");
+                }
+                else if (!hasCachedBar && EnableLogging && CurrentBar % 100 == 0)
+                {
+                    Print($"[CBASTestingIndicator3] OnBarUpdate Bar {CurrentBar}: WARNING - EnableLogging=true but hasCachedBar=false, skipping flush");
+                }
 
                 // Check and log pending signals with price confirmation (wait 1-2 bars to confirm trend)
                 // This prevents both BULL and BEAR from being logged and ensures trend confirmation
@@ -1067,6 +1256,27 @@ namespace NinjaTrader.NinjaScript.Indicators
             consecutiveBullBars = bull ? prospectiveBullCount : 0;
             consecutiveBearBars = bear ? prospectiveBearCount : 0;
 
+            // Debug SignalCheck logging (similar to strategy)
+            if (DebugLogSignalCheck)
+            {
+                bool stateChanged = bull != dbgLastBull
+                    || bear != dbgLastBear
+                    || IsFirstTickOfBar != dbgLastFirstTick
+                    || (IsFirstTickOfBar && CurrentBar != dbgLastBar);
+                bool throttle = (DateTime.UtcNow - dbgLastPrintUtc).TotalMilliseconds >= 250;
+
+                if ((IsFirstTickOfBar || bull || bear || stateChanged) && throttle)
+                {
+                    Print($"[CBASTestingIndicator3] SignalCheck Bar={CurrentBar} Time={Time[0]} bull={bull} bear={bear} firstTick={IsFirstTickOfBar} emaColor={emaColorInt} netFlow={net:F2} realtimeState={currentRealtimeState} bullReason={debugBullReason} bearReason={debugBearReason}");
+                    dbgLastPrintUtc = DateTime.UtcNow;
+                }
+
+                dbgLastBull = bull;
+                dbgLastBear = bear;
+                dbgLastFirstTick = IsFirstTickOfBar;
+                dbgLastBar = CurrentBar;
+            }
+
             if (bull)
             {
                 double y1 = Low[0] - atr30[0] * 2.0;
@@ -1323,6 +1533,19 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             // Range detector updates
             UpdateRangeDetectorPlots();
+
+            // Ensure cached bar is flushed at bar close if logging is enabled
+            // This is a safety check to ensure bars are logged even if OnBarUpdate is called inconsistently
+            if (EnableLogging && logInitialized && hasCachedBar && cachedBarIndex >= 0 && cachedBarIndex < CurrentBar)
+            {
+                // If we've moved past the cached bar index, flush it
+                // This can happen if OnBarUpdate wasn't called for a bar transition
+                if (CurrentBar % 100 == 0 || CurrentBar < 10)
+                {
+                    Print($"[CBASTestingIndicator3] OnBarUpdate END: Flushing stale cached bar {cachedBarIndex} (CurrentBar={CurrentBar})");
+                }
+                FlushCachedBar();
+            }
 
         }
 
@@ -1670,6 +1893,12 @@ namespace NinjaTrader.NinjaScript.Indicators
         #region Logging
         private void InitLogger()
         {
+            // ========== BREAKPOINT #3 ==========
+            // INSTRUCTION: First line of InitLogger() - verify method is being called
+            // Check in Locals window:
+            // - EnableLogging (should be true)
+            // - logInitialized (should be false at start)
+            // PUT BREAKPOINT HERE
             if (logInitialized || !EnableLogging)
             {
                 LogDebug("InitLogger_Skipped", new Dictionary<string, string>
@@ -1695,17 +1924,140 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 string folder = string.IsNullOrWhiteSpace(LogFolder)
-                    ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
+                    ? Path.Combine(Globals.UserDataDir, "indicators_log")
                     : LogFolder;
+                
+                // Determine OS type once for use throughout the method
+                bool isMacOS = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
+                
+                // CRITICAL TEST: Write a test file immediately to verify path works
+                // This helps us isolate path issues from logging logic issues
+                try
+                {
+                    Print($"[CBASTestingIndicator3] InitLogger: Testing path write capability...");
+                    Print($"[CBASTestingIndicator3] InitLogger: Original LogFolder={LogFolder ?? "null"}");
+                    Print($"[CBASTestingIndicator3] InitLogger: Globals.UserDataDir={Globals.UserDataDir ?? "null"}");
+                    
+                    // Normalize path first
+                    string testFolder = folder;
+                    
+                    if (isMacOS)
+                    {
+                        testFolder = testFolder.Replace('\\', '/');
+                        if (testFolder.StartsWith("//Mac/Home/"))
+                            testFolder = testFolder.Replace("//Mac/Home/", "/Users/mm/");
+                        if (testFolder.StartsWith("C:/Users/"))
+                            testFolder = testFolder.Replace("C:/Users/", "/Users/");
+                        while (testFolder.Contains("//") && !testFolder.StartsWith("//"))
+                            testFolder = testFolder.Replace("//", "/");
+                    }
+                    
+                    Print($"[CBASTestingIndicator3] InitLogger: Normalized testFolder={testFolder}");
+                    
+                    // Try to create directory
+                    Directory.CreateDirectory(testFolder);
+                    Print($"[CBASTestingIndicator3] InitLogger: Directory.CreateDirectory succeeded for: {testFolder}");
+                    
+                    // Try to write a test file
+                    string testFilePath = isMacOS 
+                        ? testFolder + "/PATH_TEST_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt"
+                        : Path.Combine(testFolder, "PATH_TEST_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
+                    
+                    Print($"[CBASTestingIndicator3] InitLogger: Attempting to write test file: {testFilePath}");
+                    File.WriteAllText(testFilePath, $"Test file created at {DateTime.Now:yyyy-MM-dd HH:mm:ss}\nOriginal LogFolder: {LogFolder ?? "null"}\nGlobals.UserDataDir: {Globals.UserDataDir ?? "null"}\nNormalized folder: {testFolder}");
+                    Print($"[CBASTestingIndicator3] InitLogger: SUCCESS - Test file written to: {testFilePath}");
+                    
+                    // Verify file exists
+                    if (File.Exists(testFilePath))
+                    {
+                        Print($"[CBASTestingIndicator3] InitLogger: CONFIRMED - Test file exists and is readable");
+                    }
+                    else
+                    {
+                        Print($"[CBASTestingIndicator3] InitLogger: WARNING - Test file was written but File.Exists returns false!");
+                    }
+                }
+                catch (Exception testEx)
+                {
+                    Print($"[CBASTestingIndicator3] InitLogger: PATH TEST FAILED - {testEx.GetType().Name}: {testEx.Message}");
+                    Print($"[CBASTestingIndicator3] InitLogger: PATH TEST StackTrace: {testEx.StackTrace ?? "null"}");
+                    // Don't return here - continue to try the actual logging setup
+                }
 
+                // Normalize path separators for the current OS
+                // Convert Windows-style paths like \\Mac\Home\Documents\... to /Users/mm/Documents/...
+                // (isMacOS already declared above)
+                if (isMacOS)
+                {
+                    // First replace all backslashes with forward slashes
+                    folder = folder.Replace('\\', '/');
+                    
+                    // Handle Windows-style network paths: \\Mac\Home\Documents\... -> /Users/mm/Documents/...
+                    if (folder.StartsWith("//Mac/Home/"))
+                    {
+                        folder = folder.Replace("//Mac/Home/", "/Users/mm/");
+                    }
+                    // Handle C:\Users\... paths
+                    if (folder.StartsWith("C:/Users/"))
+                    {
+                        folder = folder.Replace("C:/Users/", "/Users/");
+                    }
+                    // Remove any double slashes (except at the beginning for absolute paths)
+                    while (folder.Contains("//") && !folder.StartsWith("//"))
+                    {
+                        folder = folder.Replace("//", "/");
+                    }
+                    
+                    // On macOS, don't use Path.GetFullPath as it may convert paths incorrectly
+                    // Use the normalized path directly
+                    Print($"[CBASTestingIndicator3] InitLogger: macOS detected, using normalized path: {folder}");
+                }
+                else
+                {
+                    // On Windows, use Path.GetFullPath to resolve relative paths
+                    try
+                    {
+                        folder = Path.GetFullPath(folder);
+                    }
+                    catch
+                    {
+                        Print($"[CBASTestingIndicator3] Path.GetFullPath failed, using path as-is: {folder}");
+                    }
+                }
+                
+                Print($"[CBASTestingIndicator3] InitLogger: Final folder path: {folder}");
+                // ========== BREAKPOINT #4 ==========
+                // INSTRUCTION: After path normalization - check the final folder path
+                // In Locals window, verify:
+                // - folder (should be correct macOS path like /Users/mm/Documents/NinjaTrader 8/indicators_log)
+                // - isMacOS (should be true on macOS)
+                // - LogFolder (original value)
+                // - Globals.UserDataDir (should not be null)
+                // PUT BREAKPOINT HERE
                 Directory.CreateDirectory(folder);
 
                 string fileName = BuildLogFileBase() + ".csv";
-                logPath = Path.Combine(folder, fileName);
+                if (isMacOS)
+                {
+                    // On macOS, use Path.Combine but don't call GetFullPath
+                    logPath = folder + "/" + fileName;
+                }
+                else
+                {
+                    logPath = Path.GetFullPath(Path.Combine(folder, fileName));
+                }
 
                 bool fileExists = File.Exists(logPath);
                 bool isEmpty = !fileExists || new FileInfo(logPath).Length == 0;
 
+                // ========== BREAKPOINT #5 ==========
+                // INSTRUCTION: Before creating StreamWriter - verify path is correct
+                // In Locals window, check:
+                // - logPath (full file path, should be valid)
+                // - fileExists (whether file already exists)
+                // - isEmpty (whether file is empty)
+                // Step over to create logWriter, then check if logWriter is not null
+                // PUT BREAKPOINT HERE
                 logWriter = new StreamWriter(logPath, append: true, encoding: Encoding.UTF8) { AutoFlush = true };
                 logInitialized = true;
 
@@ -1786,28 +2138,94 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 Print("[CBASTestingIndicator3] Logging to: " + logPath);
+                Print($"[CBASTestingIndicator3] InitLogger SUCCESS: logPath={logPath}, logInitialized={logInitialized}");
+                
+                // Write log path to a file in the Custom folder for easy access
+                try
+                {
+                    string pathInfoFile = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".", "CBASTestingIndicator3_LogPath.txt");
+                    File.WriteAllText(pathInfoFile, $"Log Path: {logPath}\nFolder: {folder}\nGlobals.UserDataDir: {Globals.UserDataDir ?? "null"}\nTimestamp: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                    Print($"[CBASTestingIndicator3] Log path written to: {pathInfoFile}");
+                }
+                catch (Exception pathEx)
+                {
+                    Print($"[CBASTestingIndicator3] Failed to write path info file: {pathEx.Message}");
+                }
             }
             catch (Exception ex)
             {
-                LogDebug("InitLogger_Error", new Dictionary<string, string>
+                // Always print errors, even if debug logger isn't initialized
+                Print($"[CBASTestingIndicator3] InitLogger ERROR: {ex.Message}");
+                Print($"[CBASTestingIndicator3] InitLogger StackTrace: {ex.StackTrace ?? "null"}");
+                
+                // Try to log to debug logger if available
+                if (debugLogInitialized)
                 {
-                    { "Error", ex.Message },
-                    { "StackTrace", ex.StackTrace ?? "null" }
-                });
-                Print("[CBASTestingIndicator3] Log init failed: " + ex.Message);
+                    LogDebug("InitLogger_Error", new Dictionary<string, string>
+                    {
+                        { "Error", ex.Message },
+                        { "StackTrace", ex.StackTrace ?? "null" }
+                    });
+                }
                 logInitialized = false;
             }
         }
 
         private void FlushCachedBar()
         {
+            // ========== BREAKPOINT #6 ==========
+            // INSTRUCTION: Check if this method is being called
+            // In Locals window, verify:
+            // - EnableLogging (should be true)
+            // - logInitialized (should be true)
+            // - hasCachedBar (should be true)
+            // - cachedBarIndex (bar index being flushed)
+            // - CurrentBar (current bar index)
+            // PUT BREAKPOINT HERE
+            LogDebug("FlushCachedBar_Called", new Dictionary<string, string>
+            {
+                { "EnableLogging", EnableLogging.ToString() },
+                { "logInitialized", logInitialized.ToString() },
+                { "hasCachedBar", hasCachedBar.ToString() },
+                { "LogSignalsOnly", LogSignalsOnly.ToString() },
+                { "cachedBarIndex", cachedBarIndex.ToString() },
+                { "CurrentBar", CurrentBar.ToString() }
+            });
+            
             if (!EnableLogging || !logInitialized || !hasCachedBar)
+            {
+                LogDebug("FlushCachedBar_Skipped", new Dictionary<string, string>
+                {
+                    { "EnableLogging", EnableLogging.ToString() },
+                    { "logInitialized", logInitialized.ToString() },
+                    { "hasCachedBar", hasCachedBar.ToString() }
+                });
                 return;
+            }
 
             // Log every bar if LogSignalsOnly is false, otherwise only log bars with signals
             bool includeRow = !LogSignalsOnly || cachedBullSignal || cachedBearSignal;
             if (!includeRow)
+            {
+                LogDebug("FlushCachedBar_Skipped_NoSignals", new Dictionary<string, string>
+                {
+                    { "LogSignalsOnly", LogSignalsOnly.ToString() },
+                    { "cachedBullSignal", cachedBullSignal.ToString() },
+                    { "cachedBearSignal", cachedBearSignal.ToString() }
+                });
                 return;
+            }
+            
+            LogDebug("FlushCachedBar_Logging", new Dictionary<string, string>
+            {
+                { "cachedBarIndex", cachedBarIndex.ToString() }
+            });
+
+            // Diagnostic: print when flushing cached bar to confirm it's being called
+            if (CurrentBar < 10 || CurrentBar % 100 == 0)
+            {
+                Print($"[CBASTestingIndicator3] FlushCachedBar: Flushing bar {cachedBarIndex}, CurrentBar={CurrentBar}, logInitialized={logInitialized}, LogSignalsOnly={LogSignalsOnly}, cachedBullSignal={cachedBullSignal}, cachedBearSignal={cachedBearSignal}");
+            }
 
             int barsAgo = CurrentBar - cachedBarIndex;
             if (barsAgo < 0)
@@ -1873,13 +2291,64 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 string folder = string.IsNullOrWhiteSpace(LogFolder)
-                    ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
+                    ? Path.Combine(Globals.UserDataDir, "indicators_log")
                     : LogFolder;
 
+                // Normalize path separators for the current OS
+                // Convert Windows-style paths like \\Mac\Home\Documents\... to /Users/mm/Documents/...
+                bool isMacOS = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
+                
+                if (isMacOS)
+                {
+                    // First replace all backslashes with forward slashes
+                    folder = folder.Replace('\\', '/');
+                    
+                    // Handle Windows-style network paths: \\Mac\Home\Documents\... -> /Users/mm/Documents/...
+                    if (folder.StartsWith("//Mac/Home/"))
+                    {
+                        folder = folder.Replace("//Mac/Home/", "/Users/mm/");
+                    }
+                    // Handle C:\Users\... paths
+                    if (folder.StartsWith("C:/Users/"))
+                    {
+                        folder = folder.Replace("C:/Users/", "/Users/");
+                    }
+                    // Remove any double slashes (except at the beginning for absolute paths)
+                    while (folder.Contains("//") && !folder.StartsWith("//"))
+                    {
+                        folder = folder.Replace("//", "/");
+                    }
+                    
+                    // On macOS, don't use Path.GetFullPath as it may convert paths incorrectly
+                    // Use the normalized path directly
+                    Print($"[CBASTestingIndicator3] InitSignalDrawLogger: macOS detected, using normalized path: {folder}");
+                }
+                else
+                {
+                    // On Windows, use Path.GetFullPath to resolve relative paths
+                    try
+                    {
+                        folder = Path.GetFullPath(folder);
+                    }
+                    catch
+                    {
+                        Print($"[CBASTestingIndicator3] Path.GetFullPath failed, using path as-is: {folder}");
+                    }
+                }
+                
+                Print($"[CBASTestingIndicator3] InitSignalDrawLogger: Final folder path: {folder}");
                 Directory.CreateDirectory(folder);
 
                 string fileName = BuildLogFileBase() + "_signals.csv";
-                signalDrawPath = Path.Combine(folder, fileName);
+                if (isMacOS)
+                {
+                    // On macOS, use Path.Combine but don't call GetFullPath
+                    signalDrawPath = folder + "/" + fileName;
+                }
+                else
+                {
+                    signalDrawPath = Path.GetFullPath(Path.Combine(folder, fileName));
+                }
 
                 bool fileExists = File.Exists(signalDrawPath);
                 bool isEmpty = !fileExists || new FileInfo(signalDrawPath).Length == 0;
@@ -1906,15 +2375,23 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 Print($"[CBASTestingIndicator3] Signal draw logging to: {signalDrawPath}");
+                Print($"[CBASTestingIndicator3] InitSignalDrawLogger SUCCESS: signalDrawPath={signalDrawPath}, signalDrawInitialized={signalDrawInitialized}");
             }
             catch (Exception ex)
             {
-                LogDebug("InitSignalDrawLogger_Error", new Dictionary<string, string>
+                // Always print errors, even if debug logger isn't initialized
+                Print($"[CBASTestingIndicator3] InitSignalDrawLogger ERROR: {ex.Message}");
+                Print($"[CBASTestingIndicator3] InitSignalDrawLogger StackTrace: {ex.StackTrace ?? "null"}");
+                
+                // Try to log to debug logger if available
+                if (debugLogInitialized)
                 {
-                    { "Error", ex.Message },
-                    { "StackTrace", ex.StackTrace ?? "null" }
-                });
-                Print($"[CBASTestingIndicator3] Signal draw log init failed: {ex.Message}");
+                    LogDebug("InitSignalDrawLogger_Error", new Dictionary<string, string>
+                    {
+                        { "Error", ex.Message },
+                        { "StackTrace", ex.StackTrace ?? "null" }
+                    });
+                }
                 signalDrawInitialized = false;
             }
         }
@@ -1927,14 +2404,65 @@ namespace NinjaTrader.NinjaScript.Indicators
             try
             {
                 string folder = string.IsNullOrWhiteSpace(LogFolder)
-                    ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
+                    ? Path.Combine(Globals.UserDataDir, "indicators_log")
                     : LogFolder;
 
-                Print($"[CBASTestingIndicator3] InitDebugLogger: Creating folder: {folder}");
+                // Normalize path separators for the current OS
+                // Convert Windows-style paths like \\Mac\Home\Documents\... to /Users/mm/Documents/...
+                bool isMacOS = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
+                
+                if (isMacOS)
+                {
+                    // First replace all backslashes with forward slashes
+                    folder = folder.Replace('\\', '/');
+                    
+                    // Handle Windows-style network paths: \\Mac\Home\Documents\... -> /Users/mm/Documents/...
+                    if (folder.StartsWith("//Mac/Home/"))
+                    {
+                        folder = folder.Replace("//Mac/Home/", "/Users/mm/");
+                    }
+                    // Handle C:\Users\... paths
+                    if (folder.StartsWith("C:/Users/"))
+                    {
+                        folder = folder.Replace("C:/Users/", "/Users/");
+                    }
+                    // Remove any double slashes (except at the beginning for absolute paths)
+                    while (folder.Contains("//") && !folder.StartsWith("//"))
+                    {
+                        folder = folder.Replace("//", "/");
+                    }
+                    
+                    // On macOS, don't use Path.GetFullPath as it may convert paths incorrectly
+                    // Use the normalized path directly
+                    Print($"[CBASTestingIndicator3] InitDebugLogger: macOS detected, using normalized path: {folder}");
+                }
+                else
+                {
+                    // On Windows, use Path.GetFullPath to resolve relative paths
+                    try
+                    {
+                        folder = Path.GetFullPath(folder);
+                    }
+                    catch
+                    {
+                        Print($"[CBASTestingIndicator3] Path.GetFullPath failed, using path as-is: {folder}");
+                    }
+                }
+                
+                Print($"[CBASTestingIndicator3] InitDebugLogger: Final folder path: {folder}");
                 Directory.CreateDirectory(folder);
 
                 string debugFileName = $"CBASTestingIndicator3_DEBUG_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.csv";
-                string debugLogPath = Path.Combine(folder, debugFileName);
+                string debugLogPath;
+                if (isMacOS)
+                {
+                    // On macOS, use Path.Combine but don't call GetFullPath
+                    debugLogPath = folder + "/" + debugFileName;
+                }
+                else
+                {
+                    debugLogPath = Path.GetFullPath(Path.Combine(folder, debugFileName));
+                }
 
                 Print($"[CBASTestingIndicator3] InitDebugLogger: Creating debug log: {debugLogPath}");
 
@@ -2170,7 +2698,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 //(EnableLogging ? "1" : "0"),
                 //(LogSignalsOnly ? "1" : "0"),
                 //HeartbeatEveryNBars.ToString()
-                //CsvEscape(string.IsNullOrEmpty(LogFolder) ? Path.Combine(Globals.UserDataDir, "Indicator_logs") : LogFolder)
+                //CsvEscape(string.IsNullOrEmpty(LogFolder) ? Path.Combine(Globals.UserDataDir, "indicators_log") : LogFolder)
             );
 
             if (ExtendedLogging)
@@ -2218,17 +2746,40 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private void SafeWriteLine(string line)
         {
-            if (!logInitialized || logWriter == null) return;
+            // ========== BREAKPOINT #7 ==========
+            // INSTRUCTION: Check if data is being written
+            // In Locals window, verify:
+            // - line (the CSV line being written)
+            // - logInitialized (should be true)
+            // - logWriter (should not be null)
+            // - CurrentBar (current bar index)
+            // Step over to see if it actually writes or returns early
+            // PUT BREAKPOINT HERE
+            if (!logInitialized || logWriter == null)
+            {
+                // Print warning periodically to detect if logging stops unexpectedly
+                if (CurrentBar < 10 || CurrentBar % 100 == 0)
+                {
+                    Print($"[CBASTestingIndicator3] SafeWriteLine SKIPPED: logInitialized={logInitialized}, logWriter={(logWriter == null ? "null" : "not null")}, EnableLogging={EnableLogging}");
+                }
+                return;
+            }
             try
             {
                 lock (logLock)
                 {
                     logWriter.WriteLine(line);
+                    // Diagnostic: print first few writes and periodically to confirm logging is working
+                    if (CurrentBar < 10 || CurrentBar % 100 == 0)
+                    {
+                        Print($"[CBASTestingIndicator3] SafeWriteLine: Wrote line for bar {CurrentBar}, logInitialized={logInitialized}, logPath={logPath ?? "null"}");
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Print($"[CBASTestingIndicator3] Log write failed: {ex.Message}");
+                Print($"[CBASTestingIndicator3] Log write StackTrace: {ex.StackTrace ?? "null"}");
             }
         }
 
@@ -2473,6 +3024,9 @@ namespace NinjaTrader.NinjaScript.Indicators
     }
 }
 
+
+
+
 #region NinjaScript generated code. Neither change nor remove.
 
 namespace NinjaTrader.NinjaScript.Indicators
@@ -2480,18 +3034,18 @@ namespace NinjaTrader.NinjaScript.Indicators
 	public partial class Indicator : NinjaTrader.Gui.NinjaScript.IndicatorRenderBase
 	{
 		private CBASTestingIndicator3[] cacheCBASTestingIndicator3;
-		public CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
+		public CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool debugLogSignalCheck, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
 		{
-			return CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
+			return CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, debugLogSignalCheck, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
 		}
 
-		public CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input, bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
+		public CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input, bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool debugLogSignalCheck, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
 		{
 			if (cacheCBASTestingIndicator3 != null)
 				for (int idx = 0; idx < cacheCBASTestingIndicator3.Length; idx++)
-					if (cacheCBASTestingIndicator3[idx] != null && cacheCBASTestingIndicator3[idx].ShowExitLabels == showExitLabels && cacheCBASTestingIndicator3[idx].ExitLabelAtrOffset == exitLabelAtrOffset && cacheCBASTestingIndicator3[idx].UseRegimeStability == useRegimeStability && cacheCBASTestingIndicator3[idx].RegimeStabilityBars == regimeStabilityBars && cacheCBASTestingIndicator3[idx].UseScoringFilter == useScoringFilter && cacheCBASTestingIndicator3[idx].ScoreThreshold == scoreThreshold && cacheCBASTestingIndicator3[idx].UseSmoothedVpm == useSmoothedVpm && cacheCBASTestingIndicator3[idx].VpmEmaSpan == vpmEmaSpan && cacheCBASTestingIndicator3[idx].MinVpm == minVpm && cacheCBASTestingIndicator3[idx].MinAdx == minAdx && cacheCBASTestingIndicator3[idx].MomentumLookback == momentumLookback && cacheCBASTestingIndicator3[idx].ExtendedLogging == extendedLogging && cacheCBASTestingIndicator3[idx].ComputeExitSignals == computeExitSignals && cacheCBASTestingIndicator3[idx].ExitProfitAtrMult == exitProfitAtrMult && cacheCBASTestingIndicator3[idx].InstanceId == instanceId && cacheCBASTestingIndicator3[idx].Sensitivity == sensitivity && cacheCBASTestingIndicator3[idx].EmaEnergy == emaEnergy && cacheCBASTestingIndicator3[idx].KeltnerLength == keltnerLength && cacheCBASTestingIndicator3[idx].AtrLength == atrLength && cacheCBASTestingIndicator3[idx].RangeMinLength == rangeMinLength && cacheCBASTestingIndicator3[idx].RangeWidthMult == rangeWidthMult && cacheCBASTestingIndicator3[idx].RangeAtrLen == rangeAtrLen && cacheCBASTestingIndicator3[idx].EnableLogging == enableLogging && cacheCBASTestingIndicator3[idx].LogSignalsOnly == logSignalsOnly && cacheCBASTestingIndicator3[idx].HeartbeatEveryNBars == heartbeatEveryNBars && cacheCBASTestingIndicator3[idx].LogFolder == logFolder && cacheCBASTestingIndicator3[idx].ScaleOscillatorToATR == scaleOscillatorToATR && cacheCBASTestingIndicator3[idx].OscAtrMult == oscAtrMult && cacheCBASTestingIndicator3[idx].LogDrawnSignals == logDrawnSignals && cacheCBASTestingIndicator3[idx].ColorBarsByTrend == colorBarsByTrend && cacheCBASTestingIndicator3[idx].RealtimeBullNetflowMin == realtimeBullNetflowMin && cacheCBASTestingIndicator3[idx].RealtimeBullObjectionMax == realtimeBullObjectionMax && cacheCBASTestingIndicator3[idx].RealtimeBullEmaColorMin == realtimeBullEmaColorMin && cacheCBASTestingIndicator3[idx].RealtimeBullUseAttract == realtimeBullUseAttract && cacheCBASTestingIndicator3[idx].RealtimeBullAttractMin == realtimeBullAttractMin && cacheCBASTestingIndicator3[idx].RealtimeBullScoreMin == realtimeBullScoreMin && cacheCBASTestingIndicator3[idx].RealtimeBearNetflowMax == realtimeBearNetflowMax && cacheCBASTestingIndicator3[idx].RealtimeBearObjectionMin == realtimeBearObjectionMin && cacheCBASTestingIndicator3[idx].RealtimeBearEmaColorMax == realtimeBearEmaColorMax && cacheCBASTestingIndicator3[idx].RealtimeBearUsePriceToBand == realtimeBearUsePriceToBand && cacheCBASTestingIndicator3[idx].RealtimeBearPriceToBandMax == realtimeBearPriceToBandMax && cacheCBASTestingIndicator3[idx].RealtimeBearScoreMin == realtimeBearScoreMin && cacheCBASTestingIndicator3[idx].RealtimeFlatTolerance == realtimeFlatTolerance && cacheCBASTestingIndicator3[idx].ShowRealtimeStatePlot == showRealtimeStatePlot && cacheCBASTestingIndicator3[idx].PlotRealtimeSignals == plotRealtimeSignals && cacheCBASTestingIndicator3[idx].FlipConfirmationBars == flipConfirmationBars && cacheCBASTestingIndicator3[idx].EqualsInput(input))
+					if (cacheCBASTestingIndicator3[idx] != null && cacheCBASTestingIndicator3[idx].ShowExitLabels == showExitLabels && cacheCBASTestingIndicator3[idx].ExitLabelAtrOffset == exitLabelAtrOffset && cacheCBASTestingIndicator3[idx].UseRegimeStability == useRegimeStability && cacheCBASTestingIndicator3[idx].RegimeStabilityBars == regimeStabilityBars && cacheCBASTestingIndicator3[idx].UseScoringFilter == useScoringFilter && cacheCBASTestingIndicator3[idx].ScoreThreshold == scoreThreshold && cacheCBASTestingIndicator3[idx].UseSmoothedVpm == useSmoothedVpm && cacheCBASTestingIndicator3[idx].VpmEmaSpan == vpmEmaSpan && cacheCBASTestingIndicator3[idx].MinVpm == minVpm && cacheCBASTestingIndicator3[idx].MinAdx == minAdx && cacheCBASTestingIndicator3[idx].MomentumLookback == momentumLookback && cacheCBASTestingIndicator3[idx].ExtendedLogging == extendedLogging && cacheCBASTestingIndicator3[idx].ComputeExitSignals == computeExitSignals && cacheCBASTestingIndicator3[idx].ExitProfitAtrMult == exitProfitAtrMult && cacheCBASTestingIndicator3[idx].InstanceId == instanceId && cacheCBASTestingIndicator3[idx].Sensitivity == sensitivity && cacheCBASTestingIndicator3[idx].EmaEnergy == emaEnergy && cacheCBASTestingIndicator3[idx].KeltnerLength == keltnerLength && cacheCBASTestingIndicator3[idx].AtrLength == atrLength && cacheCBASTestingIndicator3[idx].RangeMinLength == rangeMinLength && cacheCBASTestingIndicator3[idx].RangeWidthMult == rangeWidthMult && cacheCBASTestingIndicator3[idx].RangeAtrLen == rangeAtrLen && cacheCBASTestingIndicator3[idx].EnableLogging == enableLogging && cacheCBASTestingIndicator3[idx].LogSignalsOnly == logSignalsOnly && cacheCBASTestingIndicator3[idx].HeartbeatEveryNBars == heartbeatEveryNBars && cacheCBASTestingIndicator3[idx].LogFolder == logFolder && cacheCBASTestingIndicator3[idx].ScaleOscillatorToATR == scaleOscillatorToATR && cacheCBASTestingIndicator3[idx].OscAtrMult == oscAtrMult && cacheCBASTestingIndicator3[idx].LogDrawnSignals == logDrawnSignals && cacheCBASTestingIndicator3[idx].DebugLogSignalCheck == debugLogSignalCheck && cacheCBASTestingIndicator3[idx].ColorBarsByTrend == colorBarsByTrend && cacheCBASTestingIndicator3[idx].RealtimeBullNetflowMin == realtimeBullNetflowMin && cacheCBASTestingIndicator3[idx].RealtimeBullObjectionMax == realtimeBullObjectionMax && cacheCBASTestingIndicator3[idx].RealtimeBullEmaColorMin == realtimeBullEmaColorMin && cacheCBASTestingIndicator3[idx].RealtimeBullUseAttract == realtimeBullUseAttract && cacheCBASTestingIndicator3[idx].RealtimeBullAttractMin == realtimeBullAttractMin && cacheCBASTestingIndicator3[idx].RealtimeBullScoreMin == realtimeBullScoreMin && cacheCBASTestingIndicator3[idx].RealtimeBearNetflowMax == realtimeBearNetflowMax && cacheCBASTestingIndicator3[idx].RealtimeBearObjectionMin == realtimeBearObjectionMin && cacheCBASTestingIndicator3[idx].RealtimeBearEmaColorMax == realtimeBearEmaColorMax && cacheCBASTestingIndicator3[idx].RealtimeBearUsePriceToBand == realtimeBearUsePriceToBand && cacheCBASTestingIndicator3[idx].RealtimeBearPriceToBandMax == realtimeBearPriceToBandMax && cacheCBASTestingIndicator3[idx].RealtimeBearScoreMin == realtimeBearScoreMin && cacheCBASTestingIndicator3[idx].RealtimeFlatTolerance == realtimeFlatTolerance && cacheCBASTestingIndicator3[idx].ShowRealtimeStatePlot == showRealtimeStatePlot && cacheCBASTestingIndicator3[idx].PlotRealtimeSignals == plotRealtimeSignals && cacheCBASTestingIndicator3[idx].FlipConfirmationBars == flipConfirmationBars && cacheCBASTestingIndicator3[idx].EqualsInput(input))
 						return cacheCBASTestingIndicator3[idx];
-			return CacheIndicator<CBASTestingIndicator3>(new CBASTestingIndicator3(){ ShowExitLabels = showExitLabels, ExitLabelAtrOffset = exitLabelAtrOffset, UseRegimeStability = useRegimeStability, RegimeStabilityBars = regimeStabilityBars, UseScoringFilter = useScoringFilter, ScoreThreshold = scoreThreshold, UseSmoothedVpm = useSmoothedVpm, VpmEmaSpan = vpmEmaSpan, MinVpm = minVpm, MinAdx = minAdx, MomentumLookback = momentumLookback, ExtendedLogging = extendedLogging, ComputeExitSignals = computeExitSignals, ExitProfitAtrMult = exitProfitAtrMult, InstanceId = instanceId, Sensitivity = sensitivity, EmaEnergy = emaEnergy, KeltnerLength = keltnerLength, AtrLength = atrLength, RangeMinLength = rangeMinLength, RangeWidthMult = rangeWidthMult, RangeAtrLen = rangeAtrLen, EnableLogging = enableLogging, LogSignalsOnly = logSignalsOnly, HeartbeatEveryNBars = heartbeatEveryNBars, LogFolder = logFolder, ScaleOscillatorToATR = scaleOscillatorToATR, OscAtrMult = oscAtrMult, LogDrawnSignals = logDrawnSignals, ColorBarsByTrend = colorBarsByTrend, RealtimeBullNetflowMin = realtimeBullNetflowMin, RealtimeBullObjectionMax = realtimeBullObjectionMax, RealtimeBullEmaColorMin = realtimeBullEmaColorMin, RealtimeBullUseAttract = realtimeBullUseAttract, RealtimeBullAttractMin = realtimeBullAttractMin, RealtimeBullScoreMin = realtimeBullScoreMin, RealtimeBearNetflowMax = realtimeBearNetflowMax, RealtimeBearObjectionMin = realtimeBearObjectionMin, RealtimeBearEmaColorMax = realtimeBearEmaColorMax, RealtimeBearUsePriceToBand = realtimeBearUsePriceToBand, RealtimeBearPriceToBandMax = realtimeBearPriceToBandMax, RealtimeBearScoreMin = realtimeBearScoreMin, RealtimeFlatTolerance = realtimeFlatTolerance, ShowRealtimeStatePlot = showRealtimeStatePlot, PlotRealtimeSignals = plotRealtimeSignals, FlipConfirmationBars = flipConfirmationBars }, input, ref cacheCBASTestingIndicator3);
+			return CacheIndicator<CBASTestingIndicator3>(new CBASTestingIndicator3(){ ShowExitLabels = showExitLabels, ExitLabelAtrOffset = exitLabelAtrOffset, UseRegimeStability = useRegimeStability, RegimeStabilityBars = regimeStabilityBars, UseScoringFilter = useScoringFilter, ScoreThreshold = scoreThreshold, UseSmoothedVpm = useSmoothedVpm, VpmEmaSpan = vpmEmaSpan, MinVpm = minVpm, MinAdx = minAdx, MomentumLookback = momentumLookback, ExtendedLogging = extendedLogging, ComputeExitSignals = computeExitSignals, ExitProfitAtrMult = exitProfitAtrMult, InstanceId = instanceId, Sensitivity = sensitivity, EmaEnergy = emaEnergy, KeltnerLength = keltnerLength, AtrLength = atrLength, RangeMinLength = rangeMinLength, RangeWidthMult = rangeWidthMult, RangeAtrLen = rangeAtrLen, EnableLogging = enableLogging, LogSignalsOnly = logSignalsOnly, HeartbeatEveryNBars = heartbeatEveryNBars, LogFolder = logFolder, ScaleOscillatorToATR = scaleOscillatorToATR, OscAtrMult = oscAtrMult, LogDrawnSignals = logDrawnSignals, DebugLogSignalCheck = debugLogSignalCheck, ColorBarsByTrend = colorBarsByTrend, RealtimeBullNetflowMin = realtimeBullNetflowMin, RealtimeBullObjectionMax = realtimeBullObjectionMax, RealtimeBullEmaColorMin = realtimeBullEmaColorMin, RealtimeBullUseAttract = realtimeBullUseAttract, RealtimeBullAttractMin = realtimeBullAttractMin, RealtimeBullScoreMin = realtimeBullScoreMin, RealtimeBearNetflowMax = realtimeBearNetflowMax, RealtimeBearObjectionMin = realtimeBearObjectionMin, RealtimeBearEmaColorMax = realtimeBearEmaColorMax, RealtimeBearUsePriceToBand = realtimeBearUsePriceToBand, RealtimeBearPriceToBandMax = realtimeBearPriceToBandMax, RealtimeBearScoreMin = realtimeBearScoreMin, RealtimeFlatTolerance = realtimeFlatTolerance, ShowRealtimeStatePlot = showRealtimeStatePlot, PlotRealtimeSignals = plotRealtimeSignals, FlipConfirmationBars = flipConfirmationBars }, input, ref cacheCBASTestingIndicator3);
 		}
 	}
 }
@@ -2500,14 +3054,14 @@ namespace NinjaTrader.NinjaScript.MarketAnalyzerColumns
 {
 	public partial class MarketAnalyzerColumn : MarketAnalyzerColumnBase
 	{
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool debugLogSignalCheck, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
 		{
-			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
+			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, debugLogSignalCheck, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
 		}
 
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool debugLogSignalCheck, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
 		{
-			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
+			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, debugLogSignalCheck, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
 		}
 	}
 }
@@ -2516,14 +3070,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 {
 	public partial class Strategy : NinjaTrader.Gui.NinjaScript.StrategyRenderBase
 	{
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool debugLogSignalCheck, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
 		{
-			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
+			return indicator.CBASTestingIndicator3(Input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, debugLogSignalCheck, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
 		}
 
-		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
+		public Indicators.CBASTestingIndicator3 CBASTestingIndicator3(ISeries<double> input , bool showExitLabels, double exitLabelAtrOffset, bool useRegimeStability, int regimeStabilityBars, bool useScoringFilter, int scoreThreshold, bool useSmoothedVpm, int vpmEmaSpan, double minVpm, int minAdx, int momentumLookback, bool extendedLogging, bool computeExitSignals, double exitProfitAtrMult, string instanceId, double sensitivity, bool emaEnergy, int keltnerLength, int atrLength, int rangeMinLength, double rangeWidthMult, int rangeAtrLen, bool enableLogging, bool logSignalsOnly, int heartbeatEveryNBars, string logFolder, bool scaleOscillatorToATR, double oscAtrMult, bool logDrawnSignals, bool debugLogSignalCheck, bool colorBarsByTrend, double realtimeBullNetflowMin, double realtimeBullObjectionMax, double realtimeBullEmaColorMin, bool realtimeBullUseAttract, double realtimeBullAttractMin, double realtimeBullScoreMin, double realtimeBearNetflowMax, double realtimeBearObjectionMin, double realtimeBearEmaColorMax, bool realtimeBearUsePriceToBand, double realtimeBearPriceToBandMax, double realtimeBearScoreMin, double realtimeFlatTolerance, bool showRealtimeStatePlot, bool plotRealtimeSignals, int flipConfirmationBars)
 		{
-			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
+			return indicator.CBASTestingIndicator3(input, showExitLabels, exitLabelAtrOffset, useRegimeStability, regimeStabilityBars, useScoringFilter, scoreThreshold, useSmoothedVpm, vpmEmaSpan, minVpm, minAdx, momentumLookback, extendedLogging, computeExitSignals, exitProfitAtrMult, instanceId, sensitivity, emaEnergy, keltnerLength, atrLength, rangeMinLength, rangeWidthMult, rangeAtrLen, enableLogging, logSignalsOnly, heartbeatEveryNBars, logFolder, scaleOscillatorToATR, oscAtrMult, logDrawnSignals, debugLogSignalCheck, colorBarsByTrend, realtimeBullNetflowMin, realtimeBullObjectionMax, realtimeBullEmaColorMin, realtimeBullUseAttract, realtimeBullAttractMin, realtimeBullScoreMin, realtimeBearNetflowMax, realtimeBearObjectionMin, realtimeBearEmaColorMax, realtimeBearUsePriceToBand, realtimeBearPriceToBandMax, realtimeBearScoreMin, realtimeFlatTolerance, showRealtimeStatePlot, plotRealtimeSignals, flipConfirmationBars);
 		}
 	}
 }

@@ -655,9 +655,8 @@ namespace NinjaTrader.NinjaScript.AddOns
 
             var updated = Math.Max(0, current + deltaSeconds);
             atrailText.Text = $"{updated}s";
-            // TODO: Hook to your function/command here if desired, e.g.:
-            // var id = instanceCombo.SelectedItem as string;
-            // if (!string.IsNullOrWhiteSpace(id)) CBASTerminalBus.SendCommand(id, $"set ATrailSeconds {updated}");
+            var id = instanceCombo.SelectedItem as string;
+            if (!string.IsNullOrWhiteSpace(id)) CBASTerminalBus.SendCommand(id, $"set ATrailSeconds {updated}");
         }
     }
 }

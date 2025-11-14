@@ -87,6 +87,17 @@ namespace NinjaTrader.NinjaScript.Indicators
         [Display(Name = "Log Folder", Order = 4, GroupName = "Logging")]
 		public string LogFolder { get; set; } = null; // null -> use Globals.UserDataDir\Indicator_logs
 
+        // Scoring filter properties
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "Min VPM", Order = 5, GroupName = "Logging")]
+        public double MinVpm { get; set; } = 300;
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "Min ADX", Order = 6, GroupName = "Logging")]
+        public int MinAdx { get; set; } = 30;
+
         #endregion
         #region privates
 
@@ -110,6 +121,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         private ATR rangeATR;
         private SMA rangeSMA;
         private Series<int> rangeCountSeries;
+
+        private ADX adx14;
+        private SMA volSma;
 
         private int os = 0;
         private double rangeMax = double.NaN;
@@ -194,6 +208,11 @@ protected override void OnStateChange()
                 InitLogger();
 
                 instrumentName = Instrument?.FullName ?? "N/A";
+                
+                // Initialize indicators for scoring
+                adx14 = ADX(14);
+                volSma = SMA(Volume, 50);
+                
                 // Register this instance
                 //CBASTerminalRegistry.Register(InstanceId, this);
 
