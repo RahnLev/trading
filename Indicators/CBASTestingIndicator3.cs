@@ -326,6 +326,11 @@ namespace NinjaTrader.NinjaScript.Indicators
         private readonly object signalDrawLock = new object();
         private bool signalDrawInitialized = false;
         private string signalDrawPath = null;
+        
+        // Debug logging
+        private StreamWriter debugLogWriter;
+        private bool debugLogInitialized = false;
+        private readonly object debugLogLock = new object();
 
         // Logging gate for "only on price change"
         private int cachedBarIndex = -1;
@@ -490,6 +495,11 @@ namespace NinjaTrader.NinjaScript.Indicators
                         logWriter?.Dispose();
                         logWriter = null;
                         logInitialized = false;
+                        
+                        debugLogWriter?.Flush();
+                        debugLogWriter?.Dispose();
+                        debugLogWriter = null;
+                        debugLogInitialized = false;
                     }
                     lock (signalDrawLock)
                     {
@@ -505,6 +515,13 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         protected override void OnBarUpdate()
         {
+            // Initialize debug logging first (always enabled for troubleshooting)
+            if (!debugLogInitialized)
+            {
+                Print($"[CBASTestingIndicator3] OnBarUpdate: Initializing debug logger. CurrentBar={CurrentBar}, State={State}");
+                InitDebugLogger();
+            }
+
             // Initialize logging as early as possible (before any early returns)
             if (EnableLogging && !logInitialized)
             {
@@ -1654,7 +1671,20 @@ namespace NinjaTrader.NinjaScript.Indicators
         private void InitLogger()
         {
             if (logInitialized || !EnableLogging)
+            {
+                LogDebug("InitLogger_Skipped", new Dictionary<string, string>
+                {
+                    { "logInitialized", logInitialized.ToString() },
+                    { "EnableLogging", EnableLogging.ToString() }
+                });
                 return;
+            }
+            
+            LogDebug("InitLogger_Starting", new Dictionary<string, string>
+            {
+                { "EnableLogging", EnableLogging.ToString() },
+                { "LogFolder", LogFolder ?? "null" }
+            });
 
             try
             {
@@ -1678,6 +1708,13 @@ namespace NinjaTrader.NinjaScript.Indicators
 
                 logWriter = new StreamWriter(logPath, append: true, encoding: Encoding.UTF8) { AutoFlush = true };
                 logInitialized = true;
+
+                LogDebug("InitLogger_Success", new Dictionary<string, string>
+                {
+                    { "logPath", logPath },
+                    { "fileExists", fileExists.ToString() },
+                    { "isEmpty", isEmpty.ToString() }
+                });
 
                 if (isEmpty)
                 {
@@ -1752,6 +1789,11 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
             catch (Exception ex)
             {
+                LogDebug("InitLogger_Error", new Dictionary<string, string>
+                {
+                    { "Error", ex.Message },
+                    { "StackTrace", ex.StackTrace ?? "null" }
+                });
                 Print("[CBASTestingIndicator3] Log init failed: " + ex.Message);
                 logInitialized = false;
             }
@@ -1765,9 +1807,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             // Log every bar if LogSignalsOnly is false, otherwise only log bars with signals
             bool includeRow = !LogSignalsOnly || cachedBullSignal || cachedBearSignal;
             if (!includeRow)
-            {
                 return;
-            }
 
             int barsAgo = CurrentBar - cachedBarIndex;
             if (barsAgo < 0)
@@ -1809,7 +1849,20 @@ namespace NinjaTrader.NinjaScript.Indicators
         private void InitSignalDrawLogger()
         {
             if (signalDrawInitialized || !LogDrawnSignals)
+            {
+                LogDebug("InitSignalDrawLogger_Skipped", new Dictionary<string, string>
+                {
+                    { "signalDrawInitialized", signalDrawInitialized.ToString() },
+                    { "LogDrawnSignals", LogDrawnSignals.ToString() }
+                });
                 return;
+            }
+            
+            LogDebug("InitSignalDrawLogger_Starting", new Dictionary<string, string>
+            {
+                { "LogDrawnSignals", LogDrawnSignals.ToString() },
+                { "LogFolder", LogFolder ?? "null" }
+            });
 
             try
             {
@@ -1836,6 +1889,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                     AutoFlush = true
                 };
                 signalDrawInitialized = true;
+                
+                LogDebug("InitSignalDrawLogger_Success", new Dictionary<string, string>
+                {
+                    { "signalDrawPath", signalDrawPath },
+                    { "fileExists", fileExists.ToString() },
+                    { "isEmpty", isEmpty.ToString() }
+                });
 
                 if (isEmpty)
                 {
@@ -1849,8 +1909,107 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
             catch (Exception ex)
             {
+                LogDebug("InitSignalDrawLogger_Error", new Dictionary<string, string>
+                {
+                    { "Error", ex.Message },
+                    { "StackTrace", ex.StackTrace ?? "null" }
+                });
                 Print($"[CBASTestingIndicator3] Signal draw log init failed: {ex.Message}");
                 signalDrawInitialized = false;
+            }
+        }
+        
+        private void InitDebugLogger()
+        {
+            if (debugLogInitialized)
+                return;
+
+            try
+            {
+                string folder = string.IsNullOrWhiteSpace(LogFolder)
+                    ? Path.Combine(Globals.UserDataDir, "Indicator_logs")
+                    : LogFolder;
+
+                Print($"[CBASTestingIndicator3] InitDebugLogger: Creating folder: {folder}");
+                Directory.CreateDirectory(folder);
+
+                string debugFileName = $"CBASTestingIndicator3_DEBUG_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.csv";
+                string debugLogPath = Path.Combine(folder, debugFileName);
+
+                Print($"[CBASTestingIndicator3] InitDebugLogger: Creating debug log: {debugLogPath}");
+
+                debugLogWriter = new StreamWriter(debugLogPath, append: false, encoding: Encoding.UTF8)
+                {
+                    AutoFlush = true
+                };
+                debugLogInitialized = true;
+
+                // Write header
+                debugLogWriter.WriteLine("timestamp,event,CurrentBar,EnableLogging,LogDrawnSignals,LogFolder,logInitialized,signalDrawInitialized,State,Instrument,AdditionalInfo");
+                
+                // Log initial state
+                LogDebug("InitDebugLogger_Success", new Dictionary<string, string>
+                {
+                    { "debugLogPath", debugLogPath },
+                    { "LogFolder", LogFolder ?? "null" },
+                    { "EnableLogging", EnableLogging.ToString() },
+                    { "LogDrawnSignals", LogDrawnSignals.ToString() }
+                });
+                
+                Print($"[CBASTestingIndicator3] Debug logger initialized successfully");
+            }
+            catch (Exception ex)
+            {
+                Print($"[CBASTestingIndicator3] Debug log init failed: {ex.Message}");
+                Print($"[CBASTestingIndicator3] StackTrace: {ex.StackTrace}");
+                debugLogInitialized = false;
+            }
+        }
+
+        private void LogDebug(string eventName, Dictionary<string, string> data = null)
+        {
+            if (!debugLogInitialized || debugLogWriter == null)
+                return;
+
+            try
+            {
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                string currentBar = CurrentBar >= 0 ? CurrentBar.ToString() : "N/A";
+                string enableLogging = EnableLogging.ToString();
+                string logDrawnSignals = LogDrawnSignals.ToString();
+                string logFolder = LogFolder ?? "null";
+                string logInit = logInitialized.ToString();
+                string signalInit = signalDrawInitialized.ToString();
+                string state = State.ToString();
+                string instrument = Instrument?.FullName ?? "null";
+                
+                string additionalInfo = "{}";
+                if (data != null && data.Count > 0)
+                {
+                    additionalInfo = "{" + string.Join("; ", data.Select(kvp => $"{kvp.Key}={kvp.Value}")) + "}";
+                }
+
+                string line = string.Join(",",
+                    CsvEscape(timestamp),
+                    CsvEscape(eventName),
+                    CsvEscape(currentBar),
+                    CsvEscape(enableLogging),
+                    CsvEscape(logDrawnSignals),
+                    CsvEscape(logFolder),
+                    CsvEscape(logInit),
+                    CsvEscape(signalInit),
+                    CsvEscape(state),
+                    CsvEscape(instrument),
+                    CsvEscape(additionalInfo));
+
+                lock (debugLogLock)
+                {
+                    debugLogWriter.WriteLine(line);
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[CBASTestingIndicator3] Debug log write failed: {ex.Message}");
             }
         }
 
