@@ -39,26 +39,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 		// Optional: scale oscillator into price units to be visible on price panel
         [NinjaScriptProperty]
         [Display(Name = "Scale Oscillator To ATR", Order = 40, GroupName = "Plots")]
-        public bool ScaleOscillatorToATR { get; set; } = false;
+        public bool ScaleOscillatorToATR { get; set; } = true;
 
         [NinjaScriptProperty]
         [Range(0.0, 10.0)]
         [Display(Name = "Osc ATR Mult", Order = 41, GroupName = "Plots")]
         public double OscAtrMult { get; set; } = 0.3;
 		
-		[NinjaScriptProperty]
-[Display(Name = "Scale NetFlow by ATR", Order = 40, GroupName = "Filters")]
-public bool ScaleNetFlowByAtr { get; set; } = true;
 
-[NinjaScriptProperty]
-[Range(0.0, 10.0)]
-[Display(Name = "NetFlow ATR Mult", Order = 41, GroupName = "Filters")]
-public double NetFlowAtrMult { get; set; } = 0.5;
-
-		 // Exit label visualization
+		 // Exit label visualization (disabled for strategy - visual only)
         [NinjaScriptProperty]
         [Display(Name = "Show Exit Labels", Order = 32, GroupName = "Filters")]
-        public bool ShowExitLabels { get; set; } = true;
+        public bool ShowExitLabels { get; set; } = false;
 
         [NinjaScriptProperty]
         [Range(0.0, 10.0)]
@@ -176,21 +168,21 @@ public double NetFlowAtrMult { get; set; } = 0.5;
 
         [NinjaScriptProperty]
         [Display(Name = "Use Regime Stability", Order = 1, GroupName = "CBAS Filters")]
-        public bool UseRegimeStability { get; set; } = true;
+        public bool UseRegimeStability { get; set; } = false; // Disabled - realtime filters are the main optimization
 
         [NinjaScriptProperty]
         [Range(1, 200)]
         [Display(Name = "Regime Stability Bars", Order = 2, GroupName = "CBAS Filters")]
-        public int RegimeStabilityBars { get; set; } = 3;
+        public int RegimeStabilityBars { get; set; } = 10; // Matches indicator default
 
         [NinjaScriptProperty]
         [Display(Name = "Use Scoring Filter", Order = 3, GroupName = "CBAS Filters")]
-        public bool UseScoringFilter { get; set; } = true;
+        public bool UseScoringFilter { get; set; } = false; // Disabled - realtime filters are the main optimization
 
         [NinjaScriptProperty]
         [Range(0, 100)]
         [Display(Name = "Score Threshold", Order = 4, GroupName = "CBAS Filters")]
-        public int ScoreThreshold { get; set; } = 5;
+        public int ScoreThreshold { get; set; } = 6; // Kept at optimized value if enabled
 
         [NinjaScriptProperty]
         [Display(Name = "Use Smoothed VPM", Order = 5, GroupName = "CBAS Filters")]
@@ -222,7 +214,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
 
         [NinjaScriptProperty]
         [Display(Name = "Compute Exit Signals", Order = 11, GroupName = "CBAS Filters")]
-        public bool ComputeExitSignals { get; set; } = true;
+        public bool ComputeExitSignals { get; set; } = false;
 
         [NinjaScriptProperty]
         [Range(0.0, 1000.0)]
@@ -338,7 +330,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
 
         [NinjaScriptProperty]
         [Display(Name = "Log Signals Only (bull/bear crosses)", Order = 2, GroupName = "Indicator")]
-        public bool LogSignalsOnly { get; set; } = true;
+        public bool LogSignalsOnly { get; set; } = false;
 
         [NinjaScriptProperty]
         [Range(0, 1000000)]
@@ -347,7 +339,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
 
         [NinjaScriptProperty]
         [Display(Name = "Log Folder", Order = 4, GroupName = "Indicator")]
-        public string LogFolder { get; set; } = @"C:\Mac\Home\Documents\NinjaTrader 8\Indicator_logs";
+        public string LogFolder { get; set; } = @"/Users/mm/Documents/NinjaTrader 8/Indicator_logs";
 
         [NinjaScriptProperty]
         [Display(Name = "Log Drawn Signals", Order = 5, GroupName = "Indicator")]
@@ -355,7 +347,7 @@ public double NetFlowAtrMult { get; set; } = 0.5;
 
         [NinjaScriptProperty]
         [Display(Name = "Color Bars By Trend", Order = 6, GroupName = "Indicator")]
-        public bool ColorBarsByTrend { get; set; } = false;
+        public bool ColorBarsByTrend { get; set; } = false; // Visual only, disabled for strategy
 
         // Risk (base/manual)
         [NinjaScriptProperty]
@@ -1198,20 +1190,14 @@ public double NetFlowAtrMult { get; set; } = 0.5;
 
             }
 
-            // 12) Signals
+            // 12) Signals - Use indicator's optimized realtime state signals
+            // When PlotRealtimeSignals=true, these use the optimized filters (netflow, objection, ema_color)
+            // Otherwise, they use the standard SuperTrend cross logic
+            bool bull = st.BullSignal;
+            bool bear = st.BearSignal;
+            
+            // Also get SuperTrend line for regime checks and stop calculations
             var stLine = st.Values[0];
-            bool bull, bear;
-            if (EntriesOnFirstTickOfBarOnly())
-            {
-                if (!IsFirstTickOfBar) return;
-                bull = Close[1] > stLine[1] && Close[2] <= stLine[2];
-                bear = Close[1] < stLine[1] && Close[2] >= stLine[2];
-            }
-            else
-            {
-                bull = CrossAbove(Close, stLine, 1);
-                bear = CrossBelow(Close, stLine, 1);
-            }
             bool inBullRegime = Close[0] > stLine[0];
             bool inBearRegime = Close[0] < stLine[0];
 
@@ -3089,6 +3075,10 @@ st = CBASTestingIndicator3(
 IsOrderActive(slALong) || IsOrderActive(slAShort) || IsOrderActive(slBLong) || IsOrderActive(slBShort);
         private void AuditProtection(string tag, DateTime eventTime)
         {
+            // Audit logging disabled to reduce output window spam
+            return;
+            
+            /* Original audit code commented out
             bool slAActive = IsOrderActive(slALong) || IsOrderActive(slAShort);
             bool slBActive = IsOrderActive(slBLong) || IsOrderActive(slBShort);
 
@@ -3145,6 +3135,7 @@ IsOrderActive(slALong) || IsOrderActive(slAShort) || IsOrderActive(slBLong) || I
                 auditLastSBStop = shortBStop;
                 auditLastLogUtc = StrategyNowUtc();
             }
+            */
         }
         private void EnsureRescueProtection()
         {
