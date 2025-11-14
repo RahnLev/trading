@@ -247,6 +247,10 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private bool bull;
         private bool bear;
+        
+        // Expose bull/bear signals for strategy access
+        public bool BullSignal => bull;
+        public bool BearSignal => bear;
         private double superTrendNow;
         private ADX adx14;
         private SMA volSma;
@@ -351,6 +355,21 @@ namespace NinjaTrader.NinjaScript.Indicators
         private bool cachedBearRangeBreak = false;
         private int lastLoggedBullSignalBar = -1;
         private int lastLoggedBearSignalBar = -1;
+        private bool signalLoggedThisBar = false; // Track if we've logged a signal on this bar to prevent both BULL and BEAR
+        
+        // Store signals during bar to log only after confirmation (1-2 bars later)
+        private bool pendingBullSignal = false;
+        private bool pendingBearSignal = false;
+        private int pendingBullSignalBar = -1;
+        private int pendingBearSignalBar = -1;
+        private double pendingBullPrice = double.NaN;
+        private double pendingBearPrice = double.NaN;
+        private double pendingBullSuperTrend = double.NaN;
+        private double pendingBearSuperTrend = double.NaN;
+        private double pendingBullNetFlow = double.NaN;
+        private double pendingBearNetFlow = double.NaN;
+        private string pendingBullEmaColorHistory = string.Empty;
+        private string pendingBearEmaColorHistory = string.Empty;
         #endregion
 
         protected override void OnStateChange()
@@ -424,9 +443,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                     // One or more plot indices are invalid
                 }
 
-                InitLogger();
-                if (LogDrawnSignals)
-                    InitSignalDrawLogger();
+                // Don't initialize logging here - wait for OnBarUpdate when properties are definitely set
+                // InitLogger() will be called in OnBarUpdate if EnableLogging is true
+                // if (EnableLogging)
+                //     InitLogger();
+                // if (LogDrawnSignals)
+                //     InitSignalDrawLogger();
 
                 instrumentName = Instrument?.FullName ?? "N/A";
                 adx14 = ADX(14);
@@ -482,10 +504,108 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         protected override void OnBarUpdate()
         {
+            // Initialize logging as early as possible (before any early returns)
+            if (EnableLogging && !logInitialized)
+            {
+                InitLogger();
+            }
+
+            if (LogDrawnSignals && !signalDrawInitialized)
+            {
+                InitSignalDrawLogger();
+            }
+
             if (CurrentBar != cachedBarIndex)
             {
                 if (hasCachedBar && EnableLogging)
                     FlushCachedBar();
+
+                // Check and log pending signals with price confirmation (wait 1-2 bars to confirm trend)
+                // This prevents both BULL and BEAR from being logged and ensures trend confirmation
+                if (pendingBullSignal || pendingBearSignal)
+                {
+                    // Get EMA spread from current bar (just closed) to check for choppy market
+                    double emaSpreadVal = (emaSpread != null && !double.IsNaN(emaSpread[0])) 
+                        ? Math.Abs(emaSpread[0]) : double.NaN;
+                    
+                    // Filter out signals in choppy markets (EMA spread < 0.1 indicates uncertain/choppy market)
+                    // Analysis showed 100% of bars with both signals had slim EMA spread
+                    bool isChoppyMarket = !double.IsNaN(emaSpreadVal) && emaSpreadVal < 0.1;
+                    
+                    // Check if enough bars have passed for confirmation (1-2 bars delay)
+                    int barsSinceBullSignal = pendingBullSignal ? (CurrentBar - pendingBullSignalBar) : int.MaxValue;
+                    int barsSinceBearSignal = pendingBearSignal ? (CurrentBar - pendingBearSignalBar) : int.MaxValue;
+                    bool bullConfirmed = pendingBullSignal && barsSinceBullSignal >= 1;
+                    bool bearConfirmed = pendingBearSignal && barsSinceBearSignal >= 1;
+                    
+                    // Price confirmation: check if price moved in expected direction
+                    // Compare current close to the close price when signal was generated
+                    bool bullPriceConfirmed = false;
+                    bool bearPriceConfirmed = false;
+                    
+                    if (bullConfirmed && !double.IsNaN(pendingBullPrice))
+                    {
+                        // BULL confirmed if current price is higher than signal bar close (price moved up)
+                        bullPriceConfirmed = Close[0] > pendingBullPrice;
+                    }
+                    
+                    if (bearConfirmed && !double.IsNaN(pendingBearPrice))
+                    {
+                        // BEAR confirmed if current price is lower than signal bar close (price moved down)
+                        bearPriceConfirmed = Close[0] < pendingBearPrice;
+                    }
+                    
+                    if (!isChoppyMarket)
+                    {
+                        // If both signals are pending, choose based on which one is confirmed and matches current state
+                        if (pendingBullSignal && pendingBearSignal)
+                        {
+                            // Prefer the signal that is confirmed and matches current realtime state
+                            if (bullConfirmed && bullPriceConfirmed && currentRealtimeState == RealtimeSignalState.Bull)
+                            {
+                                LogDrawnSignal("BULL", pendingBullPrice, pendingBullSuperTrend, pendingBullNetFlow, pendingBullEmaColorHistory);
+                                pendingBullSignal = false;
+                                pendingBearSignal = false;
+                            }
+                            else if (bearConfirmed && bearPriceConfirmed && currentRealtimeState == RealtimeSignalState.Bear)
+                            {
+                                LogDrawnSignal("BEAR", pendingBearPrice, pendingBearSuperTrend, pendingBearNetFlow, pendingBearEmaColorHistory);
+                                pendingBullSignal = false;
+                                pendingBearSignal = false;
+                            }
+                            else if (bullConfirmed && bullPriceConfirmed)
+                            {
+                                LogDrawnSignal("BULL", pendingBullPrice, pendingBullSuperTrend, pendingBullNetFlow, pendingBullEmaColorHistory);
+                                pendingBullSignal = false;
+                                pendingBearSignal = false;
+                            }
+                            else if (bearConfirmed && bearPriceConfirmed)
+                            {
+                                LogDrawnSignal("BEAR", pendingBearPrice, pendingBearSuperTrend, pendingBearNetFlow, pendingBearEmaColorHistory);
+                                pendingBullSignal = false;
+                                pendingBearSignal = false;
+                            }
+                            // If neither confirmed yet, keep waiting
+                        }
+                        else if (pendingBullSignal && bullConfirmed && bullPriceConfirmed)
+                        {
+                            LogDrawnSignal("BULL", pendingBullPrice, pendingBullSuperTrend, pendingBullNetFlow, pendingBullEmaColorHistory);
+                            pendingBullSignal = false;
+                        }
+                        else if (pendingBearSignal && bearConfirmed && bearPriceConfirmed)
+                        {
+                            LogDrawnSignal("BEAR", pendingBearPrice, pendingBearSuperTrend, pendingBearNetFlow, pendingBearEmaColorHistory);
+                            pendingBearSignal = false;
+                        }
+                        // If signal not confirmed yet, keep it pending for next bar
+                    }
+                    else
+                    {
+                        // Choppy market - discard pending signals
+                        pendingBullSignal = false;
+                        pendingBearSignal = false;
+                    }
+                }
 
                 cachedBarIndex = CurrentBar;
                 cachedBarOpen = Open[0];
@@ -499,6 +619,11 @@ namespace NinjaTrader.NinjaScript.Indicators
                 cachedBullReason = string.Empty;
                 cachedBearReason = string.Empty;
                 hasCachedBar = true;
+                
+                // Reset signal logging flags when moving to a new bar
+                signalLoggedThisBar = false;
+                lastLoggedBullSignalBar = -1; // Reset to allow logging on new bar
+                lastLoggedBearSignalBar = -1; // Reset to allow logging on new bar
 
             }
             else
@@ -526,12 +651,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
                 return;
             }
-
-            if (EnableLogging && !logInitialized)
-                InitLogger();
-
-            if (LogDrawnSignals && !signalDrawInitialized)
-                InitSignalDrawLogger();
 
             // Bands and supertrend
             double rangeC = 2.0 * (cachedBarHigh - cachedBarLow);
@@ -949,7 +1068,16 @@ namespace NinjaTrader.NinjaScript.Indicators
                     Brushes.Transparent,
                     Brushes.Transparent,
                     0);
-                LogDrawnSignal("BULL", Close[0], stNow, net, emaColorHistory);
+                // Store signal to log after confirmation (1-2 bars later with price confirmation)
+                if (!pendingBullSignal) // Only set if not already pending (prevents overwriting)
+                {
+                    pendingBullSignal = true;
+                    pendingBullSignalBar = CurrentBar;
+                    pendingBullPrice = Close[0];
+                    pendingBullSuperTrend = stNow;
+                    pendingBullNetFlow = net;
+                    pendingBullEmaColorHistory = emaColorHistory;
+                }
             }
             if (bear)
             {
@@ -970,7 +1098,16 @@ namespace NinjaTrader.NinjaScript.Indicators
                     Brushes.Transparent,
                     Brushes.Transparent,
                     0);
-                LogDrawnSignal("BEAR", Close[0], stNow, net, emaColorHistory);
+                // Store signal to log after confirmation (1-2 bars later with price confirmation)
+                if (!pendingBearSignal) // Only set if not already pending (prevents overwriting)
+                {
+                    pendingBearSignal = true;
+                    pendingBearSignalBar = CurrentBar;
+                    pendingBearPrice = Close[0];
+                    pendingBearSuperTrend = stNow;
+                    pendingBearNetFlow = net;
+                    pendingBearEmaColorHistory = emaColorHistory;
+                }
             }
 
             if (bull)
@@ -1126,7 +1263,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // Ensure all plots are set even if values are at base price
                 if (plotAttract >= 0)
                 {
-                    SetPlotVal(plotAttract, attractScaled);
+                SetPlotVal(plotAttract, attractScaled);
                 }
                 else
                 {
@@ -1134,7 +1271,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
                 if (plotObjection >= 0)
                 {
-                    SetPlotVal(plotObjection, objectionScaled);
+                SetPlotVal(plotObjection, objectionScaled);
                 }
                 else
                 {
@@ -1142,10 +1279,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
                 if (plotNetFlow >= 0)
                 {
-                    SetPlotVal(plotNetFlow, netScaled);
-                }
-                else
-                {
+                SetPlotVal(plotNetFlow, netScaled);
+            }
+            else
+            {
                     // plotNetFlow index is invalid
                 }
             }
@@ -1157,11 +1294,11 @@ namespace NinjaTrader.NinjaScript.Indicators
                 
                 // Explicitly set all three plots with raw values
                 if (plotAttract >= 0)
-                    SetPlotVal(plotAttract, ao.attract);
+                SetPlotVal(plotAttract, ao.attract);
                 if (plotObjection >= 0)
-                    SetPlotVal(plotObjection, ao.objection);
+                SetPlotVal(plotObjection, ao.objection);
                 if (plotNetFlow >= 0)
-                    SetPlotVal(plotNetFlow, net);
+                SetPlotVal(plotNetFlow, net);
             }
 
             SetPlotBrush(plotNetFlow, net >= 0 ? Brushes.DodgerBlue : Brushes.DarkOrange);
@@ -1618,9 +1755,12 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (!EnableLogging || !logInitialized || !hasCachedBar)
                 return;
 
+            // Log every bar if LogSignalsOnly is false, otherwise only log bars with signals
             bool includeRow = !LogSignalsOnly || cachedBullSignal || cachedBearSignal;
             if (!includeRow)
+            {
                 return;
+            }
 
             int barsAgo = CurrentBar - cachedBarIndex;
             if (barsAgo < 0)
@@ -1925,15 +2065,17 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (!LogDrawnSignals || !signalDrawInitialized || signalDrawWriter == null)
                 return;
 
+            // Prevent duplicate logging of the same signal type on the same bar
+            // Allow both BULL and BEAR to be logged on the same bar if both occur
             if (string.Equals(signalType, "BULL", StringComparison.OrdinalIgnoreCase))
             {
                 if (lastLoggedBullSignalBar == CurrentBar)
-                    return;
+                    return; // Already logged BULL for this bar
             }
             else if (string.Equals(signalType, "BEAR", StringComparison.OrdinalIgnoreCase))
             {
                 if (lastLoggedBearSignalBar == CurrentBar)
-                    return;
+                    return; // Already logged BEAR for this bar
             }
 
             try
@@ -1956,9 +2098,15 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 if (string.Equals(signalType, "BULL", StringComparison.OrdinalIgnoreCase))
+                {
                     lastLoggedBullSignalBar = CurrentBar;
+                    signalLoggedThisBar = true; // Keep for backward compatibility, but allow BEAR to also log
+                }
                 else if (string.Equals(signalType, "BEAR", StringComparison.OrdinalIgnoreCase))
+                {
                     lastLoggedBearSignalBar = CurrentBar;
+                    signalLoggedThisBar = true; // Keep for backward compatibility, but allow BULL to also log
+                }
             }
             catch (Exception ex)
             {
