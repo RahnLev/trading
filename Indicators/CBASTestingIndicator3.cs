@@ -367,6 +367,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         private int lastDrawnBarIndex = -1;
         private bool bullDrawnThisBar = false;
         private bool bearDrawnThisBar = false;
+        private bool signalDecidedThisBar = false;
+        private bool decidedBullSignal = false;
+        private bool decidedBearSignal = false;
 
         // Logging gate for "only on price change"
         private int cachedBarIndex = -1;
@@ -1401,40 +1404,66 @@ namespace NinjaTrader.NinjaScript.Indicators
             // This ensures the chart triangles and the BullSignal/BearSignal properties are always in sync
             bool finalBullSignal = bull;
             bool finalBearSignal = bear;
-            cachedFinalBullSignal = finalBullSignal;
-            cachedFinalBearSignal = finalBearSignal;
-
-            // Check final state before any drawing
+            
+            // SAFETY CHECK: If both are still true after conflict resolution, force one to false
             if (finalBullSignal && finalBearSignal)
             {
-                Print($"[CBASTestingIndicator3] ERROR: Both finalBullSignal AND finalBearSignal are true on Bar {CurrentBar}!");
+                Print($"[CBASTestingIndicator3] ERROR: Both finalBullSignal AND finalBearSignal are true on Bar {CurrentBar}! Forcing BEAR to false.");
+                finalBearSignal = false; // Default to BULL in case of conflict
             }
 
             // DEBUG: Log the final state before drawing
             if (finalBullSignal || finalBearSignal)
             {
-                Print($"[CBASTestingIndicator3] DRAW Bar {CurrentBar}: finalBullSignal={finalBullSignal}, finalBearSignal={finalBearSignal}, bull={bull}, bear={bear}, emaColor={emaColorInt}, netflow={net:F2}");
+                Print($"[CBASTestingIndicator3] DRAW Bar {CurrentBar}: finalBullSignal={finalBullSignal}, finalBearSignal={finalBearSignal}, bull={bull}, bear={bear}, emaColor={emaColorInt}, netflow={net:F2}, IsFirstTickOfBar={IsFirstTickOfBar}");
             }
 
-            // ONLY DRAW ON BAR CLOSE - ensures we capture the final signal for the bar
-            if (Close[0] == Close[1] || (State == State.Realtime && Close[0] != Close[1]))
+            // Reset flags if we're on a new bar (MUST do this before checking if we should draw)
+            if (CurrentBar != lastDrawnBarIndex)
             {
-                // Not bar close yet - skip drawing
+                lastDrawnBarIndex = CurrentBar;
+                bullDrawnThisBar = false;
+                bearDrawnThisBar = false;
+                signalDecidedThisBar = false;
+                decidedBullSignal = false;
+                decidedBearSignal = false;
+            }
+
+            // CRITICAL FIX: Lock in signal decision on first tick, then use that decision for all subsequent ticks
+            // This prevents the signal from flipping between BULL/BEAR on different ticks of the same bar
+            if (!signalDecidedThisBar)
+            {
+                // First time evaluating this bar: make the decision and lock it in
+                signalDecidedThisBar = true;
+                decidedBullSignal = finalBullSignal;
+                decidedBearSignal = finalBearSignal;
+                Print($"[CBASTestingIndicator3] Bar {CurrentBar} LOCKED DECISION (tick {(IsFirstTickOfBar ? "FIRST" : "LATER")}): decidedBull={decidedBullSignal}, decidedBear={decidedBearSignal}, emaColor={emaColorInt}, netflow={net:F2}");
             }
             else
             {
-                // Reset flags if we're on a new bar
-                if (CurrentBar != lastDrawnBarIndex)
-                {
-                    lastDrawnBarIndex = CurrentBar;
-                    bullDrawnThisBar = false;
-                    bearDrawnThisBar = false;
-                }
+                // Already decided this bar: use the locked-in decision, ignore current calculations
+                finalBullSignal = decidedBullSignal;
+                finalBearSignal = decidedBearSignal;
+            }
 
-                if (finalBullSignal && !bullDrawnThisBar)
-                {
-                    Print($"[CBASTestingIndicator3] *** PLOTTING BULL on Bar {CurrentBar} (at close) ***");
-                    bullDrawnThisBar = true;
+            // Only draw once per bar using the locked-in decision
+            bool shouldDrawThisTick = signalDecidedThisBar && !bullDrawnThisBar && !bearDrawnThisBar;
+            
+            if (!shouldDrawThisTick)
+            {
+                // Not first tick OR already drawn - skip drawing
+                // Continue to the end of OnBarUpdate for other processing
+            }
+            // CRITICAL: Draw BULL first if true, this will set bullDrawnThisBar=true and prevent BEAR from drawing
+            else if (finalBullSignal)
+            {
+                Print($"[CBASTestingIndicator3] *** PLOTTING BULL on Bar {CurrentBar} ***");
+                bullDrawnThisBar = true;
+                    
+                    // CRITICAL: Update cached signals ONLY when drawing - ensures strategy sees same signals as chart
+                    cachedFinalBullSignal = true;
+                    cachedFinalBearSignal = false;
+                    
                     double y1 = Low[0] - atr30[0] * 2.0;
                 string emaColorHistory = FormatEmaColorHistory(prevPrevEmaColorInt, prevEmaColorInt, emaColorInt);
                 Draw.TriangleUp(this, $"Buy_{CurrentBar}", false, 0, y1, Brushes.LimeGreen);
@@ -1469,10 +1498,15 @@ namespace NinjaTrader.NinjaScript.Indicators
                     pendingBullEmaColorHistory = emaColorHistory;
                 }
             }
-            else if (finalBearSignal && !bearDrawnThisBar)
+            else if (finalBearSignal)
             {
                 Print($"[CBASTestingIndicator3] *** PLOTTING BEAR on Bar {CurrentBar} ***");
                 bearDrawnThisBar = true;
+                
+                // CRITICAL: Update cached signals ONLY when drawing - ensures strategy sees same signals as chart
+                cachedFinalBullSignal = false;
+                cachedFinalBearSignal = true;
+                
                 double y2 = High[0] + atr30[0] * 2.0;
                 string emaColorHistory = FormatEmaColorHistory(prevPrevEmaColorInt, prevEmaColorInt, emaColorInt);
                 Draw.TriangleDown(this, $"Sell_{CurrentBar}", false, 0, y2, Brushes.Red);
@@ -1512,10 +1546,17 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // Neither signal plotting on this bar
                 if (bull || bear)
                 {
-                    Print($"[CBASTestingIndicator3] NO PLOT Bar {CurrentBar}: bull={bull}, bear={bear}, finalBull={finalBullSignal}, finalBear={finalBearSignal}");
+                    Print($"[CBASTestingIndicator3] NO PLOT Bar {CurrentBar}: bull={bull}, bear={bear}, finalBull={finalBullSignal}, finalBear={finalBearSignal}, IsFirstTickOfBar={IsFirstTickOfBar}");
+                }
+                
+                // CRITICAL: If we're on first tick and not drawing, ensure cached signals are false
+                // This keeps strategy signals aligned with chart (no signal = false for both)
+                if (IsFirstTickOfBar && !bullDrawnThisBar && !bearDrawnThisBar)
+                {
+                    cachedFinalBullSignal = false;
+                    cachedFinalBearSignal = false;
                 }
             }
-            } // Close the "if bar close" block
 
             if (finalBullSignal)
                 lastPlottedSignal = LastSignalType.Bull;
@@ -3507,9 +3548,6 @@ namespace NinjaTrader.NinjaScript.Indicators
         }
     }
 }
-
-
-
 
 #region NinjaScript generated code. Neither change nor remove.
 
