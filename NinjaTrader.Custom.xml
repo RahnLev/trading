@@ -4,6 +4,17 @@
         <name>NinjaTrader.Custom</name>
     </assembly>
     <members>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.DebugStrategyState(System.String)">
+            <summary>
+            Comprehensive debugging method to diagnose strategy state
+            Call this from OnBarUpdate or OnExecutionUpdate when issues occur
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.ValidateStrategyState(System.String@)">
+            <summary>
+            Quick debug check for common issues
+            </summary>
+        </member>
         <member name="T:NinjaTrader.NinjaScript.Indicators.ADL">
             <summary>
             The Accumulation/Distribution (AD) study attempts to quantify the amount of volume flowing into or

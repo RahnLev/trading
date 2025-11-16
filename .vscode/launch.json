@@ -2,16 +2,28 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach to NinjaTrader",
+            "name": "Attach to NinjaTrader (Auto-find)",
             "type": "clr",
             "request": "attach",
-            "processName": "NinjaTrader"
+            "processName": "NinjaTrader.exe",
+            "justMyCode": false,
+            "requireExactSource": false
         },
         {
             "name": "Attach to NinjaTrader (Pick Process)",
             "type": "clr",
             "request": "attach",
-            "processId": "${command:pickProcess}"
+            "processId": "${command:pickProcess}",
+            "justMyCode": false,
+            "requireExactSource": false
+        },
+        {
+            "name": "Attach by PID (16896 - Current)",
+            "type": "clr",
+            "request": "attach",
+            "processId": "16896",
+            "justMyCode": false,
+            "requireExactSource": false
         }
     ]
 }

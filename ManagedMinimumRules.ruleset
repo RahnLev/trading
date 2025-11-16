@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RuleSet Name="Managed Minimum Rules" Description="These are the minimum recommended rules for managed code. Change the Action for a rule to Warning or Error to customize its behavior." ToolsVersion="15.0">
+  <Localization ResourceAssembly="Microsoft.VisualStudio.CodeAnalysis.RuleSets.Strings.dll" ResourceBaseName="Microsoft.VisualStudio.CodeAnalysis.RuleSets.Strings.Localized">
+    <Name Resource="Managed_Minimum_Rules_Name" />
+    <Description Resource="Managed_Minimum_Rules_Description" />
+  </Localization>
+  <Rules AnalyzerId="Microsoft.CodeAnalysis.CSharp" RuleNamespace="Microsoft.CodeAnalysis.CSharp">
+    <Rule Id="CS1591" Action="None" />
+  </Rules>
+</RuleSet>
+
