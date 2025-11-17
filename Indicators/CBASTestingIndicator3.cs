@@ -350,12 +350,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private StreamWriter debugLogWriter;
         private bool debugLogInitialized = false;
         private readonly object debugLogLock = new object();
-
-        // Output window logging (captures all Print() statements)
-        private StreamWriter outputWindowLogger;
-        private bool outputWindowLogInitialized = false;
-        private readonly object outputWindowLogLock = new object();
-        private string outputWindowLogPath = null;
+        private bool firstBarLogged = false;
 
         // Previous bar values for trend comparison when both BULL and BEAR are true
         private double prevBarClose = double.NaN;
@@ -518,26 +513,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                     }
                 }
                 
-                // Initialize output window logger to capture all Print() statements
-                Print($"[CBASTestingIndicator3] State.DataLoaded: About to initialize output window logger");
-                try
-                {
-                    InitOutputWindowLogger();
-                    if (outputWindowLogInitialized)
-                    {
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Output window logging initialized to: {outputWindowLogPath}");
-                    }
-                    else
-                    {
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Output window logging NOT initialized (flag is false)");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Print($"[CBASTestingIndicator3] State.DataLoaded: Output window logging init failed: {ex.Message}");
-                    Print($"[CBASTestingIndicator3] State.DataLoaded: Exception stack: {ex.StackTrace}");
-                }
-                
                 // CRITICAL TEST: Write a test file immediately to verify path works
                 // This helps diagnose why logs aren't created when run from strategy
                 if (EnableLogging)
@@ -545,7 +520,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     try
                     {
                         string testFolder = string.IsNullOrWhiteSpace(LogFolder)
-                            ? Path.Combine(Globals.UserDataDir, "indicators_log")
+                            ? @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log"
                             : LogFolder;
                         
                         // Normalize path for macOS
@@ -589,14 +564,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 {
                     try
                     {
-                        // ========== BREAKPOINT #0 ==========
-                        // INSTRUCTION: This is State.Active - check if properties are set
-                        // In Locals window, verify:
-                        // - EnableLogging (should be true)
-                        // - LogFolder (should be set to correct path)
-                        // - logInitialized (should be false)
-                        // PUT BREAKPOINT HERE
-                        if (System.Diagnostics.Debugger.IsAttached) System.Diagnostics.Debugger.Break(); // DEBUGGER BREAKPOINT - Remove after debugging
                         Print($"[CBASTestingIndicator3] State.Active: Forcing logging initialization (indicator used from strategy)");
                         Print($"[CBASTestingIndicator3] State.Active: EnableLogging={EnableLogging}, logInitialized={logInitialized}, LogFolder={LogFolder ?? "null"}");
                         InitLogger();
@@ -649,21 +616,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                     if (EnableLogging && logInitialized)
                         FlushCachedBar();
 
-                    lock (outputWindowLogLock)
-                    {
-                        if (outputWindowLogger != null)
-                        {
-                            try
-                            {
-                                outputWindowLogger.Flush();
-                                outputWindowLogger.Close();
-                                outputWindowLogger.Dispose();
-                                outputWindowLogger = null;
-                            }
-                            catch { }
-                        }
-                    }
-
                     lock (logLock)
                     {
                         logWriter?.Flush();
@@ -683,6 +635,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                         signalDrawWriter = null;
                         signalDrawInitialized = false;
                     }
+                    lock (debugSignalLogLock)
+                    {
+                        debugSignalLogWriter?.Flush();
+                        debugSignalLogWriter?.Dispose();
+                        debugSignalLogWriter = null;
+                        debugSignalLogInitialized = false;
+                    }
                 }
                 catch { /* ignore */ }
             }
@@ -697,17 +656,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 InitDebugLogger();
             }
 
-            // Log property values on first bar to verify they're set correctly
-            if (CurrentBar == 0)
+            // Log property values once to verify they're set correctly
+            if (!firstBarLogged)
             {
-                // ========== BREAKPOINT #1 ==========
-                // INSTRUCTION: Check property values in Locals window:
-                // - EnableLogging (should be true)
-                // - LogDrawnSignals (should be true)
-                // - LogFolder (check if null or has value)
-                // - LogSignalsOnly (check value)
-                // - Globals.UserDataDir (should not be null)
-                // PUT BREAKPOINT HERE
+                firstBarLogged = true;
                 Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ========== COMPREHENSIVE PROPERTY VERIFICATION ==========");
                 Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Parameters ---");
                 Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Sensitivity = {Sensitivity}");
@@ -769,30 +721,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                 Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ==========================================");
             }
 
-            // Initialize output window logger first (before any other logging)
-            if (!outputWindowLogInitialized && CurrentBar == 0)
-            {
-                try
-                {
-                    InitOutputWindowLogger();
-                }
-                catch (Exception ex)
-                {
-                    Print($"[CBASTestingIndicator3] OnBarUpdate: Output window logger init failed: {ex.Message}");
-                }
-            }
-
             // Initialize logging as early as possible (before any early returns)
             if (EnableLogging && !logInitialized)
             {
-                // ========== BREAKPOINT #2 ==========
-                // INSTRUCTION: Verify condition is true:
-                // - EnableLogging should be true
-                // - logInitialized should be false
-                // - Step into InitLogger() to continue debugging
-                // PUT BREAKPOINT HERE
-                if (System.Diagnostics.Debugger.IsAttached) System.Diagnostics.Debugger.Break(); // DEBUGGER BREAKPOINT - Remove after debugging
-                LogPrint($"[CBASTestingIndicator3] OnBarUpdate: Calling InitLogger. CurrentBar={CurrentBar}, EnableLogging={EnableLogging}");
+                Print($"[CBASTestingIndicator3] OnBarUpdate: Calling InitLogger. CurrentBar={CurrentBar}, EnableLogging={EnableLogging}");
                 InitLogger();  // STEP INTO HERE
                 // After InitLogger returns, check:
                 // - logInitialized (should be true)
@@ -800,7 +732,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // - logWriter (should not be null)
                 if (!logInitialized)
                 {
-                    LogPrint($"[CBASTestingIndicator3] OnBarUpdate: ERROR - InitLogger returned but logInitialized is still false!");
+                    Print($"[CBASTestingIndicator3] OnBarUpdate: ERROR - InitLogger returned but logInitialized is still false!");
                 }
             }
             // Safety check: if EnableLogging is true but logInitialized is still false after InitLogger, try again periodically
@@ -888,6 +820,20 @@ namespace NinjaTrader.NinjaScript.Indicators
                 cachedBearRaw = false;
                 cachedBullReason = string.Empty;
                 cachedBearReason = string.Empty;
+                cachedRealtimeState = RealtimeSignalState.Flat;
+                cachedRealtimeReason = string.Empty;
+                cachedBullScore = 0;
+                cachedBearScore = 0;
+                cachedBullRangeBreak = false;
+                cachedBearRangeBreak = false;
+                cachedSuperTrend = double.NaN;
+                cachedUpperBand = double.NaN;
+                cachedLowerBand = double.NaN;
+                cachedAttract = double.NaN;
+                cachedObjection = double.NaN;
+                cachedNetFlow = double.NaN;
+                cachedMomentumVal = double.NaN;
+                cachedEmaColorValue = double.NaN;
                 hasCachedBar = true;
                 
                 // Reset signal logging flags when moving to a new bar
@@ -1418,35 +1364,44 @@ namespace NinjaTrader.NinjaScript.Indicators
                 Print($"[CBASTestingIndicator3] DRAW Bar {CurrentBar}: finalBullSignal={finalBullSignal}, finalBearSignal={finalBearSignal}, bull={bull}, bear={bear}, emaColor={emaColorInt}, netflow={net:F2}, IsFirstTickOfBar={IsFirstTickOfBar}");
             }
 
-            // Reset flags if we're on a new bar (MUST do this before checking if we should draw)
+            // LAST-TICK LOCK: Detect new bar and lock PREVIOUS bar's final decision
             if (CurrentBar != lastDrawnBarIndex)
             {
+                // First tick of NEW bar - lock the PREVIOUS bar's decision (from its last tick)
+                if (CurrentBar > 0 && !signalDecidedThisBar && lastDrawnBarIndex >= 0)
+                {
+                    // Lock the previous bar's decision based on its FINAL state
+                    // decidedBullSignal and decidedBearSignal already hold the previous bar's last evaluation
+                    signalDecidedThisBar = true;
+                    Print($"[CBASTestingIndicator3] Bar {CurrentBar-1} LOCKED DECISION ON BAR CLOSE: decidedBull={decidedBullSignal}, decidedBear={decidedBearSignal}");
+                }
+                
                 lastDrawnBarIndex = CurrentBar;
                 bullDrawnThisBar = false;
                 bearDrawnThisBar = false;
+                
+                // Reset for the NEW bar - don't lock yet, allow evaluation throughout the bar
                 signalDecidedThisBar = false;
                 decidedBullSignal = false;
                 decidedBearSignal = false;
             }
 
-            // CRITICAL FIX: Lock in signal decision on first tick, then use that decision for all subsequent ticks
-            // This prevents the signal from flipping between BULL/BEAR on different ticks of the same bar
+            // LAST-TICK LOCK: Update the decision continuously during the bar (don't lock until bar closes)
             if (!signalDecidedThisBar)
             {
-                // First time evaluating this bar: make the decision and lock it in
-                signalDecidedThisBar = true;
+                // Mid-bar: keep updating the decision as conditions change (don't lock yet)
                 decidedBullSignal = finalBullSignal;
                 decidedBearSignal = finalBearSignal;
-                Print($"[CBASTestingIndicator3] Bar {CurrentBar} LOCKED DECISION (tick {(IsFirstTickOfBar ? "FIRST" : "LATER")}): decidedBull={decidedBullSignal}, decidedBear={decidedBearSignal}, emaColor={emaColorInt}, netflow={net:F2}");
+                // Decision will be locked when the next bar starts (above)
             }
             else
             {
-                // Already decided this bar: use the locked-in decision, ignore current calculations
+                // Decision is locked (first tick of next bar) - use the locked decision for drawing
                 finalBullSignal = decidedBullSignal;
                 finalBearSignal = decidedBearSignal;
             }
 
-            // Only draw once per bar using the locked-in decision
+            // Only draw once per bar using the locked-in decision from previous bar's close
             bool shouldDrawThisTick = signalDecidedThisBar && !bullDrawnThisBar && !bearDrawnThisBar;
             
             if (!shouldDrawThisTick)
@@ -2117,112 +2072,8 @@ namespace NinjaTrader.NinjaScript.Indicators
         private double BarsSinceCrossPrice() => Close[0];
 
         #region Logging
-        private void InitOutputWindowLogger()
-        {
-            // REAL-TIME DEBUG: Write to temp file to track execution
-            string debugPath = @"C:\Mac\Home\Documents\NinjaTrader 8\indicators_log\output_logger_debug.txt";
-            try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - InitOutputWindowLogger CALLED\n"); } catch { }
-            
-            if (outputWindowLogInitialized)
-            {
-                try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Already initialized, returning\n"); } catch { }
-                return;
-            }
-
-            try
-            {
-                try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Starting initialization\n"); } catch { }
-                
-                if (string.IsNullOrEmpty(runTimestamp))
-                {
-                    runTimestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
-                    try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Set runTimestamp: {runTimestamp}\n"); } catch { }
-                }
-
-                string folder = string.IsNullOrWhiteSpace(LogFolder)
-                    ? Path.Combine(Globals.UserDataDir, "indicators_log")
-                    : LogFolder;
-                
-                try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Initial folder: {folder}\n"); } catch { }
-
-                // Handle macOS paths
-                bool isMacOS = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
-                if (isMacOS || folder?.Contains("Mac") == true)
-                {
-                    folder = folder.Replace('\\', '/');
-                    if (folder.StartsWith("C:/Mac/Home/"))
-                        folder = folder.Replace("C:/Mac/Home/", "/Users/mm/");
-                    try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - MacOS path adjusted: {folder}\n"); } catch { }
-                }
-                else
-                {
-                    folder = folder.Replace('/', '\\');
-                    try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Windows path adjusted: {folder}\n"); } catch { }
-                }
-
-                if (!Directory.Exists(folder))
-                {
-                    Directory.CreateDirectory(folder);
-                    try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Created directory: {folder}\n"); } catch { }
-                }
-
-                string baseInstrument = Instrument?.FullName?.Replace("/", "-")?.Replace(" ", " ") ?? "NA";
-                string fileName = $"CBASTestingIndicator3_{baseInstrument}_{runTimestamp}_output.txt";
-                outputWindowLogPath = Path.Combine(folder, fileName);
-                
-                try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Output log path: {outputWindowLogPath}\n"); } catch { }
-
-                lock (outputWindowLogLock)
-                {
-                    outputWindowLogger = new StreamWriter(outputWindowLogPath, true) { AutoFlush = true };
-                    outputWindowLogger.WriteLine($"=== Output Window Log Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
-                    outputWindowLogInitialized = true;
-                    try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - ✅ Logger initialized successfully!\n"); } catch { }
-                }
-
-                Print($"[CBASTestingIndicator3] Output window logging to: {outputWindowLogPath}");
-                try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - Print statement executed\n"); } catch { }
-            }
-            catch (Exception ex)
-            {
-                try { File.AppendAllText(debugPath, $"{DateTime.Now:HH:mm:ss.fff} - ❌ EXCEPTION: {ex.Message}\n{ex.StackTrace}\n"); } catch { }
-                Print($"[CBASTestingIndicator3] InitOutputWindowLogger failed: {ex.Message}");
-            }
-        }
-
-        private void LogPrint(string message)
-        {
-            // Always print to NinjaTrader output window
-            Print(message);
-
-            // Also log to file if initialized
-            if (outputWindowLogInitialized && outputWindowLogger != null)
-            {
-                try
-                {
-                    lock (outputWindowLogLock)
-                    {
-                        outputWindowLogger.WriteLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} | {message}");
-                    }
-                }
-                catch
-                {
-                    // Silently fail - don't want logging errors to break indicator
-                }
-            }
-        }
-
         private void InitLogger()
         {
-            // ========== BREAKPOINT #3 ==========
-            // INSTRUCTION: First line of InitLogger() - verify method is being called
-            // Check in Locals window:
-            // - EnableLogging (should be true)
-            // - logInitialized (should be false at start)
-            // - LogFolder (check the path value)
-            // - Globals.UserDataDir (check the path value)
-            // PUT BREAKPOINT HERE
-            if (System.Diagnostics.Debugger.IsAttached) System.Diagnostics.Debugger.Break(); // DEBUGGER BREAKPOINT - Remove after debugging
             if (logInitialized || !EnableLogging)
             {
                 LogDebug("InitLogger_Skipped", new Dictionary<string, string>
@@ -2248,7 +2099,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
 
                 string folder = string.IsNullOrWhiteSpace(LogFolder)
-                    ? Path.Combine(Globals.UserDataDir, "indicators_log")
+                    ? @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log"
                     : LogFolder;
                 
                 // Determine OS type once for use throughout the method
@@ -2349,14 +2200,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
                 
                 Print($"[CBASTestingIndicator3] InitLogger: Final folder path: {folder}");
-                // ========== BREAKPOINT #4 ==========
-                // INSTRUCTION: After path normalization - check the final folder path
-                // In Locals window, verify:
-                // - folder (should be correct macOS path like /Users/mm/Documents/NinjaTrader 8/indicators_log)
-                // - isMacOS (should be true on macOS)
-                // - LogFolder (original value)
-                // - Globals.UserDataDir (should not be null)
-                // PUT BREAKPOINT HERE
                 Directory.CreateDirectory(folder);
 
                 string fileName = BuildLogFileBase() + ".csv";
@@ -2373,14 +2216,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 bool fileExists = File.Exists(logPath);
                 bool isEmpty = !fileExists || new FileInfo(logPath).Length == 0;
 
-                // ========== BREAKPOINT #5 ==========
-                // INSTRUCTION: Before creating StreamWriter - verify path is correct
-                // In Locals window, check:
-                // - logPath (full file path, should be valid)
-                // - fileExists (whether file already exists)
-                // - isEmpty (whether file is empty)
-                // Step over to create logWriter, then check if logWriter is not null
-                // PUT BREAKPOINT HERE
                 // Verify directory exists before creating file
                 try
                 {
@@ -2565,16 +2400,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private void FlushCachedBar()
         {
-            // ========== BREAKPOINT #6 ==========
-            // INSTRUCTION: Check if this method is being called
-            // In Locals window, verify:
-            // - EnableLogging (should be true)
-            // - logInitialized (should be true)
-            // - hasCachedBar (should be true)
-            // - cachedBarIndex (bar index being flushed)
-            // - CurrentBar (current bar index)
-            // PUT BREAKPOINT HERE
-            if (System.Diagnostics.Debugger.IsAttached) System.Diagnostics.Debugger.Break(); // DEBUGGER BREAKPOINT - Remove after debugging
             LogDebug("FlushCachedBar_Called", new Dictionary<string, string>
             {
                 { "EnableLogging", EnableLogging.ToString() },
@@ -3205,16 +3030,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private void SafeWriteLine(string line)
         {
-            // ========== BREAKPOINT #7 ==========
-            // INSTRUCTION: Check if data is being written
-            // In Locals window, verify:
-            // - line (the CSV line being written)
-            // - logInitialized (should be true)
-            // - logWriter (should not be null)
-            // - CurrentBar (current bar index)
-            // Step over to see if it actually writes or returns early
-            // PUT BREAKPOINT HERE
-            if (CurrentBar < 5 && System.Diagnostics.Debugger.IsAttached) System.Diagnostics.Debugger.Break(); // DEBUGGER BREAKPOINT - Only on first few bars
             if (!logInitialized || logWriter == null)
             {
                 // Print warning very rarely to avoid spamming (only every 1000 bars if logging fails)

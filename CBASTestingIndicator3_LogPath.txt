@@ -1,9 +1,9 @@
-Log Path: C:\Mac\Home\Documents\NinjaTrader 8\indicators_log\CBASTestingIndicator3_MNQ 12-25_NA_2025-11-16_13-55-24.csv
+Log Path: c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log\CBASTestingIndicator3_MNQ 12-25_NA_2025-11-17_20-23-03.csv
 Actual File Exists: True
-Folder: C:\Mac\Home\Documents\NinjaTrader 8\indicators_log
+Folder: c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log
 Folder Exists: True
 Globals.UserDataDir: C:\Mac\Home\Documents\NinjaTrader 8\
 IsMacOS: False
-Timestamp: 2025-11-16 13:55:24
+Timestamp: 2025-11-17 20:23:03
 
 NOTE: If file doesn't exist, check the Output window for error messages.

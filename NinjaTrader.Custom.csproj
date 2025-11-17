@@ -381,7 +381,6 @@
     <Compile Include="SuperDomColumns\%40PullingStacking.cs" />
     <Compile Include="Strategies\OpenAISTR.cs" />
     <Compile Include="Strategies\%40%40DepthPeekExample.cs" />
-    <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
     <Compile Include="Strategies\Learningstrategy.cs" />
     <Compile Include="Strategies\%40%40CBASTesting.cs" />
     <Compile Include="Strategies\CorysBuySellStrategyGPT5.cs" />
@@ -395,7 +394,6 @@
     <Compile Include="Strategies\CoryBuySellStrategySimplfied.cs" />
     <Compile Include="Indicators\%40%40CBASTestingIndicator1.cs" />
     <Compile Include="Indicators\CBASTestingIndicator2.cs" />
-    <Compile Include="Indicators\CBASTestingIndicator3.cs" />
     <Compile Include="Indicators\%40%40CBASTestingIndicator.cs" />
     <Compile Include="Indicators\StackedBuySellVolume.cs" />
     <Compile Include="Indicators\TicksPerMinute.cs" />
@@ -414,19 +412,13 @@
     <Compile Include="Strategies\AiAssistedOptimizer.cs" />
     <Compile Include="AddOns\Dtoscs.cs" />
     <Compile Include="AddOns\TelemetryClientcs.cs" />
-    <Compile Include="obj\Debug\zh-Hans\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\fr-FR\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\de-DE\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\es-ES\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\ru-RU\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\pt-PT\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\ko-KR\NinjaTrader.Custom.resources.cs" />
-    <Compile Include="obj\Debug\it-IT\NinjaTrader.Custom.resources.cs" />
     <Compile Include="Resource.Designer.cs">
       <AutoGen>True</AutoGen>
       <DependentUpon>Resource.resx</DependentUpon>
     </Compile>
     <Compile Include="GlobalSuppressions.cs" />
+    <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
+    <Compile Include="Indicators\CBASTestingIndicator3.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

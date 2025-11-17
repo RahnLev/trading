@@ -18,12 +18,28 @@
             "requireExactSource": false
         },
         {
-            "name": "Attach by PID (16896 - Current)",
+            "name": "Attach by PID (8184 - Current)",
             "type": "clr",
             "request": "attach",
-            "processId": "16896",
+            "processId": "8184",
             "justMyCode": false,
             "requireExactSource": false
+        },
+        {
+            "name": "Attach with vsdbg-ui (Legacy)",
+            "type": "clr",
+            "request": "attach",
+            "processId": "8184",
+            "justMyCode": false,
+            "requireExactSource": false,
+            "symbolOptions": {
+                "searchPaths": [
+                    "c:\\Mac\\Home\\Documents\\NinjaTrader 8\\bin\\Custom",
+                    "c:\\Mac\\Home\\Documents\\NinjaTrader 8\\bin\\Custom\\bin\\Debug"
+                ],
+                "searchMicrosoftSymbolServer": false,
+                "searchNuGetOrgSymbolServer": false
+            }
         }
     ]
 }
