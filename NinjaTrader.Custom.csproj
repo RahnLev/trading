@@ -25,8 +25,11 @@
     <CodeAnalysisRuleSet>ManagedMinimumRules.ruleset</CodeAnalysisRuleSet>
     <DocumentationFile>bin\Release\NinjaTrader.Custom.XML</DocumentationFile>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-    <NoWarn>1591;CS0579</NoWarn>
+    <NoWarn>1591;CS0579;0579</NoWarn>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <DisableImplicitNamespaceImports>true</DisableImplicitNamespaceImports>
+    <EmbeddedResourceUseDependentUponConvention>false</EmbeddedResourceUseDependentUponConvention>
+    <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <DebugSymbols>true</DebugSymbols>
@@ -425,41 +428,9 @@
       <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
       <Generator>PublicResXFileCodeGenerator</Generator>
     </EmbeddedResource>
-    <EmbeddedResource Update="Resource.de-DE.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.fr-FR.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.zh-Hans.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
     <EmbeddedResource Update="Resource.resx">
       <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
       <Generator>PublicResXFileCodeGenerator</Generator>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.ru-RU.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.it-IT.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.pt-PT.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.ko-KR.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-    </EmbeddedResource>
-    <EmbeddedResource Update="Resource.es-ES.resx">
-      <DependentUpon>Resource.resx</DependentUpon>
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

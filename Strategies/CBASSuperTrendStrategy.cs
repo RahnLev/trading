@@ -2411,7 +2411,9 @@ st = CBASTestingIndicator3(
     realtimeFlatTolerance: RealtimeFlatTolerance,
     showRealtimeStatePlot: ShowRealtimeStatePlot,
     plotRealtimeSignals: PlotRealtimeSignals,
-    flipConfirmationBars: FlipConfirmationBars
+    flipConfirmationBars: FlipConfirmationBars,
+    useEmaSpreadFilter: true,
+    minEmaSpread: 0.0005
 );
 
                 // COMPREHENSIVE PROPERTY VERIFICATION

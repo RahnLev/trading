@@ -41,7 +41,3 @@ NinjaTrader\Custom\resources.cs,Duplicate 'System.Reflection.AssemblyInformation
 NinjaTrader\Custom\resources.cs,Duplicate 'System.Reflection.AssemblyTitleAttribute' attribute,CS0579,16,12,
 NinjaTrader\Custom\resources.cs,Duplicate 'System.Reflection.AssemblyVersionAttribute' attribute,CS0579,17,12,
 NinjaTrader\Custom\resources.cs,Duplicate 'System.Reflection.AssemblyCultureAttribute' attribute,CS0579,18,12,
-AssemblyInfo.cs,Duplicate 'AssemblyTitle' attribute,CS0579,6,12,
-AssemblyInfo.cs,Duplicate 'AssemblyCopyright' attribute,CS0579,11,12,
-AssemblyInfo.cs,Duplicate 'AssemblyCulture' attribute,CS0579,13,12,
-AssemblyInfo.cs,Duplicate 'AssemblyVersion' attribute,CS0579,21,12,
