@@ -1,0 +1,9 @@
+﻿ts_local,event_type,bar_index,signal_type,action_reason,notes
+2025-11-19 01:06:00.000,PLOT,11,BULL,Triangle drawn on chart,netflow=2.30
+2025-11-19 01:06:30.000,LOGGED,12,BULL,Written to signals CSV,"price=24594.00,netflow=2.30"
+2025-11-19 01:15:00.000,PLOT,29,BEAR,Triangle drawn on chart,netflow=-1.50
+2025-11-19 01:15:30.000,LOGGED,30,BEAR,Written to signals CSV,"price=24584.25,netflow=-1.50"
+2025-11-19 01:16:00.000,PLOT,31,BULL,Triangle drawn on chart,netflow=0.86
+2025-11-19 01:16:30.000,LOGGED,32,BULL,Written to signals CSV,"price=24594.00,netflow=0.86"
+2025-11-19 01:36:30.000,PLOT,72,BEAR,Triangle drawn on chart,netflow=-2.50
+2025-11-19 01:37:00.000,LOGGED,73,BEAR,Written to signals CSV,"price=24610.50,netflow=-2.50"
