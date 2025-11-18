@@ -1,0 +1,1059 @@
+﻿ts,method,bip,state,instrument,account,msg
+2025-11-18 23:06:44.347,RefreshDynamicParameters,0,DataLoaded,MNQ 12-25,Sim101,2_11/18/2025 1:00:30 AM DynSizing -> TA:42 SL:21 QtyA:5 QtyB:5 (UseVol=False)
+2025-11-18 23:06:45.803,ManageRunnerStopsCompact,0,Historical,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:11:11.535,OnStateChange,0,Realtime,MNQ 12-25,Sim101,100_[RealtimeStart] nowUtc=2025-11-18T21:11:11.5337105Z CD_longRem=0.0s CD_shortRem=0.0s
+2025-11-18 23:11:11.537,OnStateChange,0,Realtime,MNQ 12-25,Sim101,Test line at 2025-11-18T23:07:00.0000000
+2025-11-18 23:11:59.859,RefreshDynamicParameters,0,Realtime,MNQ 12-25,Sim101,2_11/18/2025 11:12:30 PM DynSizing -> TA:42 SL:81 QtyA:5 QtyB:5 (UseVol=False)
+2025-11-18 23:18:10.973,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:10 PM ENTRY , ShortA , Action=SellShort , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:18:11.022,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:10 PM ENTRY , ShortB , Action=SellShort , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:18:11.023,OnBarUpdate,0,Realtime,MNQ 12-25,Sim101,[TEST] Submitted SHORT A/B 5+5
+2025-11-18 23:18:11.083,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortA , Action=SellShort , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:18:11.083,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortA , Action=SellShort , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:18:11.085,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortA , Action=SellShort , State=PartFilled , Qty=5 Filled=3 , Avg=24549.25 , Err=NoError "
+2025-11-18 23:18:11.100,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortA From= execQty=3 LA=0 LB=0 SA=3 SB=0 posQty=3
+2025-11-18 23:18:11.132,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortB , Action=SellShort , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:18:11.134,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] ShortA SL_A -> 24569.5
+2025-11-18 23:18:11.146,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortB , Action=SellShort , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:18:11.165,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.166,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] ShortA SL_A -> 24569.5
+2025-11-18 23:18:11.221,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortA , Action=SellShort , State=Filled , Qty=5 Filled=5 , Avg=24549.15 , Err=NoError "
+2025-11-18 23:18:11.224,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortA From= execQty=2 LA=0 LB=0 SA=5 SB=0 posQty=5
+2025-11-18 23:18:11.237,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.280,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.282,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.283,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.301,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , PT_A , FromEntry=ShortA , State=Submitted , Lmt=24538.75 Stp=24569.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.303,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"29,11/18/2025 11:18:11 PM ShortA FULL fill @ 24549.15 , PT_A=24538.75 SL_A=24569.5 , dynTA=42 dynSLTicks=81"
+2025-11-18 23:18:11.307,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortB , Action=SellShort , State=PartFilled , Qty=5 Filled=3 , Avg=24549.25 , Err=NoError "
+2025-11-18 23:18:11.313,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortB From= execQty=3 LA=0 LB=0 SA=5 SB=3 posQty=8
+2025-11-18 23:18:11.360,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_B , FromEntry=ShortB , State=Submitted , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.361,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] ShortB SL_B -> 24569.5
+2025-11-18 23:18:11.412,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , PT_A , FromEntry=ShortA , State=Accepted , Lmt=24538.75 Stp=24569.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.415,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , PT_A , FromEntry=ShortA , State=Working , Lmt=24538.75 Stp=24569.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.421,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:18:11 PM ENTRY , ShortB , Action=SellShort , State=Filled , Qty=5 Filled=5 , Avg=24549.15 , Err=NoError "
+2025-11-18 23:18:11.423,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortB From= execQty=2 LA=0 LB=0 SA=5 SB=5 posQty=10
+2025-11-18 23:18:11.426,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"31,11/18/2025 11:18:11 PM ShortB FULL fill @ 24549.15 , SL_B init=24569.5 , dynSLTicks=81 , armed=False"
+2025-11-18 23:18:11.464,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=True SAmode=False armedLB=False armedSB=False RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:18:11.475,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.479,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.480,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:18:11 PM SL_A cancelled but leg still open for ShortA. Re-submitted stop at 24569.5."
+2025-11-18 23:18:11.480,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:18:11.582,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:18:11 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:11.832,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:11 PM , PT_A , FromEntry=ShortA , State=CancelPending , Lmt=24538.75 Stp=24565 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:11.841,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:11 PM , PT_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=24538.75 Stp=24564.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:11.931,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:11 PM , SL_A , FromEntry=ShortA , State=ChangePending , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.301,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:11 PM , SL_A , FromEntry=ShortA , State=ChangeSubmitted , Lmt=0 Stp=24548 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.322,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[A-TimeTrail] ShortA SL_A -> 24548
+2025-11-18 23:21:12.359,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:12 PM , PT_A , FromEntry=ShortA , State=Cancelled , Lmt=24538.75 Stp=24564.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.401,LogAConvert,0,Realtime,MNQ 12-25,Sim101,[A-Convert] reason=time side=ShortA ticks=14 last=24544.50 stop=24548.00 distToPT=23.00 elapsed=181s t=23:21:30.000
+2025-11-18 23:21:12.595,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=True SAmode=True armedLB=False armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:21:12.619,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:12 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24548 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.635,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24548.25 guard=24545 prev=24569.5
+2025-11-18 23:21:12.651,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:12 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24569.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.719,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:12 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24548.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.913,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:12 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24548.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:12.920,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24548.25
+2025-11-18 23:21:13.177,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24548.25 guard=24545 prev=24548.25
+2025-11-18 23:21:13.282,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24548.25 guard=24545 prev=24548.25
+2025-11-18 23:21:13.474,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24547.75 guard=24544.5 prev=24548.25
+2025-11-18 23:21:13.500,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:13 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24548.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:13.582,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:13 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24547.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:13.600,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24547.75
+2025-11-18 23:21:13.737,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:13 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24547.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:13.755,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24547 guard=24543.75 prev=24547.75
+2025-11-18 23:21:13.774,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:13 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24547.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:13.782,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:13 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24547 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:13.792,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24547
+2025-11-18 23:21:14.124,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:14 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24547 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:14.775,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24547.5 guard=24544.25 prev=24547
+2025-11-18 23:21:14.890,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24547.5 guard=24544.25 prev=24547
+2025-11-18 23:21:15.395,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24546 guard=24542.75 prev=24547
+2025-11-18 23:21:15.440,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:15 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24547 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:15.533,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:15 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24546 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:15.582,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24546
+2025-11-18 23:21:15.841,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:15 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24546 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:16.326,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24545.75 guard=24542.5 prev=24546
+2025-11-18 23:21:16.333,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:16 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24546 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:16.338,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:16 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24545.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:16.349,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24545.75
+2025-11-18 23:21:16.476,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:16 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24545.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:16.605,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24545.75
+2025-11-18 23:21:16.610,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:16 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24545.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:16.658,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:16 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24543.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:16.660,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24543.5
+2025-11-18 23:21:16.864,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.75 guard=24540.5 prev=24543.5
+2025-11-18 23:21:16.864,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:16 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24543.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:17.058,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544 guard=24540.75 prev=24543.5
+2025-11-18 23:21:17.171,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24543.5
+2025-11-18 23:21:17.306,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24543.5
+2025-11-18 23:21:17.489,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.25 guard=24540 prev=24543.5
+2025-11-18 23:21:17.603,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:17 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24543.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:17.630,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:17 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24543.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:17.655,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24543.25
+2025-11-18 23:21:17.772,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:17 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24543.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:17.775,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24543.25
+2025-11-18 23:21:18.024,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24543.25
+2025-11-18 23:21:18.314,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24543.25
+2025-11-18 23:21:18.401,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24543.25
+2025-11-18 23:21:18.511,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.75 guard=24541.5 prev=24543.25
+2025-11-18 23:21:18.742,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24545 guard=24541.75 prev=24543.25
+2025-11-18 23:21:18.818,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24543.25
+2025-11-18 23:21:19.036,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24543.25
+2025-11-18 23:21:19.163,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24543.25
+2025-11-18 23:21:19.458,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.75 guard=24541.5 prev=24543.25
+2025-11-18 23:21:20.037,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544 guard=24540.75 prev=24543.25
+2025-11-18 23:21:20.454,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24543.25
+2025-11-18 23:21:20.944,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24543.25
+2025-11-18 23:21:21.514,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544 guard=24540.75 prev=24543.25
+2025-11-18 23:21:21.635,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24543.25
+2025-11-18 23:21:21.636,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:21 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24543.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:21.636,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:21 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24542.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:21.637,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24542.75
+2025-11-18 23:21:21.741,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:21 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24542.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:21.853,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:21.935,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:22.114,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:22.376,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:22.660,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.25 guard=24540 prev=24542.75
+2025-11-18 23:21:23.009,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:23.160,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24542.75
+2025-11-18 23:21:23.570,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24542.75
+2025-11-18 23:21:23.769,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.75 guard=24541.5 prev=24542.75
+2025-11-18 23:21:23.966,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24542.75
+2025-11-18 23:21:24.770,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.5 guard=24541.25 prev=24542.75
+2025-11-18 23:21:25.487,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24542.75
+2025-11-18 23:21:25.850,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24545 guard=24541.75 prev=24542.75
+2025-11-18 23:21:26.147,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24545 guard=24541.75 prev=24542.75
+2025-11-18 23:21:26.795,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:26.881,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.75
+2025-11-18 23:21:27.206,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.75 guard=24540.5 prev=24542.75
+2025-11-18 23:21:27.368,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.75 guard=24540.5 prev=24542.75
+2025-11-18 23:21:28.356,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24545 guard=24541.75 prev=24542.75
+2025-11-18 23:21:29.061,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24545 guard=24541.75 prev=24542.75
+2025-11-18 23:21:29.487,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.75
+2025-11-18 23:21:29.787,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.25 guard=24539 prev=24542.75
+2025-11-18 23:21:29.793,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:29 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24542.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:29.795,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:29 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24542.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:29.803,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24542.25
+2025-11-18 23:21:29.933,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:29 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24542.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:30.048,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544 guard=24540.75 prev=24542.25
+2025-11-18 23:21:30.299,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.75 guard=24540.5 prev=24542.25
+2025-11-18 23:21:30.409,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.25
+2025-11-18 23:21:30.610,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24542.25
+2025-11-18 23:21:30.905,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:31.055,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:31.275,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:31.421,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:31.699,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:31.836,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.25 guard=24540 prev=24542.25
+2025-11-18 23:21:32.055,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.25 guard=24540 prev=24542.25
+2025-11-18 23:21:32.683,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.25
+2025-11-18 23:21:33.204,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:33.604,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:33.680,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544.25 guard=24541 prev=24542.25
+2025-11-18 23:21:33.927,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544 guard=24540.75 prev=24542.25
+2025-11-18 23:21:34.446,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.25 guard=24540 prev=24542.25
+2025-11-18 23:21:35.453,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24542.25
+2025-11-18 23:21:35.603,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24542.25
+2025-11-18 23:21:35.883,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.25 guard=24540 prev=24542.25
+2025-11-18 23:21:36.183,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24544 guard=24540.75 prev=24542.25
+2025-11-18 23:21:36.627,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.25
+2025-11-18 23:21:36.718,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543.5 guard=24540.25 prev=24542.25
+2025-11-18 23:21:37.373,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:37.542,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24543 guard=24539.75 prev=24542.25
+2025-11-18 23:21:38.024,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24542.25
+2025-11-18 23:21:38.047,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:38 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24542.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:38.161,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:38 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24541.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:38.201,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24541.75
+2025-11-18 23:21:38.381,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:38 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24541.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:38.484,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.5 guard=24538.25 prev=24541.75
+2025-11-18 23:21:38.493,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:38 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24541.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:38.497,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:38 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24541.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:38.498,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24541.5
+2025-11-18 23:21:38.609,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:38 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24541.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:39.059,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.25 guard=24538 prev=24541.5
+2025-11-18 23:21:39.071,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:39 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24541.5 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:39.114,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:39 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24541.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:39.131,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24541.25
+2025-11-18 23:21:39.334,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:39 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24541.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:39.450,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24541.25
+2025-11-18 23:21:39.734,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.5 guard=24539.25 prev=24541.25
+2025-11-18 23:21:39.855,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.25 guard=24538 prev=24541.25
+2025-11-18 23:21:40.199,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.5 guard=24538.25 prev=24541.25
+2025-11-18 23:21:40.206,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541 guard=24537.75 prev=24541.25
+2025-11-18 23:21:40.215,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:40 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24541.25 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:40.258,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:40 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24541 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:40.279,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24541
+2025-11-18 23:21:40.484,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:40 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24541 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:40.526,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24541
+2025-11-18 23:21:40.689,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24541
+2025-11-18 23:21:41.834,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24540 guard=24536.75 prev=24541
+2025-11-18 23:21:41.844,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:41 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24541 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:41.847,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:41 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24540 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:41.851,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24540
+2025-11-18 23:21:41.961,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:41 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24540 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:41.978,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24539.75 guard=24536.5 prev=24540
+2025-11-18 23:21:41.980,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:41 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24540 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:41.980,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:41 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24539.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:41.981,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24539.75
+2025-11-18 23:21:42.107,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24539 guard=24535.75 prev=24539.75
+2025-11-18 23:21:42.107,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:42 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24539.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:42.109,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:42 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24539.75 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:42.110,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:42 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24539 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:42.123,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24539
+2025-11-18 23:21:42.224,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:42 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24539 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:42.351,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24539 guard=24535.75 prev=24539
+2025-11-18 23:21:42.523,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24539.25 guard=24536 prev=24539
+2025-11-18 23:21:42.881,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24539.5 guard=24536.25 prev=24539
+2025-11-18 23:21:43.006,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24540 guard=24536.75 prev=24539
+2025-11-18 23:21:43.286,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542 guard=24538.75 prev=24539
+2025-11-18 23:21:43.406,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.5 guard=24538.25 prev=24539
+2025-11-18 23:21:43.559,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541 guard=24537.75 prev=24539
+2025-11-18 23:21:43.771,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541 guard=24537.75 prev=24539
+2025-11-18 23:21:43.901,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24540.25 guard=24537 prev=24539
+2025-11-18 23:21:44.954,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.25 guard=24538 prev=24539
+2025-11-18 23:21:45.102,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.25 guard=24538 prev=24539
+2025-11-18 23:21:45.366,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.25 guard=24538 prev=24539
+2025-11-18 23:21:45.729,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.5 guard=24538.25 prev=24539
+2025-11-18 23:21:46.139,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24539
+2025-11-18 23:21:46.230,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24539
+2025-11-18 23:21:46.532,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24539
+2025-11-18 23:21:46.630,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542 guard=24538.75 prev=24539
+2025-11-18 23:21:46.834,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24541.75 guard=24538.5 prev=24539
+2025-11-18 23:21:46.962,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.25 guard=24539 prev=24539
+2025-11-18 23:21:49.235,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24539
+2025-11-18 23:21:49.240,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:49 PM , SL_B , FromEntry=ShortB , State=Working , Lmt=0 Stp=24539 , Qty=3 Filled=0 , Error=NoError "
+2025-11-18 23:21:49.350,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_STAMP_EVT], 2025-11-18T23:21:49.2417827 dir=SHORT anchorUtc=2025-11-18T21:21:49.3497917Z desiredExp=2025-11-18T21:21:54.3497917Z setExp=2025-11-18T21:21:54.3497917Z"
+2025-11-18 23:21:49.373,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_CHECK_POST], state=Realtime barT=2025-11-18T23:22:00.0000000 dir=SHORT rem=4.98s nowUtc=2025-11-18T21:21:49.3737971Z"
+2025-11-18 23:21:49.418,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:49 PM , SL_B , FromEntry=ShortB , State=Filled , Lmt=0 Stp=24539 , Qty=3 Filled=3 , Error=NoError "
+2025-11-18 23:21:49.459,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_B From=ShortB execQty=3 LA=0 LB=0 SA=5 SB=2 posQty=7
+2025-11-18 23:21:49.538,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.5 guard=24539.25 prev=NaN
+2025-11-18 23:21:49.981,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:49 PM , SL_B , FromEntry=ShortB , State=Submitted , Lmt=0 Stp=24542.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:50.003,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24542.5
+2025-11-18 23:21:50.150,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.5 guard=24539.25 prev=24542.5
+2025-11-18 23:21:50.156,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:50 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24542.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:50.416,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24542.5
+2025-11-18 23:21:50.903,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542.75 guard=24539.5 prev=24542.5
+2025-11-18 23:21:52.366,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24542 guard=24538.75 prev=24542.5
+2025-11-18 23:21:52.409,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:52 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24542.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:52.432,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:52 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24542 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:52.463,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24542
+2025-11-18 23:21:52.776,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:52 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24542 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.047,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24539.25 guard=24536 prev=24542
+2025-11-18 23:21:53.053,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24542 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.083,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24539.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.149,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24539.25
+2025-11-18 23:21:53.292,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24539.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.517,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24537.75 guard=24534.5 prev=24539.25
+2025-11-18 23:21:53.583,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24539.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.609,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24537.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.617,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24537.75
+2025-11-18 23:21:53.740,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24537.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.760,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24537.25 guard=24534 prev=24537.75
+2025-11-18 23:21:53.766,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24537.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.767,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24537.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.782,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] ShortB SL_B -> 24537.25
+2025-11-18 23:21:53.935,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24537.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:53.951,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] ShortB tighten desired=24537.25 guard=24534 prev=24537.25
+2025-11-18 23:21:53.967,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=Working , Lmt=0 Stp=24537.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:21:54.176,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_STAMP_EVT], 2025-11-18T23:21:53.9706969 dir=SHORT anchorUtc=2025-11-18T21:21:54.1760030Z desiredExp=2025-11-18T21:21:59.1760030Z setExp=2025-11-18T21:21:59.1760030Z"
+2025-11-18 23:21:54.182,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_CHECK_POST], state=Realtime barT=2025-11-18T23:22:00.0000000 dir=SHORT rem=4.99s nowUtc=2025-11-18T21:21:54.1820065Z"
+2025-11-18 23:21:54.189,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:21:53 PM , SL_B , FromEntry=ShortB , State=Filled , Lmt=0 Stp=24537.25 , Qty=2 Filled=2 , Error=NoError "
+2025-11-18 23:21:54.253,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_B From=ShortB execQty=2 LA=0 LB=0 SA=5 SB=0 posQty=5
+2025-11-18 23:22:40.905,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:40 PM , SL_A , FromEntry=ShortA , State=ChangePending , Lmt=0 Stp=24548 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:40.943,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:40 PM , SL_A , FromEntry=ShortA , State=ChangeSubmitted , Lmt=0 Stp=24544.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:41.046,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:41 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24544.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:49.128,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:49 PM , SL_A , FromEntry=ShortA , State=ChangePending , Lmt=0 Stp=24544.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:49.151,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:49 PM , SL_A , FromEntry=ShortA , State=ChangeSubmitted , Lmt=0 Stp=24542.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:49.262,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:49 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24542.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:56.960,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:56 PM , SL_A , FromEntry=ShortA , State=ChangePending , Lmt=0 Stp=24542.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:56.984,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:56 PM , SL_A , FromEntry=ShortA , State=ChangeSubmitted , Lmt=0 Stp=24538.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:22:57.091,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:22:57 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24538.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:23:09.388,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:23:09 PM , SL_A , FromEntry=ShortA , State=ChangePending , Lmt=0 Stp=24538.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:23:09.416,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:23:09 PM , SL_A , FromEntry=ShortA , State=ChangeSubmitted , Lmt=0 Stp=24537.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:23:09.517,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:23:09 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24537.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:23:09.988,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:23:09 PM , SL_A , FromEntry=ShortA , State=Working , Lmt=0 Stp=24537.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:23:09.992,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"44,11/18/2025 11:23:09 PM SL_A partial fill; runner KEPT (partialCfg=False, fullCfg=False)."
+2025-11-18 23:23:09.994,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"46,11/18/2025 11:23:09 PM SL_A partial for ShortA. Stop unchanged at 24537.25, not resubmitting."
+2025-11-18 23:23:09.994,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:23:09 PM , SL_A , FromEntry=ShortA , State=PartFilled , Lmt=0 Stp=24537.25 , Qty=5 Filled=4 , Error=NoError "
+2025-11-18 23:23:10.016,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_A From=ShortA execQty=4 LA=0 LB=0 SA=1 SB=0 posQty=1
+2025-11-18 23:23:10.070,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_STAMP_EVT], 2025-11-18T23:23:10.0196954 dir=SHORT anchorUtc=2025-11-18T21:23:10.0707000Z desiredExp=2025-11-18T21:23:15.0707000Z setExp=2025-11-18T21:23:15.0707000Z"
+2025-11-18 23:23:10.071,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_CHECK_POST], state=Realtime barT=2025-11-18T23:23:30.0000000 dir=SHORT rem=5.00s nowUtc=2025-11-18T21:23:10.0717000Z"
+2025-11-18 23:23:10.071,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"44,11/18/2025 11:23:10 PM SL_A full fill; runner KEPT (partialCfg=False, fullCfg=False)."
+2025-11-18 23:23:10.071,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:23:10 PM , SL_A , FromEntry=ShortA , State=Filled , Lmt=0 Stp=24537.25 , Qty=5 Filled=5 , Error=NoError "
+2025-11-18 23:23:10.073,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_A From=ShortA execQty=1 LA=0 LB=0 SA=0 SB=0 posQty=0
+2025-11-18 23:23:10.087,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:25:14.204,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongA , Action=Buy , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:25:14.267,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongB , Action=Buy , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:25:14.269,OnBarUpdate,0,Realtime,MNQ 12-25,Sim101,[TEST] Submitted LONG A/B 5+5
+2025-11-18 23:25:14.347,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongA , Action=Buy , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:25:14.349,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongA , Action=Buy , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:25:14.350,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongA , Action=Buy , State=PartFilled , Qty=5 Filled=1 , Avg=24548 , Err=NoError "
+2025-11-18 23:25:14.361,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongA From= execQty=1 LA=1 LB=0 SA=0 SB=0 posQty=1
+2025-11-18 23:25:14.454,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.465,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24527.75
+2025-11-18 23:25:14.524,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongA , Action=Buy , State=Filled , Qty=5 Filled=5 , Avg=24548.2 , Err=NoError "
+2025-11-18 23:25:14.529,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongA From= execQty=4 LA=5 LB=0 SA=0 SB=0 posQty=5
+2025-11-18 23:25:14.533,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.604,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , PT_A , FromEntry=LongA , State=Submitted , Lmt=24558.75 Stp=24527.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.607,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"28,11/18/2025 11:25:14 PM LongA FULL fill @ 24548.2 , PT_A=24558.75 SL_A=24528 , dynTA=42 dynSLTicks=81"
+2025-11-18 23:25:14.625,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=True LAmode=False SAopen=False SAmode=False armedLB=False armedSB=False RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:25:14.695,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Rescue]  SL_FAILSAFE -> 24527.25
+2025-11-18 23:25:14.715,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongB , Action=Buy , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:25:14.716,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongB , Action=Buy , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:25:14.717,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.717,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=CancelSubmitted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.719,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.725,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , PT_A , FromEntry=LongA , State=Accepted , Lmt=24558.75 Stp=24527.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.726,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , PT_A , FromEntry=LongA , State=Working , Lmt=24558.75 Stp=24527.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.785,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:25:14 PM ENTRY , LongB , Action=Buy , State=Filled , Qty=5 Filled=5 , Avg=24548 , Err=NoError "
+2025-11-18 23:25:14.797,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongB From= execQty=5 LA=5 LB=5 SA=0 SB=0 posQty=10
+2025-11-18 23:25:14.957,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.959,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:25:14 PM SL_A cancelled but leg still open for LongA. Re-submitted stop at 24527.75."
+2025-11-18 23:25:14.959,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=Cancelled , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.979,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.981,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24527.75
+2025-11-18 23:25:14.985,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:14 PM , SL_B , FromEntry=LongB , State=Submitted , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:14.987,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"30,11/18/2025 11:25:14 PM LongB FULL fill @ 24548 , SL_B init=24527.75 , dynSLTicks=81 , armed=False"
+2025-11-18 23:25:15.064,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:15 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:15.121,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:15 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:15.124,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:15 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:30.563,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:30 PM , PT_A , FromEntry=LongA , State=ChangePending , Lmt=24558.75 Stp=24524.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:30.603,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:30 PM , PT_A , FromEntry=LongA , State=ChangeSubmitted , Lmt=24571.75 Stp=24524.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:31.784,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:31 PM , PT_A , FromEntry=LongA , State=Accepted , Lmt=24571.75 Stp=24524 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:25:31.786,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:25:31 PM , PT_A , FromEntry=LongA , State=Working , Lmt=24571.75 Stp=24524 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:14.682,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:14 PM , PT_A , FromEntry=LongA , State=CancelPending , Lmt=24571.75 Stp=24536.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:14.683,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:14 PM , PT_A , FromEntry=LongA , State=CancelSubmitted , Lmt=24571.75 Stp=24536.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:14.684,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:14 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:14.994,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:14 PM , SL_A , FromEntry=LongA , State=ChangeSubmitted , Lmt=0 Stp=24555 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.032,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[A-TimeTrail] LongA SL_A -> 24555
+2025-11-18 23:28:15.038,LogAConvert,0,Realtime,MNQ 12-25,Sim101,[A-Convert] reason=time side=LongA ticks=8 last=24558.50 stop=24555.00 distToPT=1.00 elapsed=180s t=23:28:30.000
+2025-11-18 23:28:15.052,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=True LAmode=True SAopen=False SAmode=False armedLB=True armedSB=False RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:28:15.131,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:14 PM , PT_A , FromEntry=LongA , State=Cancelled , Lmt=24571.75 Stp=24538.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.134,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24555 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.161,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24527.75
+2025-11-18 23:28:15.163,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_B , FromEntry=LongB , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.164,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_B , FromEntry=LongB , State=ChangeSubmitted , Lmt=0 Stp=24556.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.164,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] LongB SL_B -> 24556.5
+2025-11-18 23:28:15.266,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24556.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.350,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.75 guard=24558.5 prev=24556.5
+2025-11-18 23:28:15.351,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_B , FromEntry=LongB , State=ChangePending , Lmt=0 Stp=24556.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.353,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_B , FromEntry=LongB , State=ChangeSubmitted , Lmt=0 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.354,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] LongB SL_B -> 24556.75
+2025-11-18 23:28:15.461,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:15 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:15.666,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556 guard=24557.75 prev=24556.75
+2025-11-18 23:28:15.767,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24555.75 guard=24557.5 prev=24556.75
+2025-11-18 23:28:15.957,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556 guard=24557.75 prev=24556.75
+2025-11-18 23:28:16.278,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556 guard=24557.75 prev=24556.75
+2025-11-18 23:28:16.421,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556 guard=24557.75 prev=24556.75
+2025-11-18 23:28:16.546,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24556.75
+2025-11-18 23:28:16.715,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.25 guard=24558 prev=24556.75
+2025-11-18 23:28:16.848,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.25 guard=24558 prev=24556.75
+2025-11-18 23:28:16.966,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24556.75
+2025-11-18 23:28:17.123,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24556.75
+2025-11-18 23:28:17.277,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24556.75
+2025-11-18 23:28:17.558,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24556.75
+2025-11-18 23:28:17.560,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:17 PM , SL_B , FromEntry=LongB , State=ChangePending , Lmt=0 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:17.561,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:17 PM , SL_B , FromEntry=LongB , State=ChangeSubmitted , Lmt=0 Stp=24557 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:17.561,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] LongB SL_B -> 24557
+2025-11-18 23:28:17.667,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:17 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24557 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:17.809,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24557
+2025-11-18 23:28:17.998,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24557
+2025-11-18 23:28:18.163,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.75 guard=24558.5 prev=24557
+2025-11-18 23:28:18.401,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.75 guard=24558.5 prev=24557
+2025-11-18 23:28:18.749,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.75 guard=24558.5 prev=24557
+2025-11-18 23:28:18.944,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24557
+2025-11-18 23:28:19.235,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24557
+2025-11-18 23:28:19.357,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24557
+2025-11-18 23:28:19.856,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24557
+2025-11-18 23:28:20.048,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.25 guard=24558 prev=24557
+2025-11-18 23:28:20.264,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24557
+2025-11-18 23:28:20.353,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.5 guard=24558.25 prev=24557
+2025-11-18 23:28:21.028,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557.75 guard=24559.5 prev=24557
+2025-11-18 23:28:21.030,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=ChangePending , Lmt=0 Stp=24557 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:21.031,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=ChangeSubmitted , Lmt=0 Stp=24557.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:21.032,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Runner] LongB SL_B -> 24557.75
+2025-11-18 23:28:21.136,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24557.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:21.450,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24557 guard=24558.75 prev=24557.75
+2025-11-18 23:28:21.684,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerDo] LongB tighten desired=24556.25 guard=24558 prev=24557.75
+2025-11-18 23:28:21.734,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=Working , Lmt=0 Stp=24557.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:21.737,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"46,11/18/2025 11:28:21 PM SL_B partial for LongB. Stop unchanged at 24557.75, not resubmitting."
+2025-11-18 23:28:21.738,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=PartFilled , Lmt=0 Stp=24557.75 , Qty=5 Filled=3 , Error=NoError "
+2025-11-18 23:28:21.740,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_B From=LongB execQty=3 LA=5 LB=2 SA=0 SB=0 posQty=7
+2025-11-18 23:28:21.809,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_STAMP_EVT] ,2025-11-18T23:28:21.7427633 dir=LONG anchorUtc=2025-11-18T21:28:21.8070742Z desiredExp=2025-11-18T21:28:26.8070742Z setExp=2025-11-18T21:28:26.8070742Z"
+2025-11-18 23:28:21.823,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_CHECK_POST], state=Realtime barT=2025-11-18T23:28:30.0000000 dir=LONG rem=4.99s nowUtc=2025-11-18T21:28:21.8126921Z"
+2025-11-18 23:28:21.889,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=Submitted , Lmt=0 Stp=24527.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:28:21.890,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] LongB SL_B -> 24527.75
+2025-11-18 23:28:21.890,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=Filled , Lmt=0 Stp=24557.75 , Qty=5 Filled=5 , Error=NoError "
+2025-11-18 23:28:21.903,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:21 PM , SL_B , FromEntry=LongB , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:28:21.904,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_B From=LongB execQty=2 LA=5 LB=0 SA=0 SB=0 posQty=5
+2025-11-18 23:28:22.010,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:22 PM , SL_B , FromEntry=LongB , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:28:22.012,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:22 PM , SL_B , FromEntry=LongB , State=CancelSubmitted , Lmt=0 Stp=24527.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:28:22.014,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:22 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24527.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:28:22.165,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:22 PM , SL_B , FromEntry=LongB , State=Cancelled , Lmt=0 Stp=24527.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:28:40.928,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:40 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:40.961,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:40 PM , SL_A , FromEntry=LongA , State=ChangeSubmitted , Lmt=0 Stp=24546 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:41.065,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:41 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24546 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.058,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=Working , Lmt=0 Stp=24555 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.061,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"44,11/18/2025 11:28:50 PM SL_A partial fill; runner KEPT (partialCfg=False, fullCfg=False)."
+2025-11-18 23:28:50.062,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"46,11/18/2025 11:28:50 PM SL_A partial for LongA. Stop unchanged at 24555, not resubmitting."
+2025-11-18 23:28:50.063,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=PartFilled , Lmt=0 Stp=24555 , Qty=5 Filled=1 , Error=NoError "
+2025-11-18 23:28:50.083,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24546 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.084,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=ChangeSubmitted , Lmt=0 Stp=24546 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.085,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_A From=LongA execQty=1 LA=4 LB=0 SA=0 SB=0 posQty=4
+2025-11-18 23:28:50.147,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_STAMP_EVT] ,2025-11-18T23:28:50.0874155 dir=LONG anchorUtc=2025-11-18T21:28:50.1474384Z desiredExp=2025-11-18T21:28:55.1474384Z setExp=2025-11-18T21:28:55.1474384Z"
+2025-11-18 23:28:50.148,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[CDN_CHECK_POST], state=Realtime barT=2025-11-18T23:29:00.0000000 dir=LONG rem=5.00s nowUtc=2025-11-18T21:28:50.1484206Z"
+2025-11-18 23:28:50.148,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"44,11/18/2025 11:28:50 PM SL_A full fill; runner KEPT (partialCfg=False, fullCfg=False)."
+2025-11-18 23:28:50.155,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=Filled , Lmt=0 Stp=24555 , Qty=5 Filled=5 , Error=NoError "
+2025-11-18 23:28:50.161,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24546 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.164,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=SL_A From=LongA execQty=4 LA=0 LB=0 SA=0 SB=0 posQty=0
+2025-11-18 23:28:50.187,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24546 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.188,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=CancelSubmitted , Lmt=0 Stp=24546 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.189,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24546 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:28:50.197,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:28:50.344,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:28:50 PM , SL_A , FromEntry=LongA , State=Cancelled , Lmt=0 Stp=24546 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.302,SubmitShortAB,0,Realtime,MNQ 12-25,Sim101,19_11/18/2025 11:30:00 PM SubmitShortAB: QtyA=5 QtyB=5
+2025-11-18 23:29:35.365,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortA , Action=SellShort , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:29:35.443,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortB , Action=SellShort , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:29:35.481,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortA , Action=SellShort , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:29:35.482,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortA , Action=SellShort , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:29:35.484,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortA , Action=SellShort , State=PartFilled , Qty=5 Filled=2 , Avg=24549.25 , Err=NoError "
+2025-11-18 23:29:35.484,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortA From= execQty=2 LA=0 LB=0 SA=2 SB=0 posQty=2
+2025-11-18 23:29:35.550,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortB , Action=SellShort , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:29:35.558,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] ShortA SL_A -> 24569.5
+2025-11-18 23:29:35.559,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortB , Action=SellShort , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:29:35.563,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24569.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.564,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] ShortA SL_A -> 24569.5
+2025-11-18 23:29:35.624,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortA , Action=SellShort , State=Filled , Qty=5 Filled=5 , Avg=24549.1 , Err=NoError "
+2025-11-18 23:29:35.633,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortA From= execQty=3 LA=0 LB=0 SA=5 SB=0 posQty=5
+2025-11-18 23:29:35.634,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.676,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.679,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24569.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.679,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24569.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.708,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , PT_A , FromEntry=ShortA , State=Submitted , Lmt=24538.5 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.709,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"29,11/18/2025 11:29:35 PM ShortA FULL fill @ 24549.1 , PT_A=24538.5 SL_A=24569.25 , dynTA=42 dynSLTicks=81"
+2025-11-18 23:29:35.712,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortB , Action=SellShort , State=PartFilled , Qty=5 Filled=1 , Avg=24549.25 , Err=NoError "
+2025-11-18 23:29:35.714,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortB From= execQty=1 LA=0 LB=0 SA=5 SB=1 posQty=6
+2025-11-18 23:29:35.793,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_B , FromEntry=ShortB , State=Submitted , Lmt=0 Stp=24569.5 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.794,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] ShortB SL_B -> 24569.5
+2025-11-18 23:29:35.810,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , PT_A , FromEntry=ShortA , State=Accepted , Lmt=24538.5 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.811,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , PT_A , FromEntry=ShortA , State=Working , Lmt=24538.5 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.869,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:29:35 PM ENTRY , ShortB , Action=SellShort , State=Filled , Qty=5 Filled=5 , Avg=24549.05 , Err=NoError "
+2025-11-18 23:29:35.875,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortB From= execQty=4 LA=0 LB=0 SA=5 SB=5 posQty=10
+2025-11-18 23:29:35.877,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24569.5 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.878,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"31,11/18/2025 11:29:35 PM ShortB FULL fill @ 24549.05 , SL_B init=24569.25 , dynSLTicks=81 , armed=False"
+2025-11-18 23:29:35.897,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24569.5 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.897,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24569.25 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.898,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24569.5 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.938,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.938,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:29:35 PM SL_A cancelled but leg still open for ShortA. Re-submitted stop at 24569.5."
+2025-11-18 23:29:35.938,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:35 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24569.5 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:29:35.946,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=True SAmode=False armedLB=False armedSB=False RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:29:36.010,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:36 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24569.25 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:29:36.048,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:29:36 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:30:25.132,OnBarUpdate,0,Realtime,MNQ 12-25,Sim101,[TEST] Skipped LONG test: not flat
+2025-11-18 23:31:01.486,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , PT_A , FromEntry=ShortA , State=CancelPending , Lmt=24538.5 Stp=24571.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.487,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , PT_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=24538.5 Stp=24571.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.488,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.489,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.501,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=CancelPending , Lmt=0 Stp=24569.25 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.504,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=CancelSubmitted , Lmt=0 Stp=24569.25 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.505,CancelAllOrders,0,Realtime,MNQ 12-25,Sim101,"[CancelAll:TerminalFlat] Cancel requests sent=3 (entries=True, stops=True, targets=True, exits=True, failsafes=True)"
+2025-11-18 23:31:01.657,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , PT_A , FromEntry=ShortA , State=Cancelled , Lmt=24538.5 Stp=24571.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.674,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[FailsafeSchedule] Stop cancelled, no proper stops active; scheduling failsafe."
+2025-11-18 23:31:01.764,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.766,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:31:01 PM SL_A cancelled but leg still open for ShortA. Re-submitted stop at 24569.5."
+2025-11-18 23:31:01.767,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.773,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[Rescue]  SL_FAILSAFE -> 24571.5
+2025-11-18 23:31:01.780,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] ShortB SL_B -> 24569.25
+2025-11-18 23:31:01.848,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:31:01 PM SL_B cancelled but leg still open for ShortB. Re-submitted stop at 24569.25."
+2025-11-18 23:31:01.855,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=Cancelled , Lmt=0 Stp=24569.25 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.857,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=Submitted , Lmt=0 Stp=24569.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.858,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] ShortB SL_B -> 24569.25
+2025-11-18 23:31:01.861,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.863,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortA execQty=2 LA=0 LB=0 SA=5 SB=5 posQty=8
+2025-11-18 23:31:01.874,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.879,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.880,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.927,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortA execQty=3 LA=0 LB=0 SA=5 SB=5 posQty=5
+2025-11-18 23:31:01.941,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=CancelPending , Lmt=0 Stp=24569.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.941,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortB execQty=2 LA=0 LB=0 SA=5 SB=5 posQty=3
+2025-11-18 23:31:01.968,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=CancelPending , Lmt=0 Stp=24569.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.972,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=CancelSubmitted , Lmt=0 Stp=24569.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:01.972,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24569.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:02.022,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortB execQty=3 LA=0 LB=0 SA=5 SB=5 posQty=0
+2025-11-18 23:31:02.054,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:31:01 PM SL_A cancelled but leg still open for ShortA. Re-submitted stop at 24569.5."
+2025-11-18 23:31:02.056,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:01 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24569.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:02.141,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:31:02 PM SL_B cancelled but leg still open for ShortB. Re-submitted stop at 24569.25."
+2025-11-18 23:31:02.141,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:02 PM , SL_B , FromEntry=ShortB , State=Cancelled , Lmt=0 Stp=24569.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:02.449,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:31:34.599,SubmitLongAB,0,Realtime,MNQ 12-25,Sim101,16_11/18/2025 11:32:00 PM SubmitLongAB: QtyA=5 QtyB=5
+2025-11-18 23:31:34.669,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongA , Action=Buy , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:31:34.733,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongB , Action=Buy , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:31:34.781,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongA , Action=Buy , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:31:34.784,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongA , Action=Buy , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:31:34.785,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongA , Action=Buy , State=PartFilled , Qty=5 Filled=1 , Avg=24548 , Err=NoError "
+2025-11-18 23:31:34.793,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongA From= execQty=1 LA=1 LB=0 SA=0 SB=0 posQty=1
+2025-11-18 23:31:34.865,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongB , Action=Buy , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:31:34.866,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:34 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:34.870,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongB , Action=Buy , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:31:34.871,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24527.75
+2025-11-18 23:31:34.952,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:34 PM ENTRY , LongA , Action=Buy , State=Filled , Qty=5 Filled=5 , Avg=24548.2 , Err=NoError "
+2025-11-18 23:31:34.953,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongA From= execQty=4 LA=5 LB=0 SA=0 SB=0 posQty=5
+2025-11-18 23:31:34.955,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:34 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:34.983,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:34 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:34.992,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:34 PM , SL_A , FromEntry=LongA , State=CancelSubmitted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:34.995,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:34 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:35.032,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:34 PM , PT_A , FromEntry=LongA , State=Submitted , Lmt=24558.75 Stp=24527.5 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:35.034,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"28,11/18/2025 11:31:34 PM LongA FULL fill @ 24548.2 , PT_A=24558.75 SL_A=24528 , dynTA=42 dynSLTicks=81"
+2025-11-18 23:31:35.037,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:35 PM ENTRY , LongB , Action=Buy , State=PartFilled , Qty=5 Filled=1 , Avg=24548 , Err=NoError "
+2025-11-18 23:31:35.039,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongB From= execQty=1 LA=5 LB=1 SA=0 SB=0 posQty=6
+2025-11-18 23:31:36.589,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.590,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.590,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_A , FromEntry=LongA , State=Submitted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.658,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24528
+2025-11-18 23:31:36.659,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:31:35 PM SL_A cancelled but leg still open for LongA. Re-submitted stop at 24527.75."
+2025-11-18 23:31:36.661,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:35 PM , SL_B , FromEntry=LongB , State=Submitted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.659,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24528
+2025-11-18 23:31:36.662,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] LongB SL_B -> 24527.75
+2025-11-18 23:31:36.663,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:35 PM , PT_A , FromEntry=LongA , State=Accepted , Lmt=24558.75 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.676,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24527.75
+2025-11-18 23:31:36.677,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:35 PM , SL_A , FromEntry=LongA , State=Cancelled , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.689,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , PT_A , FromEntry=LongA , State=Working , Lmt=24558.75 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.712,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.732,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.750,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.768,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.850,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:31:36 PM ENTRY , LongB , Action=Buy , State=Filled , Qty=5 Filled=5 , Avg=24548.2 , Err=NoError "
+2025-11-18 23:31:36.967,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=LongB From= execQty=4 LA=5 LB=5 SA=0 SB=0 posQty=10
+2025-11-18 23:31:36.982,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_B , FromEntry=LongB , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.988,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:36 PM , SL_B , FromEntry=LongB , State=ChangeSubmitted , Lmt=0 Stp=24528 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:36.998,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"30,11/18/2025 11:31:36 PM LongB FULL fill @ 24548.2 , SL_B init=24528 , dynSLTicks=81 , armed=False"
+2025-11-18 23:31:37.103,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:31:37 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24528 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:31:37.150,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=True LAmode=False SAopen=False SAmode=False armedLB=False armedSB=False RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:32:01.342,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.346,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.402,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.561,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.563,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.565,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.568,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.569,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.571,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.580,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.582,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.584,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.903,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:01.905,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:01 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:02.789,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:02 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:04.601,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:04 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:04.603,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:04 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:04.606,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:04 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:04.907,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:04 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:04.920,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:04 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.039,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.607,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.622,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.863,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.872,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.897,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.902,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.941,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.952,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.961,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.988,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.994,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:05.999,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:05 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.010,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.042,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.050,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.146,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.151,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.176,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.181,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.182,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.183,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.221,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.238,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.243,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.245,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.246,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.248,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.249,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.260,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.262,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.265,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.267,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.270,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.322,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.359,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.390,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.391,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.435,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.480,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.488,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.526,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.564,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.613,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.689,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.730,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.732,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.734,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.735,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.743,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.743,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.745,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.748,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.754,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.797,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.845,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.890,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.938,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:06.990,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:06 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.035,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.083,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.122,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.123,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.234,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.262,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.333,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.337,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.340,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.344,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.411,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.419,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.458,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.491,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.520,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.552,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.581,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.613,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.641,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.670,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.702,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.732,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.760,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.789,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.820,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.829,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.832,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:07.834,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:07 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.308,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.310,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.311,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.314,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.321,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.322,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.462,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.464,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.520,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.598,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.600,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.602,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.603,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.604,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.613,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.645,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.679,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.779,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.876,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.907,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.936,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:08.971,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:08 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.219,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.295,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.351,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.426,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.518,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.567,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.569,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.614,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.647,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.649,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.703,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.781,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.823,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.824,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.859,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.939,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:09.982,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:09 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.203,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.285,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.294,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.296,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.297,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.298,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.300,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.302,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.303,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.313,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.315,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.348,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.432,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.751,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.753,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.898,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:10.916,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:10 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:11.413,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:11 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.224,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.685,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.697,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.731,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.738,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.840,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:12.870,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:12 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:13.688,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:13 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:14.094,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:14 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:14.692,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:14 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:15.341,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:15 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:15.430,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:15 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:16.336,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:16 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:16.383,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:16 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:16.797,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:16 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:16.802,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:16 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:16.996,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:16 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:16.998,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:16 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.001,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.002,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.003,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.067,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.070,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.073,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.076,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.114,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.117,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.120,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.121,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.122,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.142,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.182,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.186,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.207,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.208,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.217,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.223,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.285,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.404,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.407,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.417,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.419,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.433,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.437,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.476,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.498,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.535,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.576,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.589,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.644,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.647,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.666,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.671,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.673,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.674,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.717,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.793,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.795,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.798,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.803,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.825,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.878,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.925,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.929,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.931,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.932,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.936,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.954,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.957,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.960,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:17.962,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:17 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.018,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.024,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.028,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.087,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.132,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.156,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.158,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.160,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.167,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.169,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.234,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.252,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.255,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.285,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.330,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.351,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.353,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.357,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.362,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.365,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.367,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.383,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.385,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.387,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.389,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.390,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.392,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.404,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:18.856,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:18 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:19.012,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:19.218,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:19.567,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:19.624,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:19.632,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:19.901,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.085,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:19 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.225,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.404,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.427,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.430,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.432,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.435,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.596,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.625,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.637,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.680,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.718,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.879,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.889,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.895,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.899,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.917,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:20.928,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:20 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.013,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.017,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.089,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.093,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.169,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.176,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.181,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.183,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.285,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.319,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.323,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.370,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.386,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.390,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.430,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.485,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.486,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.487,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.527,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.529,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.540,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.544,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.546,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.547,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.548,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.583,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.586,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.640,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.643,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.645,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.646,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.647,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.649,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.659,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.662,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.664,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.699,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.701,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.765,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.788,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.790,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.792,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.833,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.868,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.902,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.934,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.974,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.976,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.978,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.979,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.981,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:21.982,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:21 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.034,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.079,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.119,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.192,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.199,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.202,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.206,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.284,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.310,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.356,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.386,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.422,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.469,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.504,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.539,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.570,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.605,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.615,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.647,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.680,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.712,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.760,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.762,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.798,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.807,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.846,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.886,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.928,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:22.968,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:22 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.001,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.035,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.102,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.166,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.694,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.726,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.751,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.845,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.889,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:23.911,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:23 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:24.758,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:24 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:24.799,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:24 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:24.997,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:24 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.316,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.359,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.678,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.714,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.717,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.783,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.793,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.884,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:25.942,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:25 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.002,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.026,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.089,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.112,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.116,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.121,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.208,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.212,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.241,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.405,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:26.786,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:26 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:27.133,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:27 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:27.635,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:27 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.015,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.208,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.262,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.329,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.332,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.333,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.335,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.337,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.338,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.412,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.459,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.536,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.538,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.544,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.553,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.589,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.594,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.691,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.737,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:28.787,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:28 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:29.541,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:29 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:29.544,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:29 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:29.548,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:29 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:29.755,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:29 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:29.993,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:29 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:30.064,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:30 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:30.123,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:30 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:30.138,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:30 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:30.143,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:30 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:31.649,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:31 PM , PT_A , FromEntry=LongA , State=CancelPending , Lmt=24558.75 Stp=24515 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:31.785,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:31 PM , PT_A , FromEntry=LongA , State=CancelSubmitted , Lmt=24558.75 Stp=24515 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:31.834,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:31 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24527.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:31.850,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:31 PM , SL_B , FromEntry=LongB , State=CancelPending , Lmt=0 Stp=24528 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:32:31.877,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:31 PM , SL_B , FromEntry=LongB , State=CancelSubmitted , Lmt=0 Stp=24528 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:32:31.888,CancelAllOrders,0,Realtime,MNQ 12-25,Sim101,"[CancelAll:TerminalFlat] Cancel requests sent=3 (entries=True, stops=True, targets=True, exits=True, failsafes=True)"
+2025-11-18 23:32:32.266,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] LongA SL_A -> 24528
+2025-11-18 23:32:32.399,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] LongB SL_B -> 24528
+2025-11-18 23:32:32.535,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[FailsafeSchedule] Stop cancelled, no proper stops active; scheduling failsafe."
+2025-11-18 23:32:32.573,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_B , FromEntry=LongB , State=Submitted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.586,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] LongB SL_B -> 24528
+2025-11-18 23:32:32.584,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:32:32 PM SL_B cancelled but leg still open for LongB. Re-submitted stop at 24528."
+2025-11-18 23:32:32.612,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_B , FromEntry=LongB , State=Cancelled , Lmt=0 Stp=24528 , Qty=1 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.639,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:31 PM , PT_A , FromEntry=LongA , State=Cancelled , Lmt=24558.75 Stp=24515 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.721,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_B , FromEntry=LongB , State=Accepted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.725,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_A , FromEntry=LongA , State=ChangePending , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.734,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_A , FromEntry=LongA , State=ChangeSubmitted , Lmt=0 Stp=24528 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.739,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.757,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Sell From=LongA execQty=1 LA=5 LB=5 SA=0 SB=0 posQty=9
+2025-11-18 23:32:32.866,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_A , FromEntry=LongA , State=Accepted , Lmt=0 Stp=24528 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:32.954,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_A , FromEntry=LongA , State=CancelPending , Lmt=0 Stp=24528 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:33.028,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:32 PM , SL_A , FromEntry=LongA , State=CancelSubmitted , Lmt=0 Stp=24528 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:33.031,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Sell From=LongA execQty=4 LA=5 LB=5 SA=0 SB=0 posQty=5
+2025-11-18 23:32:33.138,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:33 PM , SL_B , FromEntry=LongB , State=CancelPending , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:33.141,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:33 PM , SL_B , FromEntry=LongB , State=CancelSubmitted , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:33.144,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Sell From=LongB execQty=5 LA=5 LB=5 SA=0 SB=0 posQty=0
+2025-11-18 23:32:33.268,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:33 PM , SL_A , FromEntry=LongA , State=Cancelled , Lmt=0 Stp=24528 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:33.292,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:32:33.323,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:33 PM , SL_B , FromEntry=LongB , State=Cancelled , Lmt=0 Stp=24528 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.094,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortA , Action=SellShort , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:32:34.174,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortB , Action=SellShort , State=Submitted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:32:34.181,OnBarUpdate,0,Realtime,MNQ 12-25,Sim101,[TEST] Submitted SHORT A/B 5+5
+2025-11-18 23:32:34.208,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortA , Action=SellShort , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:32:34.209,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortA , Action=SellShort , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:32:34.211,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortA , Action=SellShort , State=PartFilled , Qty=5 Filled=2 , Avg=24536 , Err=NoError "
+2025-11-18 23:32:34.214,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortA From= execQty=2 LA=0 LB=0 SA=2 SB=0 posQty=2
+2025-11-18 23:32:34.289,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortB , Action=SellShort , State=Accepted , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:32:34.290,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24556.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.291,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureA-Fixed] ShortA SL_A -> 24556.25
+2025-11-18 23:32:34.291,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortB , Action=SellShort , State=Working , Qty=5 Filled=0 , Avg=0 , Err=NoError "
+2025-11-18 23:32:34.356,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortA , Action=SellShort , State=Filled , Qty=5 Filled=5 , Avg=24535.85 , Err=NoError "
+2025-11-18 23:32:34.358,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortA From= execQty=3 LA=0 LB=0 SA=5 SB=0 posQty=5
+2025-11-18 23:32:34.361,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24556.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.397,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24556.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.398,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24556.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.399,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24556.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.438,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , PT_A , FromEntry=ShortA , State=Submitted , Lmt=24525.25 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.440,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"29,11/18/2025 11:32:34 PM ShortA FULL fill @ 24535.85 , PT_A=24525.25 SL_A=24556 , dynTA=42 dynSLTicks=81"
+2025-11-18 23:32:34.444,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortB , Action=SellShort , State=PartFilled , Qty=5 Filled=2 , Avg=24535.75 , Err=NoError "
+2025-11-18 23:32:34.446,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortB From= execQty=2 LA=0 LB=0 SA=5 SB=2 posQty=7
+2025-11-18 23:32:34.548,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_B , FromEntry=ShortB , State=Submitted , Lmt=0 Stp=24556 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.550,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] ShortB SL_B -> 24556
+2025-11-18 23:32:34.566,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , PT_A , FromEntry=ShortA , State=Accepted , Lmt=24525.25 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.588,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , PT_A , FromEntry=ShortA , State=Working , Lmt=24525.25 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.622,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"34,11/18/2025 11:32:34 PM ENTRY , ShortB , Action=SellShort , State=Filled , Qty=5 Filled=5 , Avg=24535.6 , Err=NoError "
+2025-11-18 23:32:34.623,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=ShortB From= execQty=3 LA=0 LB=0 SA=5 SB=5 posQty=10
+2025-11-18 23:32:34.632,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24556 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.633,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,"31,11/18/2025 11:32:34 PM ShortB FULL fill @ 24535.6 , SL_B init=24555.75 , dynSLTicks=81 , armed=False"
+2025-11-18 23:32:34.642,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=True SAmode=False armedLB=False armedSB=False RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:32:34.684,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24556.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.686,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_B , FromEntry=ShortB , State=ChangePending , Lmt=0 Stp=24556 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.689,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:32:34 PM SL_A cancelled but leg still open for ShortA. Re-submitted stop at 24556.25."
+2025-11-18 23:32:34.691,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24556.25 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.694,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_B , FromEntry=ShortB , State=ChangeSubmitted , Lmt=0 Stp=24555.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.705,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24556 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.810,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24556.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:34.814,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:34 PM , SL_B , FromEntry=ShortB , State=Accepted , Lmt=0 Stp=24555.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.221,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , PT_A , FromEntry=ShortA , State=CancelPending , Lmt=24525.25 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.230,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , PT_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=24525.25 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.231,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24556.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.233,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24556.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.234,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_B , FromEntry=ShortB , State=CancelPending , Lmt=0 Stp=24555.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.234,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_B , FromEntry=ShortB , State=CancelSubmitted , Lmt=0 Stp=24555.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.235,CancelAllOrders,0,Realtime,MNQ 12-25,Sim101,"[CancelAll:TerminalFlat] Cancel requests sent=3 (entries=True, stops=True, targets=True, exits=True, failsafes=True)"
+2025-11-18 23:32:39.408,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , PT_A , FromEntry=ShortA , State=Cancelled , Lmt=24525.25 Stp=24556.75 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.424,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortA execQty=1 LA=0 LB=0 SA=5 SB=5 posQty=9
+2025-11-18 23:32:39.491,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"[FailsafeSchedule] Stop cancelled, no proper stops active; scheduling failsafe."
+2025-11-18 23:32:39.497,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24556.25 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.499,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortA execQty=4 LA=0 LB=0 SA=5 SB=5 posQty=5
+2025-11-18 23:32:39.509,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortB execQty=1 LA=0 LB=0 SA=5 SB=5 posQty=4
+2025-11-18 23:32:39.570,ArmOrTightenStop,0,Realtime,MNQ 12-25,Sim101,[EnsureB-Fixed] ShortB SL_B -> 24555.75
+2025-11-18 23:32:39.572,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=Submitted , Lmt=0 Stp=24556.25 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.573,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:32:39 PM SL_A cancelled but leg still open for ShortA. Re-submitted stop at 24556.25."
+2025-11-18 23:32:39.573,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24556.25 , Qty=5 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.622,OnExecutionUpdate,0,Realtime,MNQ 12-25,Sim101,[LegQtyExec] o=Buy to cover From=ShortB execQty=4 LA=0 LB=0 SA=5 SB=5 posQty=0
+2025-11-18 23:32:39.643,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"49,11/18/2025 11:32:39 PM SL_B cancelled but leg still open for ShortB. Re-submitted stop at 24555.75."
+2025-11-18 23:32:39.659,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_B , FromEntry=ShortB , State=Cancelled , Lmt=0 Stp=24555.75 , Qty=2 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.679,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=CancelPending , Lmt=0 Stp=24556.25 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.680,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=CancelSubmitted , Lmt=0 Stp=24556.25 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.681,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=Accepted , Lmt=0 Stp=24556.25 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:39.779,ManageRunnerStopsCompact,0,Realtime,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
+2025-11-18 23:32:39.847,OnOrderUpdate,0,Realtime,MNQ 12-25,Sim101,"50,11/18/2025 11:32:39 PM , SL_A , FromEntry=ShortA , State=Cancelled , Lmt=0 Stp=24556.25 , Qty=4 Filled=0 , Error=NoError "
+2025-11-18 23:32:40.161,CancelAllOrders,0,Realtime,MNQ 12-25,Sim101,"[CancelAll:TerminalFlat] Cancel requests sent=0 (entries=True, stops=True, targets=True, exits=True, failsafes=True)"

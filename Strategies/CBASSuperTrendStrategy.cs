@@ -2329,7 +2329,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (metricsTimer == null)
                     {
                         // Send column headers first
-                        PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|State");
+                        PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|Curve|State");
                         
                         // Use Dispatcher.Invoke to ensure timer is created on UI thread
                         System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
@@ -2348,11 +2348,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                                             metricsPublishCount++;
                                             if (metricsPublishCount % 10 == 1)
                                             {
-                                                PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|State");
+                                                PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|Curve|State");
                                             }
                                             
                                             // Send just the values, pipe-delimited to match headers
-                                            string metricsValues = $"{st.MetricsAttract:F2}|{st.MetricsObjection:F2}|{st.MetricsNetFlow:F2}|{st.MetricsEmaColor}|{st.MetricsBullCross}|{st.MetricsBearCross}|{st.MetricsBullCrossRaw}|{st.MetricsBearCrossRaw}|{st.MetricsRealtimeState}";
+                                            string metricsValues = $"{st.MetricsAttract:F2}|{st.MetricsObjection:F2}|{st.MetricsNetFlow:F2}|{st.MetricsEmaColor}|{st.MetricsBullCross}|{st.MetricsBearCross}|{st.MetricsBullCrossRaw}|{st.MetricsBearCrossRaw}|{st.MetricsCurvatureRatio:F2}|{st.MetricsRealtimeState}";
                                             PublishLog($"[METRICS_VALUES] {metricsValues}");
                                         }
                                     }
@@ -2484,6 +2484,11 @@ st = CBASTestingIndicator3(
     showRealtimeStatePlot: ShowRealtimeStatePlot,
     plotRealtimeSignals: PlotRealtimeSignals,
     flipConfirmationBars: FlipConfirmationBars,
+    useCurvatureFilter: false,
+    curvatureFastPeriod: 10,
+    curvatureSlowPeriod: 20,
+    minCurvatureRatio: 1.5,
+    plotCurvatureRatio: false,
     useEmaSpreadFilter: true,
     minEmaSpread: 0.0005
 );
