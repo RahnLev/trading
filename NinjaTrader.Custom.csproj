@@ -54,6 +54,9 @@
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="Microsoft.CSharp" />
+    <Reference Include="InfragisticsWPF.DataPresenter">
+      <HintPath>C:\Program Files\NinjaTrader 8\bin\InfragisticsWPF.DataPresenter.dll</HintPath>
+    </Reference>
     <Reference Include="Infralution.Localization.Wpf">
       <HintPath>C:\Program Files\NinjaTrader 8\bin\Infralution.Localization.Wpf.dll</HintPath>
     </Reference>
@@ -68,12 +71,6 @@
     </Reference>
     <Reference Include="SharpDX.Direct2D1">
       <HintPath>C:\Program Files\NinjaTrader 8\bin\SharpDX.Direct2D1.dll</HintPath>
-    </Reference>
-    <Reference Include="InfragisticsWPF.DataPresenter">
-      <HintPath>C:\Program Files\NinjaTrader 8\bin\InfragisticsWPF.DataPresenter.dll</HintPath>
-    </Reference>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>C:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\References\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="NinjaTrader.Vendor">
       <HintPath>C:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\NinjaTrader.Vendor.dll</HintPath>
@@ -414,7 +411,6 @@
     <Compile Include="Indicators\CBASTestingIndicator4.cs" />
     <Compile Include="Strategies\AiAssistedOptimizer.cs" />
     <Compile Include="AddOns\Dtoscs.cs" />
-    <Compile Include="AddOns\TelemetryClientcs.cs" />
     <Compile Include="Resource.Designer.cs">
       <AutoGen>True</AutoGen>
       <DependentUpon>Resource.resx</DependentUpon>

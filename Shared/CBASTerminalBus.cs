@@ -72,6 +72,8 @@ namespace NinjaTrader.Custom.CBASTerminal
         public static event Action<CBASTerminalLogEntry> OnLog;
         public static void Publish(CBASTerminalLogEntry e)
         {
+            // Thread-safe: fire event without blocking caller
+            // Subscribers (UI) use queues to avoid cross-thread issues
             try { OnLog?.Invoke(e); } catch { /* swallow to not crash indicator */ }
         }
 

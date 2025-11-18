@@ -298,6 +298,32 @@ namespace NinjaTrader.NinjaScript.Indicators
         private enum RealtimeSignalState { Flat = 0, Bull = 1, Bear = -1 }
         private RealtimeSignalState currentRealtimeState = RealtimeSignalState.Flat;
         private string currentRealtimeReason = string.Empty;
+        
+        // Public accessor for terminal display
+        public string CurrentSignalState
+        {
+            get
+            {
+                switch (currentRealtimeState)
+                {
+                    case RealtimeSignalState.Bull: return "BULL";
+                    case RealtimeSignalState.Bear: return "BEAR";
+                    default: return "FLAT";
+                }
+            }
+        }
+        
+        // Public accessors for terminal metrics display
+        public double MetricsAttract { get; private set; }
+        public double MetricsObjection { get; private set; }
+        public double MetricsNetFlow { get; private set; }
+        public int MetricsEmaColor { get; private set; }
+        public int MetricsBullCross { get; private set; }
+        public int MetricsBearCross { get; private set; }
+        public int MetricsBullCrossRaw { get; private set; }
+        public int MetricsBearCrossRaw { get; private set; }
+        public string MetricsRealtimeState { get; private set; } = "UNKNOWN";
+        
         private int currentBullScore = 0;
         private int currentBearScore = 0;
         private bool currentBullRangeBreak = false;
@@ -702,11 +728,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 InitDebugSignalLog();
             }
 
-            // Periodic diagnostic: print logging state every 100 bars to track if logging stops
-            if (CurrentBar % 100 == 0 && CurrentBar > 0)
-            {
-                Print($"[CBASTestingIndicator3] OnBarUpdate Bar {CurrentBar}: EnableLogging={EnableLogging}, logInitialized={logInitialized}, hasCachedBar={hasCachedBar}, cachedBarIndex={cachedBarIndex}, LogSignalsOnly={LogSignalsOnly}");
-            }
+            // Periodic diagnostic removed to reduce output window noise
 
             if (CurrentBar != cachedBarIndex)
             {
@@ -1311,14 +1333,14 @@ namespace NinjaTrader.NinjaScript.Indicators
                 finalBearSignal = false; // Default to BULL in case of conflict
             }
 
-            // DEBUG: Log the final state before drawing
-            if (finalBullSignal || finalBearSignal)
+            // DEBUG: Log the final state before drawing (once per bar on first tick)
+            if ((finalBullSignal || finalBearSignal) && IsFirstTickOfBar)
             {
                 Print($"[CBASTestingIndicator3] DRAW Bar {CurrentBar}: finalBullSignal={finalBullSignal}, finalBearSignal={finalBearSignal}, bull={bull}, bear={bear}, emaColor={emaColorInt}, netflow={net:F2}, IsFirstTickOfBar={IsFirstTickOfBar}");
             }
             
-            // DEBUG: Log why signals might not be triggering
-            if (!finalBullSignal && !finalBearSignal && CurrentBar % 50 == 0)
+            // DEBUG: Log why signals might not be triggering (once per bar on first tick)
+            if (!finalBullSignal && !finalBearSignal && CurrentBar % 50 == 0 && IsFirstTickOfBar)
             {
                 Print($"[CBASTestingIndicator3] NO SIGNAL Bar {CurrentBar}: bull={bull}, bear={bear}, bullCrossRaw={bullCrossRaw}, bearCrossRaw={bearCrossRaw}, emaColor={emaColorInt}, netflow={net:F2}, currentRealtimeState={currentRealtimeState}, PlotRealtimeSignals={PlotRealtimeSignals}");
             }
@@ -1561,6 +1583,17 @@ namespace NinjaTrader.NinjaScript.Indicators
             cachedBullReason = debugBullReason;
             cachedBearReason = debugBearReason;
             cachedBarClose = Close[0];
+
+            // Update public metrics properties for terminal display
+            MetricsAttract = ao.attract;
+            MetricsObjection = ao.objection;
+            MetricsNetFlow = net;
+            MetricsEmaColor = emaColorInt;
+            MetricsBullCross = (bull && bullCrossRaw) ? 1 : 0;
+            MetricsBearCross = (bear && bearCrossRaw) ? 1 : 0;
+            MetricsBullCrossRaw = bullCrossRaw ? 1 : 0;
+            MetricsBearCrossRaw = bearCrossRaw ? 1 : 0;
+            MetricsRealtimeState = currentRealtimeState.ToString();
 
             // BREAKPOINT LOG: Last tick of bar - log all variables once per bar
             if (lastBreakpointLoggedBar != CurrentBar)

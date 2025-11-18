@@ -144,6 +144,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "[Audit] heartbeat sec (0=off)", GroupName = "Debug")]
         public int AuditHeartbeatSec { get; set; } = 3;
 
+        [NinjaScriptProperty]
+        [Range(0.5, 60.0)]
+        [Display(Name = "[Terminal] Metrics interval (sec)", GroupName = "Debug")]
+        public double MetricsIntervalSec { get; set; } = 2.0;
+
         // After a stop-loss fill, block re-entry in the same direction for N seconds.
         // Opposite direction is allowed immediately.
         [NinjaScriptProperty]
@@ -500,11 +505,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Flatten runner on A stop (full)", Order = 82, GroupName = "Runner")]
         public bool FlattenRunnerOnAStopFull { get; set; } = false;
 
-        // Debug switch for throttled SignalCheck printing
-        [NinjaScriptProperty]
-        [Display(Name = "Debug: log SignalCheck", Order = 900, GroupName = "Debug")]
-        public bool DebugLogSignals { get; set; } = true;
-
         [NinjaScriptProperty]
         [Range(1, 10)]
         [Display(Name = "Initial stop guard ticks", GroupName = "Risk", Order = 93)]
@@ -651,8 +651,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private const bool EchoToOutput = true;
         private string logPath;
         private StreamWriter logWriter;
+        private StreamWriter outputCaptureWriter;
         private readonly object logLock = new object();
         private bool logInitialized;
+        private bool outputCaptureInitialized = false;
 
         private enum RetryIntent { None, Long, Short }
         private RetryIntent safetyRetryIntent = RetryIntent.None;
@@ -665,6 +667,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private CBASTestingIndicator3 st;
         private ATR atr;
+
+        // Metrics publishing timer (every 5 seconds)
+        private DispatcherTimer metricsTimer;
+        private int metricsPublishCount = 0; // Counter to resend headers periodically
 
         private int lastSignalBar = -1;
         private DateTime lastEntryAttemptUtc = DateTime.MinValue;
@@ -697,12 +703,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool longA_ClosingRequested = false, shortA_ClosingRequested = false;
         private bool longB_ClosingRequested = false, shortB_ClosingRequested = false;
 
-
-        // Debug throttles for SignalCheck
-        private bool dbgLastBull = false, dbgLastBear = false, dbgLastFirstTick = false;
-        private MarketPosition dbgLastPos = MarketPosition.Flat;
-        private int dbgLastBar = -1;
-        private DateTime dbgLastPrintUtc = DateTime.MinValue;
 
         // Added fields for robust entry/reversal handling
         private DateTime lastFlatUtc = DateTime.MinValue;
@@ -871,6 +871,31 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 if (args.Length >= 1) int.TryParse(args[0], out qty); qty = Math.Max(1, qty);
                                 testShortQtyRequest = qty; // flag; OnBarUpdate will submit
                                 PublishLog($"Queued TEST SHORT (A/B) qty={qty} per leg");
+                                break;
+                            }
+
+                        case "reverse":
+                            {
+                                // Reverse the current position
+                                var mp = Position?.MarketPosition ?? MarketPosition.Flat;
+                                if (mp == MarketPosition.Long)
+                                {
+                                    // Currently long, reverse to short
+                                    flattenRequest = true;
+                                    pendingShort = true;
+                                    PublishLog("Requested REVERSE: Long -> Short");
+                                }
+                                else if (mp == MarketPosition.Short)
+                                {
+                                    // Currently short, reverse to long
+                                    flattenRequest = true;
+                                    pendingLong = true;
+                                    PublishLog("Requested REVERSE: Short -> Long");
+                                }
+                                else
+                                {
+                                    PublishLog("REVERSE: No position to reverse (currently FLAT)", "WARN");
+                                }
                                 break;
                             }
 
@@ -1070,15 +1095,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                     var __ = st.BullSignal; // Access BullSignal to ensure indicator is fully updated
                     var ___ = st.BearSignal; // Access BearSignal to ensure indicator is fully updated
                     
+                    // Publish current signal state to terminal
+                    try
+                    {
+                        string signalState = st.CurrentSignalState;
+                        PublishLog($"[SIG] {signalState}");
+                    }
+                    catch { }
+                    
+                    // Note: Metrics are now published by timer every 5 seconds (see State.Realtime)
+                    
+                    // Publish bar close countdown to terminal
+                    try
+                    {
+                        if (State == State.Realtime && Bars != null)
+                        {
+                            // Time[0] is the bar close time, calculate seconds remaining
+                            DateTime now = DateTime.Now;
+                            int secondsRemaining = Math.Max(0, (int)(Time[0] - now).TotalSeconds);
+                            PublishLog($"[BC] {secondsRemaining}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (CurrentBar % 100 == 0)
+                            Print($"[BC_ERROR] {ex.Message}");
+                    }
+                    
                     // Note: Logging initialization now happens in indicator's State.DataLoaded
                     // This ensures it works even when used from strategy
                     
-                    // Periodic diagnostic: print indicator state every 100 bars to track if logging stops
-                    if (CurrentBar < 10 || (CurrentBar % 100 == 0 && CurrentBar > 0))
-                    {
-                        Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: Accessed indicator, EnableLogging={EnableLogging}, LogDrawnSignals={LogDrawnSignals}, LogFolder={LogFolder ?? "null"}");
-                        Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: Indicator properties - st.EnableLogging={st.EnableLogging}, st.LogDrawnSignals={st.LogDrawnSignals}, st.LogFolder={st.LogFolder ?? "null"}");
-                    }
+                    // Periodic diagnostic removed to reduce output noise
                 }
                 catch (Exception ex)
                 {
@@ -1086,13 +1133,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: StackTrace: {ex.StackTrace ?? "null"}");
                 }
             }
-            else
-            {
-                if (CurrentBar < 10 || (CurrentBar % 100 == 0 && CurrentBar > 0))
-                {
-                    Print($"[Strategy] OnBarUpdate Bar {CurrentBar}: WARNING - Indicator 'st' is null!");
-                }
-            }
+            // Indicator null check removed (should not happen in normal operation)
             
             // 1) BarsRequiredToTrade
             if (CurrentBar < Math.Max(BarsRequiredToTrade, 5))
@@ -1101,15 +1142,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
             
-            // Debug: Validate state periodically or on errors
-            if (DebugLogSignals && (CurrentBar < 20 || (CurrentBar % 500 == 0)))
-            {
-                if (!ValidateStrategyState(out string issues))
-                {
-                    Print($"[VALIDATION] Bar {CurrentBar}: Issues found - {issues}");
-                    DebugStrategyState("PeriodicCheck");
-                }
-            }
+            // Validation check removed to reduce output noise
             // 2) Pause
             if (Paused) return;
             // 3) what is it?
@@ -1258,27 +1291,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             int stamp = EntriesOnFirstTickOnly ? CurrentBar - 1 : CurrentBar;
             bool duplicate = (stamp == lastSignalBar);
 
-            // Optional debug throttled log
-            if (DebugLogSignals)
+            // FLAT GATE: Block all order placements when indicator signal is FLAT
+            // This prevents the strategy from entering during flat conditions
+            // Test orders from terminal are exempt (handled earlier in OnBarUpdate)
+            string currentSignal = st.CurrentSignalState;
+            if (currentSignal == "FLAT")
             {
-                bool stateChanged = bull != dbgLastBull
-                    || bear != dbgLastBear
-                    || Position.MarketPosition != dbgLastPos
-                    || IsFirstTickOfBar != dbgLastFirstTick
-                    || (IsFirstTickOfBar && CurrentBar != dbgLastBar);
-                bool throttle = (DateTime.UtcNow - dbgLastPrintUtc).TotalMilliseconds >= 250;
-
-                if ((IsFirstTickOfBar || bull || bear || stateChanged) && throttle)
-                {
-                    LogPrint($"3_{Time[0]} SignalCheck bull={bull} bear={bear} pos={Position.MarketPosition} firstTick={IsFirstTickOfBar}");
-                    dbgLastPrintUtc = DateTime.UtcNow;
-                }
-
-                dbgLastBull = bull;
-                dbgLastBear = bear;
-                dbgLastPos = Position.MarketPosition;
-                dbgLastFirstTick = IsFirstTickOfBar;
-                dbgLastBar = CurrentBar;
+                // Clear any pending entry flags during flat
+                pendingLong = false;
+                pendingShort = false;
+                return; // Exit early - no entries allowed during FLAT
             }
 
             // 13) FLAT handling
@@ -2242,6 +2264,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     RealtimeErrorHandling = RTH.IgnoreAllErrors;
 
                     logPath = Path.Combine(folder, fileName);
+                    
+                    // Initialize output capture file
+                    string outputCaptureFile = Path.Combine(folder, $"output_capture_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+                    outputCaptureWriter = new StreamWriter(outputCaptureFile, false, Encoding.UTF8) { AutoFlush = true };
+                    outputCaptureInitialized = true;
+                    outputCaptureWriter.WriteLine($"=== Output Capture Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
                 }
                 catch (Exception ex)
                 {
@@ -2296,6 +2324,48 @@ namespace NinjaTrader.NinjaScript.Strategies
                         tpmLastPublish = DateTime.UtcNow;
                     }
                     PublishLog($"[TT] A={ATrailTicks} B={RunnerTrailTicks}");
+                    
+                    // Start metrics timer (publish at user-defined interval)
+                    if (metricsTimer == null)
+                    {
+                        // Send column headers first
+                        PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|State");
+                        
+                        // Use Dispatcher.Invoke to ensure timer is created on UI thread
+                        System.Windows.Application.Current?.Dispatcher.InvokeAsync(() =>
+                        {
+                            if (metricsTimer == null)
+                            {
+                                metricsTimer = new DispatcherTimer(DispatcherPriority.Background);
+                                metricsTimer.Interval = TimeSpan.FromSeconds(MetricsIntervalSec);
+                                metricsTimer.Tick += (s, e) =>
+                                {
+                                    try
+                                    {
+                                        if (st != null)
+                                        {
+                                            // Resend headers every 10 metrics updates to ensure terminal receives them
+                                            metricsPublishCount++;
+                                            if (metricsPublishCount % 10 == 1)
+                                            {
+                                                PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|State");
+                                            }
+                                            
+                                            // Send just the values, pipe-delimited to match headers
+                                            string metricsValues = $"{st.MetricsAttract:F2}|{st.MetricsObjection:F2}|{st.MetricsNetFlow:F2}|{st.MetricsEmaColor}|{st.MetricsBullCross}|{st.MetricsBearCross}|{st.MetricsBullCrossRaw}|{st.MetricsBearCrossRaw}|{st.MetricsRealtimeState}";
+                                            PublishLog($"[METRICS_VALUES] {metricsValues}");
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Print($"[MetricsTimer_Error] {ex.Message}");
+                                    }
+                                };
+                                metricsTimer.Start();
+                                Print($"[MetricsTimer] Started successfully (interval: {MetricsIntervalSec}s)");
+                            }
+                        });
+                    }
                 }
 
 
@@ -2304,6 +2374,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 try
                 {
+                    // Stop metrics timer
+                    if (metricsTimer != null)
+                    {
+                        metricsTimer.Stop();
+                        metricsTimer = null;
+                    }
+                    
                     // Unsubscribe from the command bus
                     CBASTerminalBus.OnCommand -= HandleTerminalCommand;
 
@@ -2318,6 +2395,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                         logWriter?.Dispose();
                         logWriter = null;
                         logInitialized = false;
+                    }
+                    
+                    // Close output capture file
+                    if (outputCaptureWriter != null)
+                    {
+                        try
+                        {
+                            outputCaptureWriter.Flush();
+                            outputCaptureWriter.Close();
+                            outputCaptureWriter.Dispose();
+                            outputCaptureWriter = null;
+                            outputCaptureInitialized = false;
+                        }
+                        catch { }
                     }
                     lock (tpmSync)
                     {
@@ -2375,7 +2466,7 @@ st = CBASTestingIndicator3(
 	scaleOscillatorToATR: ScaleOscillatorToATR,
     oscAtrMult: OscAtrMult,
     logDrawnSignals: LogDrawnSignals,
-    debugLogSignalCheck: DebugLogSignals,  // Pass strategy's DebugLogSignals to indicator
+    debugLogSignalCheck: false,  // Debug logging disabled
     colorBarsByTrend: ColorBarsByTrend,
     realtimeBullNetflowMin: RealtimeBullNetflowMin,
     realtimeBullObjectionMax: RealtimeBullObjectionMax,
@@ -2397,23 +2488,7 @@ st = CBASTestingIndicator3(
     minEmaSpread: 0.0005
 );
 
-                // COMPREHENSIVE PROPERTY VERIFICATION
-                Print($"[Strategy] State.DataLoaded: ========== PROPERTY VERIFICATION ==========");
-                Print($"[Strategy] State.DataLoaded: Strategy Properties:");
-                Print($"[Strategy] State.DataLoaded:   EnableLogging = {EnableLogging}");
-                Print($"[Strategy] State.DataLoaded:   LogSignalsOnly = {LogSignalsOnly}");
-                Print($"[Strategy] State.DataLoaded:   HeartbeatEveryNBars = {HeartbeatEveryNBars}");
-                Print($"[Strategy] State.DataLoaded:   LogFolder = {LogFolder ?? "null"}");
-                Print($"[Strategy] State.DataLoaded:   LogDrawnSignals = {LogDrawnSignals}");
-                Print($"[Strategy] State.DataLoaded:   DebugLogSignals = {DebugLogSignals} (passed to indicator as DebugLogSignalCheck)");
-                Print($"[Strategy] State.DataLoaded: Indicator Properties:");
-                Print($"[Strategy] State.DataLoaded:   st.EnableLogging = {st.EnableLogging}");
-                Print($"[Strategy] State.DataLoaded:   st.LogSignalsOnly = {st.LogSignalsOnly}");
-                Print($"[Strategy] State.DataLoaded:   st.HeartbeatEveryNBars = {st.HeartbeatEveryNBars}");
-                Print($"[Strategy] State.DataLoaded:   st.LogFolder = {st.LogFolder ?? "null"}");
-                Print($"[Strategy] State.DataLoaded:   st.LogDrawnSignals = {st.LogDrawnSignals}");
-                Print($"[Strategy] State.DataLoaded:   st.DebugLogSignalCheck = {st.DebugLogSignalCheck}");
-                Print($"[Strategy] State.DataLoaded: ==========================================");
+                // Property verification removed (now saved to strategy_properties.txt file)
                 
                 // CRITICAL: Verify property matching - cached indicators might have different settings
                 bool propertiesMatch = true;
@@ -2442,14 +2517,109 @@ st = CBASTestingIndicator3(
                     Print($"[Strategy] State.DataLoaded: ❌ WARNING - LogFolder mismatch! Strategy={LogFolder ?? "null"}, Indicator={st.LogFolder ?? "null"}");
                     propertiesMatch = false;
                 }
-                if (st.DebugLogSignalCheck != DebugLogSignals)
+                // Properties match check (only print warnings, not success)
+                
+                // Save all strategy properties to file
+                try
                 {
-                    Print($"[Strategy] State.DataLoaded: ❌ WARNING - DebugLogSignalCheck mismatch! Strategy={DebugLogSignals}, Indicator={st.DebugLogSignalCheck}");
-                    propertiesMatch = false;
+                    var propertiesOutput = new System.Text.StringBuilder();
+                    propertiesOutput.AppendLine($"========== STRATEGY PROPERTIES - {DateTime.Now:yyyy-MM-dd HH:mm:ss} ==========");
+                    propertiesOutput.AppendLine($"Strategy: {Name}");
+                    propertiesOutput.AppendLine($"Instrument: {Instrument?.FullName ?? "N/A"}");
+                    propertiesOutput.AppendLine($"Account: {Account?.Name ?? "N/A"}");
+                    propertiesOutput.AppendLine($"InstanceId: {InstanceId ?? "null"}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== CBAS Filters ===");
+                    propertiesOutput.AppendLine($"UseRegimeStability = {UseRegimeStability}");
+                    propertiesOutput.AppendLine($"RegimeStabilityBars = {RegimeStabilityBars}");
+                    propertiesOutput.AppendLine($"UseScoringFilter = {UseScoringFilter}");
+                    propertiesOutput.AppendLine($"ScoreThreshold = {ScoreThreshold}");
+                    propertiesOutput.AppendLine($"UseSmoothedVpm = {UseSmoothedVpm}");
+                    propertiesOutput.AppendLine($"VpmEmaSpan = {VpmEmaSpan}");
+                    propertiesOutput.AppendLine($"MinVpm = {MinVpm}");
+                    propertiesOutput.AppendLine($"MinAdx = {MinAdx}");
+                    propertiesOutput.AppendLine($"MomentumLookback = {MomentumLookback}");
+                    propertiesOutput.AppendLine($"ExtendedLogging = {ExtendedLogging}");
+                    propertiesOutput.AppendLine($"ComputeExitSignals = {ComputeExitSignals}");
+                    propertiesOutput.AppendLine($"ExitProfitAtrMult = {ExitProfitAtrMult}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Indicator ===");
+                    propertiesOutput.AppendLine($"Sensitivity = {Sensitivity}");
+                    propertiesOutput.AppendLine($"EmaEnergy = {EmaEnergy}");
+                    propertiesOutput.AppendLine($"KeltnerLength = {KeltnerLength}");
+                    propertiesOutput.AppendLine($"AtrLength = {AtrLength}");
+                    propertiesOutput.AppendLine($"RangeMinLength = {RangeMinLength}");
+                    propertiesOutput.AppendLine($"RangeWidthMult = {RangeWidthMult}");
+                    propertiesOutput.AppendLine($"RangeAtrLen = {RangeAtrLen}");
+                    propertiesOutput.AppendLine($"EnableLogging = {EnableLogging}");
+                    propertiesOutput.AppendLine($"LogSignalsOnly = {LogSignalsOnly}");
+                    propertiesOutput.AppendLine($"HeartbeatEveryNBars = {HeartbeatEveryNBars}");
+                    propertiesOutput.AppendLine($"LogFolder = {LogFolder ?? "null"}");
+                    propertiesOutput.AppendLine($"LogDrawnSignals = {LogDrawnSignals}");
+                    propertiesOutput.AppendLine($"ColorBarsByTrend = {ColorBarsByTrend}");
+                    propertiesOutput.AppendLine($"ShowExitLabels = {ShowExitLabels}");
+                    propertiesOutput.AppendLine($"ExitLabelAtrOffset = {ExitLabelAtrOffset}");
+                    propertiesOutput.AppendLine($"ScaleOscillatorToATR = {ScaleOscillatorToATR}");
+                    propertiesOutput.AppendLine($"OscAtrMult = {OscAtrMult}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Realtime Filters ===");
+                    propertiesOutput.AppendLine($"RealtimeBullNetflowMin = {RealtimeBullNetflowMin}");
+                    propertiesOutput.AppendLine($"RealtimeBullObjectionMax = {RealtimeBullObjectionMax}");
+                    propertiesOutput.AppendLine($"RealtimeBullEmaColorMin = {RealtimeBullEmaColorMin}");
+                    propertiesOutput.AppendLine($"RealtimeBullUseAttract = {RealtimeBullUseAttract}");
+                    propertiesOutput.AppendLine($"RealtimeBullAttractMin = {RealtimeBullAttractMin}");
+                    propertiesOutput.AppendLine($"RealtimeBullScoreMin = {RealtimeBullScoreMin}");
+                    propertiesOutput.AppendLine($"RealtimeBearNetflowMax = {RealtimeBearNetflowMax}");
+                    propertiesOutput.AppendLine($"RealtimeBearObjectionMin = {RealtimeBearObjectionMin}");
+                    propertiesOutput.AppendLine($"RealtimeBearEmaColorMax = {RealtimeBearEmaColorMax}");
+                    propertiesOutput.AppendLine($"RealtimeBearUsePriceToBand = {RealtimeBearUsePriceToBand}");
+                    propertiesOutput.AppendLine($"RealtimeBearPriceToBandMax = {RealtimeBearPriceToBandMax}");
+                    propertiesOutput.AppendLine($"RealtimeBearScoreMin = {RealtimeBearScoreMin}");
+                    propertiesOutput.AppendLine($"RealtimeFlatTolerance = {RealtimeFlatTolerance}");
+                    propertiesOutput.AppendLine($"ShowRealtimeStatePlot = {ShowRealtimeStatePlot}");
+                    propertiesOutput.AppendLine($"PlotRealtimeSignals = {PlotRealtimeSignals}");
+                    propertiesOutput.AppendLine($"FlipConfirmationBars = {FlipConfirmationBars}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Risk ===");
+                    propertiesOutput.AppendLine($"StopTicks = {StopTicks}");
+                    propertiesOutput.AppendLine($"TargetATicks = {TargetATicks}");
+                    propertiesOutput.AppendLine($"TargetBTicks = {TargetBTicks}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== A-Trail ===");
+                    propertiesOutput.AppendLine($"ConvertAToTrailOnProximity = {ConvertAToTrailOnProximity}");
+                    propertiesOutput.AppendLine($"ProximityTicksToConvertA = {ProximityTicksToConvertA}");
+                    propertiesOutput.AppendLine($"ProximityTrailTicks = {ProximityTrailTicks}");
+                    propertiesOutput.AppendLine($"ATrailDelaySec = {ATrailDelaySec}");
+                    propertiesOutput.AppendLine($"ATrailTicks = {ATrailTicks}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Runner ===");
+                    propertiesOutput.AppendLine($"RunnerTrailTicks = {RunnerTrailTicks}");
+                    propertiesOutput.AppendLine($"RunnerTightenDelayMs = {RunnerTightenDelayMs}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Execution ===");
+                    propertiesOutput.AppendLine($"TradeRealtimeOnly = {TradeRealtimeOnly}");
+                    propertiesOutput.AppendLine($"RealtimeStartDelaySec = {RealtimeStartDelaySec}");
+                    propertiesOutput.AppendLine($"StopLossSameDirCooldownSec = {StopLossSameDirCooldownSec}");
+                    propertiesOutput.AppendLine($"AllowReentrySameTrend = {AllowReentrySameTrend}");
+                    propertiesOutput.AppendLine($"AllowSameBarReentryAfterFlat = {AllowSameBarReentryAfterFlat}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Debounce ===");
+                    propertiesOutput.AppendLine($"ReverseCooldownMs = {ReverseCooldownMs}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("=== Debug ===");
+                    propertiesOutput.AppendLine($"AuditHeartbeatSec = {AuditHeartbeatSec}");
+                    propertiesOutput.AppendLine();
+                    propertiesOutput.AppendLine("==========================================");
+                    
+                    string folder = @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\strategy_logs";
+                    Directory.CreateDirectory(folder);
+                    string filePath = Path.Combine(folder, "strategy_properties.txt");
+                    File.WriteAllText(filePath, propertiesOutput.ToString());
+                    // Properties saved silently to reduce output noise
                 }
-                if (propertiesMatch)
+                catch (Exception ex)
                 {
-                    Print($"[Strategy] State.DataLoaded: ✅ All logging properties match correctly");
+                    Print($"[Strategy] ERROR: Failed to save properties to file: {ex.Message}");
                 }
                 
                 // NOTE: Do NOT access indicator Values here in State.DataLoaded - it causes NullReferenceException
@@ -2988,13 +3158,13 @@ st = CBASTestingIndicator3(
                         Position.MarketPosition == MarketPosition.Long)
             {
                 if (!longB_BE_armed)
-                    LogPrint("[RunnerSkip] LongB not armed");
+                { }
                 else if (blockLongB)
-                    LogPrint("[RunnerSkip] LongB blocked (RunnerTightenDelay/defer)");
+                { }
                 else if (now < nextBLongStopOpUtc)
-                    LogPrint("[RunnerSkip] LongB throttle");
+                { }
                 else if (IsChangePending(slBLong) || IsCancelPending(slBLong))
-                    LogPrint("[RunnerSkip] LongB order pending");
+                { }
                 else
                 {
                     if (now >= nextBLongStopOpUtc)
@@ -3016,13 +3186,13 @@ st = CBASTestingIndicator3(
                 Position.MarketPosition == MarketPosition.Short)
             {
                 if (!shortB_BE_armed)
-                    LogPrint("[RunnerSkip] ShortB not armed");
+                { }
                 else if (blockShortB)
-                    LogPrint("[RunnerSkip] ShortB blocked (RunnerTightenDelay/defer)");
+                { }
                 else if (now < nextBShortStopOpUtc)
-                    LogPrint("[RunnerSkip] ShortB throttle");
+                { }
                 else if (IsChangePending(slBShort) || IsCancelPending(slBShort))
-                    LogPrint("[RunnerSkip] ShortB order pending");
+                { }
                 else
                 {
                     if (now >= nextBShortStopOpUtc)
@@ -3897,6 +4067,37 @@ IsOrderActive(slALong) || IsOrderActive(slAShort) || IsOrderActive(slBLong) || I
             issues = string.Join("; ", issueList);
             return issueList.Count == 0;
         }
+        
+        // Wrapper to capture all Print output to file for debugging
+        private void CapturePrint(string message)
+        {
+            Print(message);
+            
+            // Lazy initialize if not done yet
+            if (!outputCaptureInitialized)
+            {
+                try
+                {
+                    string folder = @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\strategy_logs";
+                    Directory.CreateDirectory(folder);
+                    string outputCaptureFile = Path.Combine(folder, $"output_capture_{DateTime.Now:yyyyMMdd_HHmmss}.txt");
+                    outputCaptureWriter = new StreamWriter(outputCaptureFile, false, Encoding.UTF8) { AutoFlush = true };
+                    outputCaptureInitialized = true;
+                    outputCaptureWriter.WriteLine($"=== Output Capture Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss} ===");
+                }
+                catch { }
+            }
+            
+            if (outputCaptureInitialized && outputCaptureWriter != null)
+            {
+                try
+                {
+                    outputCaptureWriter.WriteLine($"{DateTime.Now:HH:mm:ss.fff} | {message}");
+                }
+                catch { }
+            }
+        }
+
         #endregion
 
     }
