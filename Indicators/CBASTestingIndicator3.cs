@@ -1802,10 +1802,24 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             SetPlotBrush(plotNetFlow, net >= 0 ? Brushes.DodgerBlue : Brushes.DarkOrange);
 
-            // Curvature ratio plot
+            // Curvature ratio plot (scaled like other oscillators if enabled)
             if (plotCurvatureRatio >= 0 && PlotCurvatureRatio && CurrentBar >= 2)
             {
-                SetPlotVal(plotCurvatureRatio, curvatureRatio);
+                double curvatureScaled;
+                if (ScaleOscillatorToATR && scale > 0)
+                {
+                    // Scale curvature ratio (typically 0-5 range) around price
+                    // Use MinCurvatureRatio (default 1.5) as the midpoint
+                    // Normalize relative to threshold and apply scaling
+                    curvatureScaled = scalingBasePx + scale * 2.0 * (curvatureRatio - MinCurvatureRatio) / MinCurvatureRatio;
+                }
+                else
+                {
+                    // Raw value if scaling disabled
+                    curvatureScaled = curvatureRatio;
+                }
+                
+                SetPlotVal(plotCurvatureRatio, curvatureScaled);
                 // Color code: green when above threshold, red when below
                 SetPlotBrush(plotCurvatureRatio, curvatureRatio >= MinCurvatureRatio ? Brushes.LimeGreen : Brushes.OrangeRed);
             }

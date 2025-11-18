@@ -13,14 +13,14 @@
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: RegimeStabilityBars = 10
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseScoringFilter = False
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScoreThreshold = 6
-[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseSmoothedVpm = True
+[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseSmoothedVpm = False
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: VpmEmaSpan = 5
-[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinVpm = 200
-[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinAdx = 30
+[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinVpm = 300
+[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinAdx = 25
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: MomentumLookback = 14
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: ComputeExitSignals = False
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitProfitAtrMult = 3
-[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowExitLabels = False
+[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowExitLabels = True
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitLabelAtrOffset = 0.6
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Realtime Filters ---
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullNetflowMin = 1
@@ -47,11 +47,11 @@
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: EnableLogging = True
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogSignalsOnly = False
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: HeartbeatEveryNBars = 1
-[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogFolder = c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log
+[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogFolder = null
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogDrawnSignals = True
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: DebugLogSignalCheck = False
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExtendedLogging = True
-[CBASTestingIndicator3] OnBarUpdate FIRST BAR: InstanceId = 17a2e84a9c6648279e2d87d0d6fc3074
+[CBASTestingIndicator3] OnBarUpdate FIRST BAR: InstanceId = 
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Internal State ---
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: logInitialized = True
 [CBASTestingIndicator3] OnBarUpdate FIRST BAR: signalDrawInitialized = True
