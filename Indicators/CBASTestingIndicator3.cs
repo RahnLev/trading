@@ -493,66 +493,8 @@ namespace NinjaTrader.NinjaScript.Indicators
                     // One or more plot indices are invalid
                 }
 
-                // Initialize logging early when used from strategy
-                // This ensures logging works even if OnBarUpdate isn't called immediately
-                if (EnableLogging)
-                {
-                    try
-                    {
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Attempting early logging initialization for strategy use");
-                        InitLogger();
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Early logging initialization {(logInitialized ? "SUCCESS" : "FAILED")}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Early logging init failed: {ex.Message}");
-                        // Will retry in OnBarUpdate
-                    }
-                }
-                
-                if (LogDrawnSignals)
-                {
-                    try
-                    {
-                        InitSignalDrawLogger();
-                    }
-                    catch (Exception ex)
-                    {
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Early signal draw logging init failed: {ex.Message}");
-                        // Will retry in OnBarUpdate
-                    }
-                }
-                
-                // CRITICAL TEST: Write a test file immediately to verify path works
-                // This helps diagnose why logs aren't created when run from strategy
-                if (EnableLogging)
-                {
-                    try
-                    {
-                        string testFolder = string.IsNullOrWhiteSpace(LogFolder)
-                            ? @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log"
-                            : LogFolder;
-                        
-                        // Normalize path for macOS
-                        bool isMacOS = Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX;
-                        if (isMacOS)
-                        {
-                            testFolder = testFolder.Replace('\\', '/');
-                            if (testFolder.StartsWith("//Mac/Home/"))
-                                testFolder = testFolder.Replace("//Mac/Home/", "/Users/mm/");
-                            if (testFolder.StartsWith("C:/Users/"))
-                                testFolder = testFolder.Replace("C:/Users/", "/Users/");
-                            while (testFolder.Contains("//") && !testFolder.StartsWith("//"))
-                                testFolder = testFolder.Replace("//", "/");
-                        }
-                        
-                        // Path normalization complete, proceed with logging initialization
-                    }
-                    catch (Exception testEx)
-                    {
-                        Print($"[CBASTestingIndicator3] State.DataLoaded: Path normalization failed - {testEx.GetType().Name}: {testEx.Message}");
-                    }
-                }
+                // DON'T initialize logging here - properties may not be set correctly when used from strategy
+                // Logging will be initialized in OnBarUpdate when properties are guaranteed to be set
 
                 instrumentName = Instrument?.FullName ?? "N/A";
                 adx14 = ADX(14);
@@ -568,45 +510,6 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
             else if (State == State.Active)
             {
-                // Force logging initialization when indicator is used from strategy
-                // Properties should be fully set by now
-                if (EnableLogging && !logInitialized)
-                {
-                    try
-                    {
-                        Print($"[CBASTestingIndicator3] State.Active: Forcing logging initialization (indicator used from strategy)");
-                        Print($"[CBASTestingIndicator3] State.Active: EnableLogging={EnableLogging}, logInitialized={logInitialized}, LogFolder={LogFolder ?? "null"}");
-                        InitLogger();
-                        if (logInitialized)
-                        {
-                            Print($"[CBASTestingIndicator3] State.Active: ✅ Logging initialized successfully! logPath={logPath ?? "null"}");
-                        }
-                        else
-                        {
-                            Print($"[CBASTestingIndicator3] State.Active: ❌ Logging initialization failed - logInitialized still false");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Print($"[CBASTestingIndicator3] State.Active: Exception during forced logging init: {ex.Message}");
-                        Print($"[CBASTestingIndicator3] State.Active: StackTrace: {ex.StackTrace ?? "null"}");
-                    }
-                }
-                
-                if (LogDrawnSignals && !signalDrawInitialized)
-                {
-                    try
-                    {
-                        Print($"[CBASTestingIndicator3] State.Active: Forcing signal draw logging initialization");
-                        InitSignalDrawLogger();
-                        Print($"[CBASTestingIndicator3] State.Active: Signal draw logging initialization {(signalDrawInitialized ? "SUCCESS" : "FAILED")}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Print($"[CBASTestingIndicator3] State.Active: Exception during signal draw logging init: {ex.Message}");
-                    }
-                }
-
                 CBASTerminalAddOn.EnsureMenuForAllControlCenters();
 
                 Application.Current.Dispatcher.BeginInvoke(new Action(() =>
@@ -659,76 +562,97 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         protected override void OnBarUpdate()
         {
-            // Initialize debug logging first (always enabled for troubleshooting)
-            if (!debugLogInitialized)
+            // Initialize logging as early as possible (before any early returns)
+            if (EnableLogging && !logInitialized)
             {
-                Print($"[CBASTestingIndicator3] OnBarUpdate: Initializing debug logger. CurrentBar={CurrentBar}, State={State}, EnableLogging={EnableLogging}, LogDrawnSignals={LogDrawnSignals}, LogFolder={LogFolder ?? "null"}");
-                InitDebugLogger();
+                InitLogger();
+            }
+
+            if (LogDrawnSignals && !signalDrawInitialized)
+            {
+                InitSignalDrawLogger();
             }
 
             // Log property values once to verify they're set correctly
             if (!firstBarLogged)
             {
                 firstBarLogged = true;
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ========== COMPREHENSIVE PROPERTY VERIFICATION ==========");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Parameters ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Sensitivity = {Sensitivity}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: EmaEnergy = {EmaEnergy}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: KeltnerLength = {KeltnerLength}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: AtrLength = {AtrLength}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Range Detector ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeMinLength = {RangeMinLength}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeWidthMult = {RangeWidthMult}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeAtrLen = {RangeAtrLen}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Filters ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseRegimeStability = {UseRegimeStability}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RegimeStabilityBars = {RegimeStabilityBars}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseScoringFilter = {UseScoringFilter}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScoreThreshold = {ScoreThreshold}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseSmoothedVpm = {UseSmoothedVpm}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: VpmEmaSpan = {VpmEmaSpan}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinVpm = {MinVpm}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinAdx = {MinAdx}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MomentumLookback = {MomentumLookback}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ComputeExitSignals = {ComputeExitSignals}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitProfitAtrMult = {ExitProfitAtrMult}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowExitLabels = {ShowExitLabels}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitLabelAtrOffset = {ExitLabelAtrOffset}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Realtime Filters ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullNetflowMin = {RealtimeBullNetflowMin}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullObjectionMax = {RealtimeBullObjectionMax}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullEmaColorMin = {RealtimeBullEmaColorMin}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullUseAttract = {RealtimeBullUseAttract}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullAttractMin = {RealtimeBullAttractMin}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullScoreMin = {RealtimeBullScoreMin}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearNetflowMax = {RealtimeBearNetflowMax}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearObjectionMin = {RealtimeBearObjectionMin}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearEmaColorMax = {RealtimeBearEmaColorMax}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearUsePriceToBand = {RealtimeBearUsePriceToBand}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearPriceToBandMax = {RealtimeBearPriceToBandMax}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearScoreMin = {RealtimeBearScoreMin}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeFlatTolerance = {RealtimeFlatTolerance}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowRealtimeStatePlot = {ShowRealtimeStatePlot}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: PlotRealtimeSignals = {PlotRealtimeSignals}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: FlipConfirmationBars = {FlipConfirmationBars}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Plots ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScaleOscillatorToATR = {ScaleOscillatorToATR}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: OscAtrMult = {OscAtrMult}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ColorBarsByTrend = {ColorBarsByTrend}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Logging ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: EnableLogging = {EnableLogging}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogSignalsOnly = {LogSignalsOnly}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: HeartbeatEveryNBars = {HeartbeatEveryNBars}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogFolder = {LogFolder ?? "null"}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogDrawnSignals = {LogDrawnSignals}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: DebugLogSignalCheck = {DebugLogSignalCheck}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExtendedLogging = {ExtendedLogging}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: InstanceId = {InstanceId ?? "null"}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Internal State ---");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: logInitialized = {logInitialized}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: signalDrawInitialized = {signalDrawInitialized}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Globals.UserDataDir = {Globals.UserDataDir ?? "null"}");
-                Print($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ==========================================");
+                var propertiesOutput = new System.Text.StringBuilder();
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ========== COMPREHENSIVE PROPERTY VERIFICATION ==========");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Parameters ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Sensitivity = {Sensitivity}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: EmaEnergy = {EmaEnergy}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: KeltnerLength = {KeltnerLength}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: AtrLength = {AtrLength}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Range Detector ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeMinLength = {RangeMinLength}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeWidthMult = {RangeWidthMult}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RangeAtrLen = {RangeAtrLen}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Filters ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseRegimeStability = {UseRegimeStability}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RegimeStabilityBars = {RegimeStabilityBars}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseScoringFilter = {UseScoringFilter}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScoreThreshold = {ScoreThreshold}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: UseSmoothedVpm = {UseSmoothedVpm}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: VpmEmaSpan = {VpmEmaSpan}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinVpm = {MinVpm}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MinAdx = {MinAdx}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: MomentumLookback = {MomentumLookback}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ComputeExitSignals = {ComputeExitSignals}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitProfitAtrMult = {ExitProfitAtrMult}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowExitLabels = {ShowExitLabels}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExitLabelAtrOffset = {ExitLabelAtrOffset}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Realtime Filters ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullNetflowMin = {RealtimeBullNetflowMin}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullObjectionMax = {RealtimeBullObjectionMax}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullEmaColorMin = {RealtimeBullEmaColorMin}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullUseAttract = {RealtimeBullUseAttract}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullAttractMin = {RealtimeBullAttractMin}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBullScoreMin = {RealtimeBullScoreMin}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearNetflowMax = {RealtimeBearNetflowMax}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearObjectionMin = {RealtimeBearObjectionMin}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearEmaColorMax = {RealtimeBearEmaColorMax}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearUsePriceToBand = {RealtimeBearUsePriceToBand}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearPriceToBandMax = {RealtimeBearPriceToBandMax}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeBearScoreMin = {RealtimeBearScoreMin}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: RealtimeFlatTolerance = {RealtimeFlatTolerance}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ShowRealtimeStatePlot = {ShowRealtimeStatePlot}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: PlotRealtimeSignals = {PlotRealtimeSignals}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: FlipConfirmationBars = {FlipConfirmationBars}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Plots ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ScaleOscillatorToATR = {ScaleOscillatorToATR}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: OscAtrMult = {OscAtrMult}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ColorBarsByTrend = {ColorBarsByTrend}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Logging ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: EnableLogging = {EnableLogging}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogSignalsOnly = {LogSignalsOnly}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: HeartbeatEveryNBars = {HeartbeatEveryNBars}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogFolder = {LogFolder ?? "null"}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: LogDrawnSignals = {LogDrawnSignals}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: DebugLogSignalCheck = {DebugLogSignalCheck}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ExtendedLogging = {ExtendedLogging}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: InstanceId = {InstanceId ?? "null"}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: --- Internal State ---");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: logInitialized = {logInitialized}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: signalDrawInitialized = {signalDrawInitialized}");
+                propertiesOutput.AppendLine($"[CBASTestingIndicator3] OnBarUpdate FIRST BAR: Globals.UserDataDir = {Globals.UserDataDir ?? "null"}");
+                propertiesOutput.AppendLine("[CBASTestingIndicator3] OnBarUpdate FIRST BAR: ==========================================");
+                
+                // Print to output window
+                Print(propertiesOutput.ToString());
+                
+                // Save to file
+                try
+                {
+                    string folder = @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log";
+                    Directory.CreateDirectory(folder);
+                    string filePath = Path.Combine(folder, "indicator_properties.txt");
+                    File.WriteAllText(filePath, propertiesOutput.ToString());
+                }
+                catch (Exception ex)
+                {
+                    Print($"[CBASTestingIndicator3] Failed to save properties to file: {ex.Message}");
+                }
             }
 
             // Initialize logging as early as possible (before any early returns)

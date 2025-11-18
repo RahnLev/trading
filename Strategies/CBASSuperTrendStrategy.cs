@@ -339,7 +339,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "Log Folder", Order = 4, GroupName = "Indicator")]
-        public string LogFolder { get; set; } = @"/Users/mm/Documents/NinjaTrader 8/Indicator_logs";
+        public string LogFolder { get; set; } = @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\indicators_log";
 
         [NinjaScriptProperty]
         [Display(Name = "Log Drawn Signals", Order = 5, GroupName = "Indicator")]
@@ -2226,26 +2226,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 try
                 {
-                    string baseDir = NinjaTrader.Core.Globals.UserDataDir; // Documents\NinjaTrader 8\
-                    string folder = Path.Combine(baseDir, "strategy_logs");
-                    
-                    // Normalize path separators for the current OS
-                    // Convert Windows-style paths like \\Mac\Home\Documents\... to /Users/mm/Documents/...
-                    if (Environment.OSVersion.Platform == PlatformID.Unix || Environment.OSVersion.Platform == PlatformID.MacOSX)
-                    {
-                        folder = folder.Replace('\\', '/');
-                        // Handle Windows-style network paths: \\Mac\Home\Documents\... -> /Users/mm/Documents/...
-                        if (folder.StartsWith("//Mac/Home/") || folder.StartsWith("\\Mac\\Home\\"))
-                        {
-                            folder = folder.Replace("//Mac/Home/", "/Users/mm/").Replace("\\Mac\\Home\\", "/Users/mm/");
-                        }
-                        // Handle C:\Users\... paths
-                        if (folder.StartsWith("C:/Users/") || folder.StartsWith("C:\\Users\\"))
-                        {
-                            folder = folder.Replace("C:/Users/", "/Users/").Replace("C:\\Users\\", "/Users/");
-                        }
-                    }
-                    folder = Path.GetFullPath(folder);
+                    string folder = @"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\strategy_logs";
                     Directory.CreateDirectory(folder);
 
                     string fileName = string.Format(
