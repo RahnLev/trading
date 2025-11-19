@@ -226,6 +226,30 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Exit Profit ATR Mult", Order = 12, GroupName = "CBAS Filters")]
         public double ExitProfitAtrMult { get; set; } = 3.0;
 
+        // EMA Curvature Difference Ratio (momentum acceleration filter)
+        [NinjaScriptProperty]
+        [Display(Name = "Use Curvature Filter", Order = 13, GroupName = "CBAS Filters")]
+        public bool UseCurvatureFilter { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "Curvature Fast EMA Period", Order = 14, GroupName = "CBAS Filters")]
+        public int CurvatureFastPeriod { get; set; } = 10;
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "Curvature Slow EMA Period", Order = 15, GroupName = "CBAS Filters")]
+        public int CurvatureSlowPeriod { get; set; } = 20;
+
+        [NinjaScriptProperty]
+        [Range(1.0, 10.0)]
+        [Display(Name = "Min Curvature Ratio", Order = 16, GroupName = "CBAS Filters")]
+        public double MinCurvatureRatio { get; set; } = 1.5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Plot Curvature Ratio", Order = 17, GroupName = "CBAS Filters")]
+        public bool PlotCurvatureRatio { get; set; } = false;
+
 
 
         // ============ Original/visual inputs ============
@@ -2284,7 +2308,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     atrRunner7 = ATR(7);
                     instrumentName = Instrument?.FullName ?? "N/A";
                     // Register this instance
+                    Print($"[CBAS Registration] Registering strategy with InstanceId='{InstanceId}'");
                     CBASTerminalRegistry.Register(InstanceId, this);
+                    Print($"[CBAS Registration] Successfully registered. Check terminal dropdown for '{InstanceId}'");
 
                     // Subscribe to terminal commands directed to this instance
                     CBASTerminalBus.OnCommand += HandleTerminalCommand;
@@ -2342,7 +2368,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 {
                                     try
                                     {
-                                        if (st != null)
+                                        if (st != null && CurrentBar > 0)
                                         {
                                             // Resend headers every 10 metrics updates to ensure terminal receives them
                                             metricsPublishCount++;
@@ -2351,14 +2377,30 @@ namespace NinjaTrader.NinjaScript.Strategies
                                                 PublishLog($"[METRICS_HEADERS] Attract|Objection|NetFlow|EmaColor|BullX|BearX|BullXRaw|BearXRaw|Curve|State");
                                             }
                                             
+                                            // Validate ALL metric values to prevent NaN/Infinity from breaking terminal display
+                                            double attractVal = double.IsNaN(st.MetricsAttract) || double.IsInfinity(st.MetricsAttract) ? 0.0 : st.MetricsAttract;
+                                            double objectionVal = double.IsNaN(st.MetricsObjection) || double.IsInfinity(st.MetricsObjection) ? 0.0 : st.MetricsObjection;
+                                            double netFlowVal = double.IsNaN(st.MetricsNetFlow) || double.IsInfinity(st.MetricsNetFlow) ? 0.0 : st.MetricsNetFlow;
+                                            double curvatureValue = double.IsNaN(st.MetricsCurvatureRatio) || double.IsInfinity(st.MetricsCurvatureRatio) ? 0.0 : st.MetricsCurvatureRatio;
+                                            
+                                            // Debug: Log curvature value occasionally to diagnose issues
+                                            if (metricsPublishCount % 50 == 1)
+                                            {
+                                                Print($"[METRICS_DEBUG] CurvatureRatio={st.MetricsCurvatureRatio:F4}, Validated={curvatureValue:F4}");
+                                            }
+                                            
                                             // Send just the values, pipe-delimited to match headers
-                                            string metricsValues = $"{st.MetricsAttract:F2}|{st.MetricsObjection:F2}|{st.MetricsNetFlow:F2}|{st.MetricsEmaColor}|{st.MetricsBullCross}|{st.MetricsBearCross}|{st.MetricsBullCrossRaw}|{st.MetricsBearCrossRaw}|{st.MetricsCurvatureRatio:F2}|{st.MetricsRealtimeState}";
+                                            string metricsValues = $"{attractVal:F2}|{objectionVal:F2}|{netFlowVal:F2}|{st.MetricsEmaColor}|{st.MetricsBullCross}|{st.MetricsBearCross}|{st.MetricsBullCrossRaw}|{st.MetricsBearCrossRaw}|{curvatureValue:F2}|{st.MetricsRealtimeState}";
                                             PublishLog($"[METRICS_VALUES] {metricsValues}");
+                                        }
+                                        else if (st == null)
+                                        {
+                                            Print($"[MetricsTimer_Warning] Indicator (st) is null. Waiting for initialization...");
                                         }
                                     }
                                     catch (Exception ex)
                                     {
-                                        Print($"[MetricsTimer_Error] {ex.Message}");
+                                        Print($"[MetricsTimer_Error] {ex.Message}\nStack: {ex.StackTrace}");
                                     }
                                 };
                                 metricsTimer.Start();
@@ -2484,11 +2526,11 @@ st = CBASTestingIndicator3(
     showRealtimeStatePlot: ShowRealtimeStatePlot,
     plotRealtimeSignals: PlotRealtimeSignals,
     flipConfirmationBars: FlipConfirmationBars,
-    useCurvatureFilter: false,
-    curvatureFastPeriod: 10,
-    curvatureSlowPeriod: 20,
-    minCurvatureRatio: 1.5,
-    plotCurvatureRatio: false,
+    useCurvatureFilter: UseCurvatureFilter,
+    curvatureFastPeriod: CurvatureFastPeriod,
+    curvatureSlowPeriod: CurvatureSlowPeriod,
+    minCurvatureRatio: MinCurvatureRatio,
+    plotCurvatureRatio: PlotCurvatureRatio,
     useEmaSpreadFilter: true,
     minEmaSpread: 0.0005
 );

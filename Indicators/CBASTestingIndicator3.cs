@@ -1671,7 +1671,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             cachedNetFlow = net;
             cachedMomentumVal = momentumVal;
             cachedEmaColorValue = emaColorCount;
-            cachedCurvatureRatio = curvatureRatio;
+            cachedCurvatureRatio = (CurrentBar >= 2 && curvatureRatioSeries != null) ? curvatureRatioSeries[0] : 0.0;
             cachedBullSignal = bull;
             cachedBearSignal = bear;
             cachedBullRaw = bullCrossRaw;
@@ -1690,7 +1690,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             MetricsBullCrossRaw = bullCrossRaw ? 1 : 0;
             MetricsBearCrossRaw = bearCrossRaw ? 1 : 0;
             MetricsRealtimeState = currentRealtimeState.ToString();
-            MetricsCurvatureRatio = curvatureRatio;
+            MetricsCurvatureRatio = (CurrentBar >= 2 && curvatureRatioSeries != null) ? curvatureRatioSeries[0] : 0.0;
 
             // BREAKPOINT LOG: Last tick of bar - log all variables once per bar
             if (lastBreakpointLoggedBar != CurrentBar)
@@ -1788,10 +1788,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // Curvature ratio plot (scaled like other oscillators)
                 if (plotCurvatureRatio >= 0 && PlotCurvatureRatio && CurrentBar >= 2)
                 {
-                    // Scale curvature ratio (typically 0-5 range) around price
+                    // Cap curvature ratio to reasonable range (0-2.5) to prevent extreme scaling
+                    double cappedRatio = Math.Max(0, Math.Min(2.5, curvatureRatio));
+                    
+                    // Scale curvature ratio around price
                     // Use MinCurvatureRatio (default 1.5) as the midpoint
                     // Normalize relative to threshold and apply scaling
-                    double curvatureScaled = scalingBasePx + scale * 2.0 * (curvatureRatio - MinCurvatureRatio) / MinCurvatureRatio;
+                    double curvatureScaled = scalingBasePx + scale * 2.0 * (cappedRatio - MinCurvatureRatio) / MinCurvatureRatio;
                     SetPlotVal(plotCurvatureRatio, curvatureScaled);
                     // Color code: green when above threshold, red when below
                     SetPlotBrush(plotCurvatureRatio, curvatureRatio >= MinCurvatureRatio ? Brushes.LimeGreen : Brushes.OrangeRed);
@@ -3127,6 +3130,9 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double priceToBandVal = (priceToBand != null) ? priceToBand[0] : double.NaN;
                 double momentumValExt = (CurrentBar >= MomentumLookback) ? momentum[0] : double.NaN;
                 double emaColorExt = ComputeEmaColorCount();
+                
+                // Read curvature from series (not local variable which is out of scope)
+                double curvatureRatioVal = (CurrentBar >= 2 && curvatureRatioSeries != null) ? curvatureRatioSeries[0] : 0.0;
 
                 bool rangeBreak = bullRangeBreak || bearRangeBreak;
 
@@ -3146,7 +3152,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     CsvNum(emaSpreadVal),
                     CsvNum(priceToBandVal),
                     CsvNum(momentumValExt),
-                    CsvNum(curvatureRatio),
+                    CsvNum(curvatureRatioVal),
                     (rangeBreak ? "1" : "0"),
                     (exitLong ? "1" : "0"),
                     (exitShort ? "1" : "0")

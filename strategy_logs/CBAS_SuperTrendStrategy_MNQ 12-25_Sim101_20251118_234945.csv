@@ -1,5 +1,0 @@
-﻿ts,method,bip,state,instrument,account,msg
-2025-11-18 23:49:45.426,RefreshDynamicParameters,0,DataLoaded,MNQ 12-25,Sim101,2_11/17/2025 1:00:30 AM DynSizing -> TA:42 SL:21 QtyA:5 QtyB:5 (UseVol=False)
-2025-11-18 23:49:47.390,ManageRunnerStopsCompact,0,Historical,MNQ 12-25,Sim101,[RunnerArm] LAopen=False LAmode=False SAopen=False SAmode=False armedLB=True armedSB=True RunnerTrailsWithA=True activeQtyA=5
-2025-11-18 23:59:34.737,OnStateChange,0,Realtime,MNQ 12-25,Sim101,100_[RealtimeStart] nowUtc=2025-11-18T21:59:34.7359183Z CD_longRem=0.0s CD_shortRem=0.0s
-2025-11-18 23:59:34.738,OnStateChange,0,Realtime,MNQ 12-25,Sim101,Test line at 2025-11-18T23:50:00.0000000

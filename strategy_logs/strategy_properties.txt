@@ -1,8 +1,8 @@
-========== STRATEGY PROPERTIES - 2025-11-18 23:49:45 ==========
+========== STRATEGY PROPERTIES - 2025-11-19 09:00:25 ==========
 Strategy: CBAS_SuperTrendStrategy
 Instrument: MNQ 12-25
 Account: Sim101
-InstanceId: 17a2e84a9c6648279e2d87d0d6fc3074
+InstanceId: 421b4a801f9d4c46998ace71506cad4f
 
 === CBAS Filters ===
 UseRegimeStability = False
