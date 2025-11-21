@@ -4,6 +4,21 @@
         <name>NinjaTrader.Custom</name>
     </assembly>
     <members>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.IsReverseCooldownActive">
+            <summary>
+            Checks if reverse cooldown is active (prevents immediate reversal after flattening)
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.CanEnter(System.Boolean,System.Boolean,System.Boolean,System.Boolean)">
+            <summary>
+            Checks if we can enter based on signal, cooldown, and duplicate checks
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.HasPendingClosingRequests">
+            <summary>
+            Checks if any legs have closing requests pending
+            </summary>
+        </member>
         <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.DebugStrategyState(System.String)">
             <summary>
             Comprehensive debugging method to diagnose strategy state

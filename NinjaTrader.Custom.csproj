@@ -418,6 +418,7 @@
     <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
     <Compile Include="Indicators\CBASTestingIndicator3.cs" />
+    <Compile Include="Strategies\GradientSlopeStrategy.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

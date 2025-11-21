@@ -36,7 +36,14 @@ namespace NinjaTrader.NinjaScript.Strategies
     {
         #region Inputs
 		
-		// Optional: scale oscillator into price units to be visible on price panel
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CONTROL & VISUALIZATION
+        // ═══════════════════════════════════════════════════════════════════════════
+        
+        [Display(Name = "Paused", GroupName = "Control", Order = 0)]
+        public bool Paused { get; set; } = false;
+        
+        // Oscillator visualization (optional)
         [NinjaScriptProperty]
         [Display(Name = "Scale Oscillator To ATR", Order = 40, GroupName = "Plots")]
         public bool ScaleOscillatorToATR { get; set; } = true;
@@ -45,9 +52,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0.0, 10.0)]
         [Display(Name = "Osc ATR Mult", Order = 41, GroupName = "Plots")]
         public double OscAtrMult { get; set; } = 0.3;
-		
 
-		 // Exit label visualization (disabled for strategy - visual only)
+        // Exit label visualization (disabled for strategy - visual only)
         [NinjaScriptProperty]
         [Display(Name = "Show Exit Labels", Order = 32, GroupName = "Filters")]
         public bool ShowExitLabels { get; set; } = false;
@@ -56,23 +62,22 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(0.0, 10.0)]
         [Display(Name = "Exit Label ATR Offset", Order = 33, GroupName = "Filters")]
         public double ExitLabelAtrOffset { get; set; } = 0.6;
-		
-        [Display(Name = "Paused", GroupName = "Control", Order = 0)]
-        public bool Paused { get; set; } = false; // you can omit [NinjaScriptProperty] so it's not user-editable
         public void SetPaused(bool paused)
         {
             Paused = paused;
             Print($"Strategy {(paused ? "PAUSED" : "RESUMED")}");
-            // Optional: cancel working orders when pausing
             CancelAllOrders();
         }
+
         private string instrumentName;
 
         [XmlIgnore]
         [Browsable(false)]
         public string InstanceId { get; set; } = string.Empty;
 
-        // A-Trail proximity conversion
+        // ═══════════════════════════════════════════════════════════════════════════
+        // A-LEG TRAIL MANAGEMENT
+        // ═══════════════════════════════════════════════════════════════════════════
         [NinjaScriptProperty]
         [Display(Name = "Convert A to trail on proximity", GroupName = "A-Trail", Order = 1)]
         public bool ConvertAToTrailOnProximity { get; set; } = true;
@@ -116,10 +121,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Browsable(false)]
-        //[Display(Name = "A trail adaptive K", GroupName = "A-Trail", Order = 9)]
         [Range(0.1, 100)]
         public double ATrailAdaptiveK { get; set; } = 8.0;
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // B-LEG (RUNNER) TRAIL MANAGEMENT
+        // ═══════════════════════════════════════════════════════════════════════════
+        
         [NinjaScriptProperty]
         [Range(0, 1000)]
         [Display(Name = "Runner trail ticks (0 = avg 7-bar range)", Order = 65, GroupName = "Runner")]
@@ -128,8 +136,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Range(0, 2000)]
         [Display(Name = "Runner tighten delay ms", GroupName = "Runner", Order = 66)]
-        public int RunnerTightenDelayMs { get; set; } = 350; // MNQ: 300–600ms works well
+        public int RunnerTightenDelayMs { get; set; } = 350;
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // EXECUTION & TIMING
+        // ═══════════════════════════════════════════════════════════════════════════
+        
         [NinjaScriptProperty]
         [Display(Name = "Trade realtime only", GroupName = "Execution", Order = 205)]
         public bool TradeRealtimeOnly { get; set; } = true;
@@ -139,18 +151,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Realtime start delay (sec)", GroupName = "Execution", Order = 206)]
         public int RealtimeStartDelaySec { get; set; } = 5;
 
-        [NinjaScriptProperty]
-        [Range(0, 3600)]
-        [Display(Name = "[Audit] heartbeat sec (0=off)", GroupName = "Debug")]
-        public int AuditHeartbeatSec { get; set; } = 3;
-
-        [NinjaScriptProperty]
-        [Range(0.5, 60.0)]
-        [Display(Name = "[Terminal] Metrics interval (sec)", GroupName = "Debug")]
-        public double MetricsIntervalSec { get; set; } = 2.0;
-
-        // After a stop-loss fill, block re-entry in the same direction for N seconds.
-        // Opposite direction is allowed immediately.
         [NinjaScriptProperty]
         [Range(0, 3600)]
         [Display(Name = "Same-dir cooldown after SL (sec)", Order = 201, GroupName = "Execution")]
@@ -169,8 +169,24 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "Reverse cooldown ms", Order = 72, GroupName = "Debounce")]
         public int ReverseCooldownMs { get; set; } = 2000;
 
-        // ============ Indicator core ============
+        // ═══════════════════════════════════════════════════════════════════════════
+        // DEBUG & MONITORING
+        // ═══════════════════════════════════════════════════════════════════════════
+        
+        [NinjaScriptProperty]
+        [Range(0, 3600)]
+        [Display(Name = "[Audit] heartbeat sec (0=off)", GroupName = "Debug")]
+        public int AuditHeartbeatSec { get; set; } = 3;
 
+        [NinjaScriptProperty]
+        [Range(0.5, 60.0)]
+        [Display(Name = "[Terminal] Metrics interval (sec)", GroupName = "Debug")]
+        public double MetricsIntervalSec { get; set; } = 2.0;
+
+        // ═══════════════════════════════════════════════════════════════════════════
+        // CBAS INDICATOR FILTERS
+        // ═══════════════════════════════════════════════════════════════════════════
+        
         [NinjaScriptProperty]
         [Display(Name = "Use Regime Stability", Order = 1, GroupName = "CBAS Filters")]
         public bool UseRegimeStability { get; set; } = false; // Disabled - realtime filters are the main optimization
@@ -229,7 +245,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         // EMA Curvature Difference Ratio (momentum acceleration filter)
         [NinjaScriptProperty]
         [Display(Name = "Use Curvature Filter", Order = 13, GroupName = "CBAS Filters")]
-        public bool UseCurvatureFilter { get; set; } = false;
+        public bool UseCurvatureFilter { get; set; } = true;
 
         [NinjaScriptProperty]
         [Range(1, 200)]
@@ -248,7 +264,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "Plot Curvature Ratio", Order = 17, GroupName = "CBAS Filters")]
-        public bool PlotCurvatureRatio { get; set; } = false;
+        public bool PlotCurvatureRatio { get; set; } = true;
 
 
 
@@ -640,12 +656,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private const int FailsafeTrailThrottleMs = 200; // adjust 100–300 ms as needed
 
         // Deferred actions (processed in OnBarUpdate)
-        private volatile bool scheduleEnsureA, scheduleEnsureB, scheduleFailsafe;
+        private volatile bool scheduleFailsafe;
 
         // Failsafe trace cache
-        private MarketPosition fsLastPos = MarketPosition.Flat;
-        private int fsLastQty = int.MinValue;
-        private bool fsLastAOpen = false, fsLastBOpen = false, fsLastProtected = false;
         private DateTime fsLastLogUtc = DateTime.MinValue;
 
         private DateTime nextFailsafeAllowedUtc = DateTime.MinValue;
@@ -659,7 +672,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Per-leg throttle to avoid event storms in OnOrderUpdate
         private const int EnsureCooldownMs = 300;  // 250–500 ms
-
 
         private int auditLastPosQty = int.MinValue;
         private bool auditLastAOpen = false, auditLastBOpen = false;
@@ -1099,6 +1111,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
+            // ═══ SECTION 1: INITIALIZATION & VALIDATION ════════════════════════════════════════════════
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
             // Force indicator update early to trigger its OnBarUpdate and logging initialization
             // This must happen BEFORE any early returns to ensure the indicator processes every bar
             if (st != null)
@@ -1191,7 +1206,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             // 8) First-tick-only entries gate
             if (EntriesOnFirstTickOnly && !IsFirstTickOfBar)
                 return;
-            // flzattenRequest
+            
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
+            // ═══ SECTION 2: FLATTEN REQUEST ════════════════════════════════════════════════════════════
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
+            // Handles terminal-initiated flatten requests (cancel all orders + exit all positions)
             if (flattenRequest)
             {
                 flattenRequest = false;
@@ -1301,6 +1320,9 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             }
 
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
+            // ═══ SECTION 3: SIGNAL EVALUATION ══════════════════════════════════════════════════════════
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
             // 12) Signals - Use indicator's optimized realtime state signals
             // When PlotRealtimeSignals=true, these use the optimized filters (netflow, objection, ema_color)
             // Otherwise, they use the standard SuperTrend cross logic
@@ -1315,9 +1337,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             int stamp = EntriesOnFirstTickOnly ? CurrentBar - 1 : CurrentBar;
             bool duplicate = (stamp == lastSignalBar);
 
-            // FLAT GATE: Block all order placements when indicator signal is FLAT
-            // This prevents the strategy from entering during flat conditions
-            // Test orders from terminal are exempt (handled earlier in OnBarUpdate)
+            // --- FLAT GATE: Prevent entries during flat indicator state ---
+            // This blocks entries when the indicator is in a neutral/flat condition
+            // (no clear bull or bear signal). Test orders from terminal are exempt.
             string currentSignal = st.CurrentSignalState;
             if (currentSignal == "FLAT")
             {
@@ -1327,22 +1349,32 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return; // Exit early - no entries allowed during FLAT
             }
 
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
+            // ═══ SECTION 4: FLAT POSITION - ENTRY DECISION LOGIC ═══════════════════════════════════════
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
             // 13) FLAT handling
+            // Logic flow: 1) Check reverse cooldown
+            //             2) Check same-direction cooldown for each side
+            //             3) Process pending reversals (from opposite signal)
+            //             4) Process fresh bull/bear signals (no duplicate)
+            //             5) Allow continuation re-entry if still in same regime
             if (Position.MarketPosition == MarketPosition.Flat)
             {
-                // Reverse cooldown
-                if (isRealtime && lastFlatUtc != DateTime.MinValue &&
-                    (DateTime.UtcNow - lastFlatUtc).TotalMilliseconds < ReverseCooldownMs)
+                // --- Cooldown Check #1: Reverse Cooldown ---
+                // Prevents immediate reversal after just flattening a position (e.g., long → short)
+                if (IsReverseCooldownActive())
                     return;
 
-                // Same-direction cooldown status
+                // --- Cooldown Check #2: Same-Direction Cooldown ---
+                // Prevents re-entering same direction too quickly after a stop-loss
                 bool sameDirLongBlocked = IsSameDirCooldownActive(true);
                 bool sameDirShortBlocked = IsSameDirCooldownActive(false);
 
-                // Pending reversals take priority
-                bool anyClosingRequested = longA_ClosingRequested || longB_ClosingRequested || shortA_ClosingRequested || shortB_ClosingRequested;
-                if (!anyClosingRequested)
+                // --- Priority #1: Process Pending Reversals ---
+                // Pending reversals (from opposite signal while in position) take priority over fresh signals
+                if (!HasPendingClosingRequests())
                 {
+                    // Execute pending long reversal if not blocked by same-direction cooldown
                     if (pendingLong)
                     {
                         if (!sameDirLongBlocked)
@@ -1354,6 +1386,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         return;
                     }
+                    // Execute pending short reversal if not blocked by same-direction cooldown
                     if (pendingShort)
                     {
                         if (!sameDirShortBlocked)
@@ -1367,29 +1400,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
 
-                // Fresh signals
-                if (bull || bear)
+                // --- Priority #2: Fresh Bull/Bear Signals ---
+                // Process new signals from indicator (not pending reversals)
+                // Enter long on bull signal (check cooldown + duplicate)
+                if (CanEnter(bull, sameDirLongBlocked, duplicate, AllowSameBarReentryAfterFlat))
                 {
-                    if (!duplicate || AllowSameBarReentryAfterFlat)
-                    {
-                        if (bull && !sameDirLongBlocked)
-                        {
-                            SubmitLongAB();
-                            lastEntryAttemptUtc = StrategyNowUtc();
-                            lastSignalBar = stamp;
-                            return;
-                        }
-                        if (bear && !sameDirShortBlocked)
-                        {
-                            SubmitShortAB();
-                            lastEntryAttemptUtc = StrategyNowUtc();
-                            lastSignalBar = stamp;
-                            return;
-                        }
-                    }
+                    SubmitLongAB();
+                    lastEntryAttemptUtc = StrategyNowUtc();
+                    lastSignalBar = stamp;
+                    return;
+                }
+                // Enter short on bear signal (check cooldown + duplicate)
+                if (CanEnter(bear, sameDirShortBlocked, duplicate, AllowSameBarReentryAfterFlat))
+                {
+                    SubmitShortAB();
+                    lastEntryAttemptUtc = StrategyNowUtc();
+                    lastSignalBar = stamp;
+                    return;
                 }
 
-                // Continuation re-entry (once per bar)
+                // --- Priority #3: Continuation Re-Entry ---
+                // If AllowReentrySameTrend=true, allow re-entry in same trend direction
+                // even without a fresh signal (based on regime: Close vs SuperTrend line)
                 if (AllowReentrySameTrend && IsFirstTickOfBar)
                 {
                     if (inBearRegime && !sameDirShortBlocked)
@@ -1410,11 +1442,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
 
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
+            // ═══ SECTION 5: IN POSITION - OPPOSITE SIGNAL HANDLING ════════════════════════════════════
+            // ═══════════════════════════════════════════════════════════════════════════════════════════
             // 14) IN POSITION: update lastSignalBar only when bar moves or we'll act
             if (!duplicate)
                 lastSignalBar = stamp;
 
             // 15) Opposite-signal handling with leg-open guards
+            // LONG → BEAR signal: Close A-leg via marketable stop, optionally exit B-runner, queue reversal
             if (Position.MarketPosition == MarketPosition.Long && bear)
             {
                 // Close A via marketable stop (keep runner unless configured otherwise)
@@ -1438,6 +1474,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
 
+            // SHORT → BULL signal: Close A-leg via marketable stop, optionally exit B-runner, queue reversal
             if (Position.MarketPosition == MarketPosition.Short && bull)
             {
                 if (isShortALegOpen)
@@ -2700,6 +2737,37 @@ st = CBASTestingIndicator3(
                 || IsOrderActive(shortAEntry)
                 || IsOrderActive(shortBEntryOrder);
         }
+        
+        /// <summary>
+        /// Checks if reverse cooldown is active (prevents immediate reversal after flattening)
+        /// </summary>
+        private bool IsReverseCooldownActive()
+        {
+            if (State != State.Realtime) return false;
+            if (lastFlatUtc == DateTime.MinValue) return false;
+            return (DateTime.UtcNow - lastFlatUtc).TotalMilliseconds < ReverseCooldownMs;
+        }
+        
+        /// <summary>
+        /// Checks if we can enter based on signal, cooldown, and duplicate checks
+        /// </summary>
+        private bool CanEnter(bool hasSignal, bool sameDirBlocked, bool duplicate, bool allowSameBarReentry)
+        {
+            if (!hasSignal) return false;
+            if (sameDirBlocked) return false;
+            if (duplicate && !allowSameBarReentry) return false;
+            return true;
+        }
+        
+        /// <summary>
+        /// Checks if any legs have closing requests pending
+        /// </summary>
+        private bool HasPendingClosingRequests()
+        {
+            return longA_ClosingRequested || longB_ClosingRequested 
+                || shortA_ClosingRequested || shortB_ClosingRequested;
+        }
+        
         private bool RealtimeEntriesBlocked(out double secondsRemaining)
         {
             secondsRemaining = 0;

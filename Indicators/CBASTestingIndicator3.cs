@@ -98,7 +98,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         // EMA Curvature Difference Ratio (momentum acceleration filter)
         [NinjaScriptProperty]
         [Display(Name = "Use Curvature Filter", Order = 34, GroupName = "Filters")]
-        public bool UseCurvatureFilter { get; set; } = false;
+        public bool UseCurvatureFilter { get; set; } = true;
 
         [NinjaScriptProperty]
         [Range(1, 200)]
@@ -117,7 +117,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         [NinjaScriptProperty]
         [Display(Name = "Plot Curvature Ratio", Order = 38, GroupName = "Filters")]
-        public bool PlotCurvatureRatio { get; set; } = false;
+        public bool PlotCurvatureRatio { get; set; } = true;
 
         [NinjaScriptProperty]
         [Display(Name = "Instance Id", Order = 99, GroupName = "Logging")]
@@ -944,22 +944,87 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double fastCurvature = fastSlope - fastPrevSlope;
                 double slowCurvature = slowSlope - slowPrevSlope;
                 
-                // Calculate ratio of absolute curvatures (how much more curved is fast vs slow)
-                double absFastCurv = Math.Abs(fastCurvature);
-                double absSlowCurv = Math.Abs(slowCurvature);
+                // Normalize by current price to make scale-independent
+                double priceNorm = Close[0] > 0 ? Close[0] : 1.0;
+                double fastCurvNorm = fastCurvature / priceNorm;
+                double slowCurvNorm = slowCurvature / priceNorm;
+                
+                double absFastCurv = Math.Abs(fastCurvNorm);
+                double absSlowCurv = Math.Abs(slowCurvNorm);
                 
                 // Avoid division by zero, use small epsilon
                 if (absSlowCurv > 0.0000001)
                 {
-                    curvatureRatio = absFastCurv / absSlowCurv;
+                    // Calculate ratio of magnitudes - use moderate scaling (100x)
+                    double rawRatio = absFastCurv / absSlowCurv;
+                    curvatureRatio = rawRatio * 100.0;
+                    
+                    if (CurrentBar % 100 == 0) // Debug: print every 100 bars
+                    {
+                        Print($"[Curv] Bar={CurrentBar} rawRatio={rawRatio:F4} scaled={curvatureRatio:F2}");
+                    }
+                    
+                    // Determine sign based on slope direction AND curvature
+                    bool fastSlopeUp = fastSlope > 0;
+                    bool slowSlopeUp = slowSlope > 0;
+                    bool fastCurvUp = fastCurvNorm > 0;
+                    bool slowCurvUp = slowCurvNorm > 0;
+                    
+                    // BULLISH scenarios (positive ratio):
+                    // 1. Both EMAs rising AND fast accelerating up faster
+                    // 2. Fast rising while slow falling (divergence - very bullish!)
+                    // 3. Both falling but fast decelerating (slowing down fall = bullish)
+                    
+                    // BEARISH scenarios (negative ratio):
+                    // 1. Both EMAs falling AND fast accelerating down faster
+                    // 2. Fast falling while slow rising (divergence - very bearish!)
+                    // 3. Both rising but fast decelerating (slowing down rise = bearish)
+                    
+                    if (fastSlopeUp && !slowSlopeUp)
+                    {
+                        // Fast rising, slow falling = DIVERGENCE = Very bullish
+                        curvatureRatio = Math.Abs(curvatureRatio); // Force positive
+                    }
+                    else if (!fastSlopeUp && slowSlopeUp)
+                    {
+                        // Fast falling, slow rising = DIVERGENCE = Very bearish
+                        curvatureRatio = -Math.Abs(curvatureRatio); // Force negative
+                    }
+                    else if (fastSlopeUp && slowSlopeUp)
+                    {
+                        // Both rising: positive if fast accelerating up, negative if decelerating
+                        if (fastCurvUp)
+                            curvatureRatio = Math.Abs(curvatureRatio); // Bullish
+                        else
+                            curvatureRatio = -Math.Abs(curvatureRatio); // Bearish (losing momentum)
+                    }
+                    else // Both falling
+                    {
+                        // Both falling: negative if fast accelerating down, positive if decelerating
+                        if (fastCurvUp)
+                            curvatureRatio = Math.Abs(curvatureRatio); // Bullish (slowing fall)
+                        else
+                            curvatureRatio = -Math.Abs(curvatureRatio); // Bearish (accelerating fall)
+                    }
+                    
+                    // No capping - show full range of values
+                    if (CurrentBar % 100 == 0)
+                    {
+                        Print($"[Curv] Final ratio (uncapped): {curvatureRatio:F2}");
+                    }
                 }
                 else if (absFastCurv > 0.0000001)
                 {
-                    // Fast is curving but slow is flat = very high ratio
-                    curvatureRatio = 10.0; // Cap at reasonable value
+                    // Fast is curving but slow is flat = use max reasonable value
+                    curvatureRatio = fastCurvNorm > 0 ? 100.0 : -100.0;
                 }
                 
                 curvatureRatioSeries[0] = curvatureRatio;
+                
+                if (CurrentBar % 100 == 0)
+                {
+                    Print($"[Curv] Stored in series: {curvatureRatioSeries[0]:F6}");
+                }
             }
             else
             {
@@ -3131,8 +3196,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                 double momentumValExt = (CurrentBar >= MomentumLookback) ? momentum[0] : double.NaN;
                 double emaColorExt = ComputeEmaColorCount();
                 
-                // Read curvature from series (not local variable which is out of scope)
-                double curvatureRatioVal = (CurrentBar >= 2 && curvatureRatioSeries != null) ? curvatureRatioSeries[0] : 0.0;
+                // Use the curvature parameter passed to this function (from cached bar), not current bar's series
+                double curvatureRatioVal = curvatureRatio;
+                
+                if (CurrentBar % 100 == 0)
+                {
+                    Print($"[CSV] Bar={CurrentBar} curvatureRatioVal from parameter: {curvatureRatioVal:F6}");
+                }
 
                 bool rangeBreak = bullRangeBreak || bearRangeBreak;
 
@@ -3143,8 +3213,16 @@ namespace NinjaTrader.NinjaScript.Indicators
                     exitShort = bull || (Close[0] > ema20Close[0]);
                 }
 
+                if (CurrentBar % 100 == 0)
+                {
+                    Print($"[CSV] Variables before writing:");
+                    Print($"      momentumValExt (column 41/AP) = {momentumValExt}");
+                    Print($"      curvatureRatioVal (column 42/AQ) = {curvatureRatioVal}");
+                    Print($"[CSV] CsvNum(curvatureRatioVal) returns: {CsvNum(curvatureRatioVal)}");
+                }
+                
                 line += "," + string.Join(",",
-                    CsvNum(vpmSmooth),
+                    //CsvNum(vpmSmooth), // Removed - not in header
                     scBull.ToString(),
                     scBear.ToString(),
                     CsvNum(adxVal),
