@@ -30,6 +30,18 @@
             Quick debug check for common issues
             </summary>
         </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.GradientSlopeStrategy.ShouldExitLongOnFastEMA(System.Double,System.Double,System.Double,System.String@)">
+            <summary>
+            Check if LONG position should exit based on Fast EMA conditions
+            Core rule: Exit when fast EMA gradient is negative AND below threshold AND price is below fast EMA
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.GradientSlopeStrategy.ShouldExitShortOnFastEMA(System.Double,System.Double,System.Double,System.String@)">
+            <summary>
+            Check if SHORT position should exit based on Fast EMA conditions
+            Core rule: Exit when fast EMA gradient is positive AND above threshold AND price is above fast EMA
+            </summary>
+        </member>
         <member name="T:NinjaTrader.NinjaScript.Indicators.ADL">
             <summary>
             The Accumulation/Distribution (AD) study attempts to quantify the amount of volume flowing into or
