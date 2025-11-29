@@ -248,31 +248,50 @@ function renderAutoSuggestions(data) {
   }
   if (!Array.isArray(suggestions) || suggestions.length === 0) {
     listEl.innerHTML = `<em>No auto suggestions. Consecutive weak bars: ${weakCount}/${threshold}</em>`;
-    return;
+  } else {
+    listEl.innerHTML = suggestions.map((s, idx) => {
+      const prop = s.property;
+      const rec = s.recommend;
+      const reason = s.reason || '';
+      return `<div class="box has-background-grey-dark" style="padding:0.4rem; margin-bottom:0.4rem;">
+        <div class="is-flex is-justify-content-space-between is-align-items-center">
+          <div>
+            <span class="tag is-link">${prop}</span>
+            <span class="tag is-info">${rec}</span>
+            <span class="tag is-dark" title="${reason}">${reason}</span>
+          </div>
+          <div>
+            <button class="button is-small is-success" data-auto-apply-index="${idx}">Apply</button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    suggestions.forEach((s, idx) => {
+      const btn = listEl.querySelector(`button[data-auto-apply-index='${idx}']`);
+      if (btn) { btn.onclick = () => applySuggestion(s); }
+    });
   }
-  listEl.innerHTML = suggestions.map((s, idx) => {
-    const prop = s.property;
-    const rec = s.recommend;
-    const reason = s.reason || '';
-    return `<div class="box has-background-grey-dark" style="padding:0.4rem; margin-bottom:0.4rem;">
-      <div class="is-flex is-justify-content-space-between is-align-items-center">
-        <div>
-          <span class="tag is-link">${prop}</span>
-          <span class="tag is-info">${rec}</span>
-          <span class="tag is-dark" title="${reason}">${reason}</span>
-        </div>
-        <div>
-          <button class="button is-small is-success" data-auto-apply-index="${idx}">Apply</button>
-        </div>
-      </div>
-    </div>`;
-  }).join('');
-  suggestions.forEach((s, idx) => {
-    const btn = listEl.querySelector(`button[data-auto-apply-index='${idx}']`);
-    if (btn) {
-      btn.onclick = () => applySuggestion(s);
+
+  // Auto-apply status & events
+  const auto = data?.autoApply || {};
+  const statusTag = document.getElementById('autoApplyStatus');
+  if (statusTag) {
+    const enabled = !!auto.enabled;
+    statusTag.textContent = `Auto-Apply: ${enabled ? 'ON' : 'OFF'}`;
+    statusTag.className = 'tag ' + (enabled ? 'is-success' : 'is-danger');
+  }
+  const eventsEl = document.getElementById('autoApplyEvents');
+  if (eventsEl) {
+    const evs = auto.recentEvents || [];
+    if (!evs.length) {
+      eventsEl.innerHTML = '<em>No recent auto applies.</em>';
+    } else {
+      eventsEl.innerHTML = evs.map(e => {
+        const dt = new Date(e.ts * 1000).toISOString().split('T')[1].split('.')[0];
+        return `<div>(${dt}) <strong>${e.property}</strong>: ${e.oldValue} -> ${e.newValue} (streak ${e.streakCount})</div>`;
+      }).join('');
     }
-  });
+  }
 }
 
 async function pollAutoSuggest() {
@@ -387,6 +406,20 @@ function main() {
   pollTrendLog();
   refreshOverrides();
   pollAutoSuggest();
+  const toggleBtn = document.getElementById('toggleAutoApplyBtn');
+  if (toggleBtn) {
+    toggleBtn.onclick = async () => {
+      try {
+        const r = await fetch('/autoapply/toggle', { method: 'POST' });
+        const j = await r.json();
+        const tag = document.getElementById('autoApplyStatus');
+        if (tag) {
+          tag.textContent = `Auto-Apply: ${j.enabled ? 'ON' : 'OFF'}`;
+          tag.className = 'tag ' + (j.enabled ? 'is-success' : 'is-danger');
+        }
+      } catch {}
+    };
+  }
   document.getElementById('useLastBtn').onclick = () => {
     if (lastItem) {
       document.getElementById('suggestInput').value = JSON.stringify(lastItem, null, 2);
