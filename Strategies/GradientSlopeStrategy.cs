@@ -11,6 +11,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Xml.Serialization;
 using System.IO;
+using System.Net.Http;
+using System.Globalization;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui;
 using NinjaTrader.Gui.Chart;
@@ -117,6 +119,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private System.Windows.Controls.Button btnDiagToggle;  // collapse/expand panel
         private System.Windows.Controls.Button btnCopyClipboard; // copy diagnosis text to clipboard
         private System.Windows.Controls.Button btnSuggestTarget; // cycle suggestion target (Auto/Long/Short/Exit)
+        private System.Windows.Controls.Button btnSaveProps;    // save properties dump
+        private System.Windows.Controls.Button btnLoadProps;    // load properties dump
         private int lastHoverBar = -1;                          // updated via mouse move handler
         private bool hoverDebug = false;                        // optional debug prints for hover mapping
         private System.Windows.Controls.TextBlock hoverInfoText; // live hover bar index
@@ -141,6 +145,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double minEntryFastGradientAbs = 0.50; // Minimum absolute fast gradient required for entry only (tunable)
         private double validationMinFastGradientAbs = 0.15; // Minimum absolute fast gradient required to stay in position
         private double maxEntryFastGradientAbs = 0.60; // Upper cap: disallow entries when fast gradient magnitude is too large (overextension)
+
+        // --- Adaptive Entry Gradient Thresholds ---
+        private bool enableAdaptiveEntryGradient = true;      // adapt entry threshold based on context
+        private double adaptiveNearZeroMultiplier = 0.85;       // scale down near recent zero-cross
+        private double adaptiveDeepLegMultiplier = 0.75;        // scale down after deep opposite leg
+        private double adaptiveDeepLegPoints = 6.0;             // points depth threshold for deep leg
+        private int adaptiveLookbackBars = 20;                  // bars to scan for context
+        private double adaptiveMinFloor = 0.30;                 // never drop below this absolute floor
         
         // --- Indicator instrumentation (Phase 1) ---
         private ATR atr;
@@ -165,6 +177,85 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double maxATRForEntry = 13.57;
         private bool enableRSIFloor = true;
         private double minRSIForEntry = 50.0;
+
+        // --- Runtime Overrides (fetched from dashboard) ---
+        private DateTime lastOverridesFetch = DateTime.MinValue;
+        private int overridesFetchIntervalSeconds = 10; // poll every 10s
+        private static HttpClient overridesHttpClient = new HttpClient();
+        private bool logOverridesApplied = true; // toggle logging for applied overrides
+
+        private void PollOverridesIfNeeded()
+        {
+            if ((DateTime.UtcNow - lastOverridesFetch).TotalSeconds < overridesFetchIntervalSeconds)
+                return;
+            lastOverridesFetch = DateTime.UtcNow;
+            string url = "http://127.0.0.1:5001/overrides";
+            try
+            {
+                var json = overridesHttpClient.GetStringAsync(url).Result;
+                bool foundMinAdx = ApplyOverride(json, "MinAdxForEntry", ref minAdxForEntry);
+                bool foundMaxStab = ApplyOverride(json, "MaxGradientStabilityForEntry", ref maxGradientStabilityForEntry);
+                bool foundMinFastGrad = ApplyOverride(json, "MinEntryFastGradientAbs", ref minEntryFastGradientAbs);
+                bool foundMaxBandwidth = ApplyOverride(json, "MaxBandwidthForEntry", ref maxBandwidthForEntry);
+                // Adaptive overrides
+                bool foundAdaptiveFloor = ApplyOverride(json, "AdaptiveMinFloor", ref adaptiveMinFloor);
+                bool foundAdaptiveNearZero = ApplyOverride(json, "AdaptiveNearZeroMultiplier", ref adaptiveNearZeroMultiplier);
+
+                // If an override was previously applied but now missing -> revert to defaults
+                RevertIfMissing(foundMinAdx, 18.0, ref minAdxForEntry, "MinAdxForEntry");
+                RevertIfMissing(foundMaxStab, 1.46, ref maxGradientStabilityForEntry, "MaxGradientStabilityForEntry");
+                RevertIfMissing(foundMinFastGrad, 0.50, ref minEntryFastGradientAbs, "MinEntryFastGradientAbs");
+                RevertIfMissing(foundMaxBandwidth, 0.100, ref maxBandwidthForEntry, "MaxBandwidthForEntry");
+                RevertIfMissing(foundAdaptiveFloor, 0.30, ref adaptiveMinFloor, "AdaptiveMinFloor");
+                RevertIfMissing(foundAdaptiveNearZero, 0.85, ref adaptiveNearZeroMultiplier, "AdaptiveNearZeroMultiplier");
+            }
+            catch (Exception ex)
+            {
+                if (enableLogging)
+                    Print("[OVERRIDES] Fetch failed: " + ex.Message);
+            }
+        }
+
+        private bool ApplyOverride(string json, string key, ref double field)
+        {
+            try
+            {
+                int idx = json.IndexOf("\"" + key + "\"");
+                if (idx < 0) return false;
+                int colon = json.IndexOf(':', idx);
+                if (colon < 0) return false;
+                int start = colon + 1;
+                while (start < json.Length && char.IsWhiteSpace(json[start])) start++;
+                int end = start;
+                while (end < json.Length && "0123456789+-.eE".IndexOf(json[end]) >= 0) end++;
+                string numStr = json.Substring(start, end - start).Trim();
+                if (string.IsNullOrEmpty(numStr)) return true; // key present but empty
+                double val;
+                if (double.TryParse(numStr, NumberStyles.Any, CultureInfo.InvariantCulture, out val))
+                {
+                    if (Math.Abs(field - val) > 0.00001)
+                    {
+                        double old = field;
+                        field = val;
+                        if (logOverridesApplied)
+                            LogOutput($"OVERRIDE_APPLIED {key} {old:F4}->{field:F4}");
+                    }
+                }
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private void RevertIfMissing(bool found, double defaultVal, ref double field, string key)
+        {
+            if (!found && Math.Abs(field - defaultVal) > 0.00001)
+            {
+                double old = field;
+                field = defaultVal;
+                if (logOverridesApplied)
+                    LogOutput($"OVERRIDE_REMOVED {key} {old:F4}->DEFAULT({field:F4})");
+            }
+        }
 
         private string BuildIndicatorSnapshot(double fastEMAValue, double slowEMAValue, double fastGradient)
         {
@@ -209,8 +300,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool useSignFlipExit = true;
         private double signFlipTolerance = 0.02; // Accept gradient within +/- tolerance of zero as flip
 
+        // Streaming diagnostics (dashboard auto-feed)
+        private bool streamBarDiagnostics = true; // default ON: send compact diag each bar
+
         // --- Early Reversal Entry (optional) ---
-        private bool enableReversalEarlyEntry = false; // master toggle
+        private bool enableReversalEarlyEntry = true; // master toggle
         private int reversalLookbackBars = 12;          // bars to scan back for bear/bull context
         private int minBearBarsForReversal = 3;         // consecutive bear bars required before bullish reversal entry
         private int minBullBarsForReversal = 3;         // consecutive bull bars required before bearish reversal entry (future use)
@@ -404,6 +498,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LogOutput($"Fast EMA: {fastEMAPeriod}, Slow EMA: {slowEMAPeriod}, Entry Delay: {entryBarDelay}");
                 LogOutput($"Weak Gradient Threshold: {weakGradientThreshold}, Delay Period: {weakReversalDelayPeriod}");
                 LogOutput($"Defaults -> MinEntryFastGrad:{minEntryFastGradientAbs:F2} ValidationMinFastGrad:{validationMinFastGradientAbs:F2} MaxEntryFastGrad:{maxEntryFastGradientAbs:F2}");
+                LogOutput($"AdaptiveEntry -> Enabled:{enableAdaptiveEntryGradient} NearZeroMult:{adaptiveNearZeroMultiplier:F2} DeepLegMult:{adaptiveDeepLegMultiplier:F2} DeepLegPts>={adaptiveDeepLegPoints:F1} Lookback:{adaptiveLookbackBars} Floor:{adaptiveMinFloor:F2}");
                 LogOutput($"Filters -> MinADX:{minAdxForEntry:F0} MaxGradStab:{maxGradientStabilityForEntry:F2} BW:[{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}] AccelAlign:{requireAccelAlignment}");
                 LogOutput($"Optional -> ATRCap:{(enableATRCap ? ("<= " + maxATRForEntry.ToString("F2")) : "Off")} RSIFloor:{(enableRSIFloor ? (">= " + minRSIForEntry.ToString("F1")) : "Off")} DisableEntryFilters:{disableEntryFilters}");
                 LogOutput($"Debug -> ShowBarIndexLabels:{showBarIndexLabels} ShowHud:{showHud} HudPos:{hudPosition} HudFont:{hudFontSize} AutoAddGradientPanel:{autoAddGradientPanel}");
@@ -502,6 +597,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             
             if (fastEMA == null || slowEMA == null)
                 return;
+
+            // Periodic poll for dashboard overrides (lightweight, throttled)
+            PollOverridesIfNeeded();
             
             // CHECK EXIT COOLDOWN - stay flat for 30 seconds after any exit
             if (inExitCooldown && lastExitTime != DateTime.MinValue)
@@ -523,6 +621,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         // Color bars during cooldown for clarity
                         try { BarBrushes[0] = Brushes.DimGray; CandleOutlineBrushes[0] = Brushes.Gray; } catch {}
                     }
+                    
                     if (showHud)
                     {
                         var secsLeft = Math.Max(0, exitCooldownSeconds - (int)((Time[0] - lastExitTime).TotalSeconds));
@@ -1263,8 +1362,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LogOutput("    ▶ WEAK REVERSAL DELAY EXPIRED - Ready to enter");
             }
             
-            // Attempt early reversal LONG entry before standard signal-based entry
-            // Conditions handled in TryEarlyReversalLong; executes only when FLAT and no trade this bar.
+            // Attempt early reversal entries (LONG/SHORT) before standard signal-based entry
+            // Executes only when FLAT and no trade this bar.
             if (enableReversalEarlyEntry && myPosition == "FLAT" && Position.MarketPosition == MarketPosition.Flat && !tradeAlreadyPlacedThisBar)
             {
                 string revReason;
@@ -1272,6 +1371,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     tradeAlreadyPlacedThisBar = true; // prevent duplicate logic later in bar
                     LogOutput($"EARLY_REVERSAL_LONG ENTRY -> {revReason}");
+                }
+                else if (TryEarlyReversalShort(out revReason))
+                {
+                    tradeAlreadyPlacedThisBar = true; // prevent duplicate logic later in bar
+                    LogOutput($"EARLY_REVERSAL_SHORT ENTRY -> {revReason}");
                 }
             }
 
@@ -1306,9 +1410,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     
                     if (currentSignal == "LONG")
                     {
-                        // LONG validation: Both gradients must be positive, fast gradient strong, price above both EMAs
+                        // LONG validation: Both gradients must be positive, fast gradient strong (adaptive), price above both EMAs
                         bool gradientsPositive = (fastGradient > 0 && slowGradient > 0);
-                        bool fastGradientStrong = (fastGradient > minEntryFastGradientAbs);
+                        double entryThrLong = GetEntryFastGradientThreshold(true);
+                        bool fastGradientStrong = (fastGradient > entryThrLong);
                         bool priceAboveEMAs = (currentClose > fastEMAValue && currentClose > slowEMAValue);
 
                         conditionsStillValid = gradientsPositive && fastGradientStrong && priceAboveEMAs;
@@ -1348,7 +1453,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                         // Reversal logic remains disabled; compute value but not used
                         bool oppositeGradientsNegative = (fastGradient < 0 && slowGradient < 0);
-                        bool oppositeFastGradientStrong = (fastGradient < -minEntryFastGradientAbs);
+                        bool oppositeFastGradientStrong = (fastGradient < -entryThrLong);
                         bool oppositePriceBelowEMAs = (currentClose < fastEMAValue && currentClose < slowEMAValue);
                         shouldReverse = oppositeGradientsNegative && oppositeFastGradientStrong && oppositePriceBelowEMAs;
 
@@ -1357,16 +1462,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                             if (!gradientsPositive)
                                 invalidationReason = "Gradients turned negative";
                             else if (!fastGradientStrong)
-                                invalidationReason = $"Fast gradient too weak ({fastGradient:F4} <= {minEntryFastGradientAbs:F2})";
+                                invalidationReason = $"Fast gradient too weak ({fastGradient:F4} <= thr {entryThrLong:F2}{(enableAdaptiveEntryGradient?" (adaptive)":"")})";
                             else if (!priceAboveEMAs)
                                 invalidationReason = "Price dropped below EMAs";
                         }
                     }
                     else if (currentSignal == "SHORT")
                     {
-                        // SHORT validation: Both gradients negative, fast gradient strong enough, price below both EMAs
+                        // SHORT validation: Both gradients negative, fast gradient strong enough (adaptive), price below both EMAs
                         bool gradientsNegative = (fastGradient < 0 && slowGradient < 0);
-                        bool fastGradientStrong = (fastGradient < -minEntryFastGradientAbs);
+                        double entryThrShort = GetEntryFastGradientThreshold(false);
+                        bool fastGradientStrong = (fastGradient < -entryThrShort);
                         bool priceBelowEMAs = (currentClose < fastEMAValue && currentClose < slowEMAValue);
 
                         conditionsStillValid = gradientsNegative && fastGradientStrong && priceBelowEMAs;
@@ -1405,7 +1511,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                         // Reversal logic remains disabled; compute value but not used
                         bool oppositeGradientsPositive = (fastGradient > 0 && slowGradient > 0);
-                        bool oppositeFastGradientStrong = (fastGradient > minEntryFastGradientAbs);
+                        bool oppositeFastGradientStrong = (fastGradient > entryThrShort);
                         bool oppositePriceAboveEMAs = (currentClose > fastEMAValue && currentClose > slowEMAValue);
                         shouldReverse = oppositeGradientsPositive && oppositeFastGradientStrong && oppositePriceAboveEMAs;
 
@@ -1414,7 +1520,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             if (!gradientsNegative)
                                 invalidationReason = "Gradients turned positive";
                             else if (!fastGradientStrong)
-                                invalidationReason = $"Fast gradient too weak ({fastGradient:F4} >= -{minEntryFastGradientAbs:F2})";
+                                invalidationReason = $"Fast gradient too weak ({fastGradient:F4} >= -thr {entryThrShort:F2}{(enableAdaptiveEntryGradient?" (adaptive)":"")})";
                             else if (!priceBelowEMAs)
                                 invalidationReason = "Price rose above EMAs";
                         }
@@ -1425,7 +1531,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bool slowGradPositive = slowGradient > 0;
                     bool closeAboveFastEMA = currentClose > fastEMAValue;
                     bool closeAboveSlowEMA = currentClose > slowEMAValue;
-                    string entryConditions = $"ENTRY_DECISION: Signal={currentSignal} Bar={barsInSignal}/{entryBarDelay} Valid={conditionsStillValid} ShouldReverse={shouldReverse} PriceRising={priceRising} FastGrad={fastGradient:F4}({(fastGradPositive?"POS":"NEG")}) SlowGrad={slowGradient:F4}({(slowGradPositive?"POS":"NEG")}) Close={currentClose:F2} FastEMA={fastEMAValue:F2}({(closeAboveFastEMA?"ABOVE":"BELOW")}) SlowEMA={slowEMAValue:F2}({(closeAboveSlowEMA?"ABOVE":"BELOW")})";
+                    string entryConditions = $"ENTRY_DECISION: Signal={currentSignal} Bar={barsInSignal}/{entryBarDelay} Valid={conditionsStillValid} ShouldReverse={shouldReverse} PriceRising={priceRising} FastGrad={fastGradient:F4}({(fastGradPositive?"POS":"NEG")}) SlowGrad={slowGradient:F4}({(slowGradPositive?"POS":"NEG")}) Close={currentClose:F2} FastEMA={fastEMAValue:F2}({(closeAboveFastEMA?"ABOVE":"BELOW")}) SlowEMA={slowEMAValue:F2}({(closeAboveSlowEMA?"ABOVE":"BELOW")}) Thr={(currentSignal=="LONG"?GetEntryFastGradientThreshold(true):GetEntryFastGradientThreshold(false)):F2}{(enableAdaptiveEntryGradient?"(adaptive)":"")}";
                     LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, currentSignal, myPosition, "ENTRY_DECISION", entryConditions);
                     
@@ -1654,6 +1760,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Draw.Text(this, "BarLabel_" + CurrentBar, CurrentBar.ToString(), 0, High[0] + (6 * TickSize), Brushes.Black);
             }
+            
+            // Stream compact diagnosis to web server on every completed bar
+            if (IsFirstTickOfBar)
+            {
+                StreamCompactDiagnosis();
+            }
         }
         
         #endregion
@@ -1665,6 +1777,43 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (hudVerticalOffset <= 0) return string.Empty;
             return new string('\n', hudVerticalOffset);
+        }
+        private double GetEntryFastGradientThreshold(bool isLong)
+        {
+            double thr = minEntryFastGradientAbs;
+            if (!enableAdaptiveEntryGradient) return thr;
+            // Recent fast gradient sign flip (near zero-cross)
+            bool zeroFlip = false;
+            if (CurrentBar >= 2)
+            {
+                double fg0 = SafeGet(fastEMA, 0) - SafeGet(fastEMA, 1);
+                double fg1 = SafeGet(fastEMA, 1) - SafeGet(fastEMA, 2);
+                zeroFlip = (Math.Sign(fg0) != Math.Sign(fg1));
+            }
+            if (zeroFlip)
+                thr *= adaptiveNearZeroMultiplier;
+
+            // Deep opposite leg context
+            double maxDepth = 0.0;
+            int limit = Math.Min(adaptiveLookbackBars, CurrentBar);
+            for (int b = 1; b <= limit; b++)
+            {
+                double fg = SafeGet(fastEMA, b) - SafeGet(fastEMA, b + 1);
+                double c = SafeGet(Close, b);
+                double fe = SafeGet(fastEMA, b);
+                bool opposite = isLong ? (fg < 0 && c < fe) : (fg > 0 && c > fe);
+                if (opposite)
+                {
+                    double depth = isLong ? (fe - c) : (c - fe);
+                    if (depth > maxDepth) maxDepth = depth;
+                }
+                else break;
+            }
+            if (maxDepth >= adaptiveDeepLegPoints)
+                thr *= adaptiveDeepLegMultiplier;
+
+            thr = Math.Max(adaptiveMinFloor, thr);
+            return thr;
         }
         // Early reversal detection and entry (LONG side)
         private bool TryEarlyReversalLong(out string reason)
@@ -1732,7 +1881,74 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             return true;
         }
-        private void SaveStrategyProperties()
+        // Early reversal detection and entry (SHORT side)
+        private bool TryEarlyReversalShort(out string reason)
+        {
+            reason = "";
+            if (!enableReversalEarlyEntry) return false;
+            if (CurrentBar < reversalLookbackBars) return false;
+            if (myPosition != "FLAT" || Position.MarketPosition != MarketPosition.Flat) return false;
+
+            double fastGrad = fastEMA[0] - fastEMA[1];
+            double slowGrad = slowEMA[0] - slowEMA[1];
+            double accel = fastGrad - prevFastGradient;
+            double closeVal = Close[0];
+            double fastVal = fastEMA[0];
+
+            // Require fast gradient negative + price below fast EMA
+            if (!(fastGrad < 0 && closeVal < fastVal)) return false;
+
+            // Acceleration requirement (accelerating down)
+            if (accel > -minAccelForReversal) return false;
+
+            // Bull context scan
+            int bullCount = 0; double maxDepth = 0.0;
+            int limit = Math.Min(reversalLookbackBars, CurrentBar);
+            for (int b = 1; b <= limit; b++)
+            {
+                double fg = fastEMA[b] - fastEMA[b + 1];
+                double c = Close[b];
+                double fe = fastEMA[b];
+                if (fg > 0 && c > fe)
+                {
+                    bullCount++;
+                    double depth = c - fe;
+                    if (depth > maxDepth) maxDepth = depth;
+                }
+                else break;
+            }
+            // Reuse minimum bars threshold symmetrically
+            if (bullCount < minBearBarsForReversal) return false;
+            if (maxDepth < minReversalDepthPoints) return false;
+
+            // Filters
+            double adxVal = adx != null ? adx[0] : 0.0;
+            if (adxVal < minReversalAdx) return false;
+            if (currentGradientStability > maxReversalStability) return false;
+
+            // Reason string
+            reason = $"FastGrad:{fastGrad:+0.000;-0.000} Accel:{accel:+0.000;-0.000} BullBars:{bullCount} Depth:{maxDepth:F1} ADX:{adxVal:F1} GradStab:{currentGradientStability:F2}";
+
+            try
+            {
+                EnterShort(quantity, "EARLYREV_SHORT");
+                myPosition = "SHORT";
+                entryBar = CurrentBar;
+                lastTradeBar = CurrentBar;
+                entryPrice = closeVal;
+                entryTime = Time[0];
+                tradeMFE = 0.0; tradeMAE = 0.0;
+                LogOutput($">>> EARLY REVERSAL SHORT ENTRY @ {closeVal:F2} | {reason}");
+                Print($"[GRAD] {Time[0]} | EARLY REVERSAL SHORT ENTRY @ {closeVal:F2} | {reason}");
+            }
+            catch (Exception ex)
+            {
+                LogOutput($"EARLY REVERSAL SHORT ENTRY FAILED: {ex.Message}");
+                return false;
+            }
+            return true;
+        }
+        private string SaveStrategyProperties()
         {
             try
             {
@@ -1755,10 +1971,63 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 Print("[GRAD] Properties saved: " + path);
                 LogOutput("PROPERTIES_FILE: " + path);
+                return path;
             }
             catch (Exception ex)
             {
                 Print("[GRAD] Failed to save properties: " + ex.Message);
+                return string.Empty;
+            }
+        }
+        private void LoadStrategyPropertiesFromFile()
+        {
+            try
+            {
+                string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NinjaTrader 8", "bin", "Custom", "strategy_logs");
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+                var dlg = new Microsoft.Win32.OpenFileDialog();
+                dlg.InitialDirectory = dir;
+                dlg.Filter = "Property Dumps (*.txt)|*.txt|All Files (*.*)|*.*";
+                dlg.Title = "Select GradientSlope properties dump";
+                bool? result = dlg.ShowDialog();
+                if (result != true)
+                {
+                    UpdateDiagText("Load props cancelled.");
+                    return;
+                }
+                int applied = 0, skipped = 0, errors = 0;
+                foreach (var line in File.ReadAllLines(dlg.FileName))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    if (!line.Contains("=")) continue;
+                    var parts = line.Split(new char[]{'='},2);
+                    if (parts.Length != 2) continue;
+                    string name = parts[0].Trim();
+                    string sval = parts[1].Trim();
+                    if (name == "GradientSlopeStrategy Properties Dump" || name == "Instrument") continue;
+                    var pi = GetType().GetProperty(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                    if (pi == null || !pi.CanWrite) { skipped++; continue; }
+                    if (typeof(Series<double>).IsAssignableFrom(pi.PropertyType)) { skipped++; continue; }
+                    try
+                    {
+                        object converted;
+                        if (pi.PropertyType == typeof(int)) converted = int.Parse(sval, System.Globalization.CultureInfo.InvariantCulture);
+                        else if (pi.PropertyType == typeof(double)) converted = double.Parse(sval, System.Globalization.CultureInfo.InvariantCulture);
+                        else if (pi.PropertyType == typeof(bool)) converted = bool.Parse(sval);
+                        else if (pi.PropertyType.IsEnum) converted = Enum.Parse(pi.PropertyType, sval);
+                        else converted = Convert.ChangeType(sval, pi.PropertyType, System.Globalization.CultureInfo.InvariantCulture);
+                        pi.SetValue(this, converted);
+                        applied++;
+                    }
+                    catch { errors++; }
+                }
+                string snapshot = SaveStrategyProperties();
+                UpdateDiagText($"Loaded properties from file:\n{Path.GetFileName(dlg.FileName)}\nApplied:{applied} Skipped:{skipped} Errors:{errors}\nSnapshot:{snapshot}");
+                LogOutput($"LOAD_PROPS File:{dlg.FileName} Applied:{applied} Skipped:{skipped} Errors:{errors} Snapshot:{snapshot}");
+            }
+            catch (Exception ex)
+            {
+                UpdateDiagText("Load props error: " + ex.Message);
             }
         }
         private string SaveAsStrategyTemplate(string templateName)
@@ -1979,6 +2248,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     btnCopyClipboard = new System.Windows.Controls.Button { Content = "Copy", Padding = new System.Windows.Thickness(4,2,4,2), Margin = new System.Windows.Thickness(4,0,0,0), FontSize = 12 };
                     btnDiagToggle = new System.Windows.Controls.Button { Content = "Hide", Padding = new System.Windows.Thickness(4,2,4,2), Margin = new System.Windows.Thickness(4,0,0,0), FontSize = 12 };
                     btnForceEligible = new System.Windows.Controls.Button { Content = "ForceElig", Padding = new System.Windows.Thickness(4,2,4,2), Margin = new System.Windows.Thickness(4,0,0,0), FontSize = 12 };
+                    btnSaveProps = new System.Windows.Controls.Button { Content = "SaveProps", Padding = new System.Windows.Thickness(4,2,4,2), Margin = new System.Windows.Thickness(4,0,0,0), FontSize = 12 };
+                    btnLoadProps = new System.Windows.Controls.Button { Content = "LoadProps", Padding = new System.Windows.Thickness(4,2,4,2), Margin = new System.Windows.Thickness(4,0,0,0), FontSize = 12 };
                     btnDiagCurrent.Click += (s,e) => RunDiagnosisForBar(CurrentBar);
                     btnDiagCursor.Click += (s,e) => {
                         int target = lockedDiagBar >= 0 ? lockedDiagBar : lastHoverBar;
@@ -1989,28 +2260,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                         try
                         {
                             var diag = DiagnoseEntryAtBar(target);
-                            // Decide which side to force based on suggestionTarget or fewer blockers
-                            bool forceLong = suggestionTarget == "LONG" || (suggestionTarget == "AUTO" && diag.BlockersLong.Count <= diag.BlockersShort.Count);
-                            bool forceShort = suggestionTarget == "SHORT" || (suggestionTarget == "AUTO" && diag.BlockersShort.Count < diag.BlockersLong.Count);
                             string side;
-                            if (forceLong)
+                            switch (suggestionTarget)
                             {
-                                if (forcedLongEligibility.Contains(target)) { forcedLongEligibility.Remove(target); side = "LONG (removed)"; }
-                                else { forcedLongEligibility.Add(target); side = "LONG (added)"; }
-                            }
-                            else if (forceShort)
-                            {
-                                if (forcedShortEligibility.Contains(target)) { forcedShortEligibility.Remove(target); side = "SHORT (removed)"; }
-                                else { forcedShortEligibility.Add(target); side = "SHORT (added)"; }
-                            }
-                            else
-                            {
-                                // EXIT target does not force eligibility
-                                side = "EXIT (no force)";
+                                case "LONG":
+                                    if (forcedLongEligibility.Contains(target)) { forcedLongEligibility.Remove(target); side = "LONG (removed)"; }
+                                    else { forcedLongEligibility.Add(target); side = "LONG (added)"; }
+                                    break;
+                                case "SHORT":
+                                    if (forcedShortEligibility.Contains(target)) { forcedShortEligibility.Remove(target); side = "SHORT (removed)"; }
+                                    else { forcedShortEligibility.Add(target); side = "SHORT (added)"; }
+                                    break;
+                                case "EXIT":
+                                    side = "EXIT (no force)"; // do nothing
+                                    break;
+                                case "AUTO":
+                                default:
+                                    // AUTO: keep heuristic based on fewer blockers
+                                    bool preferLong = diag.BlockersLong.Count <= diag.BlockersShort.Count;
+                                    if (preferLong)
+                                    {
+                                        if (forcedLongEligibility.Contains(target)) { forcedLongEligibility.Remove(target); side = "AUTO->LONG (removed)"; }
+                                        else { forcedLongEligibility.Add(target); side = "AUTO->LONG (added)"; }
+                                    }
+                                    else
+                                    {
+                                        if (forcedShortEligibility.Contains(target)) { forcedShortEligibility.Remove(target); side = "AUTO->SHORT (removed)"; }
+                                        else { forcedShortEligibility.Add(target); side = "AUTO->SHORT (added)"; }
+                                    }
+                                    break;
                             }
                             // Re-run diagnosis to reflect forced state
                             diag = DiagnoseEntryAtBar(target);
-                            UpdateDiagText($"Forced eligibility toggle -> {side}\n" + diag.HeaderLine + "\n" + string.Join("\n", diag.DetailLines));
+                            UpdateDiagText($"ForceElig target={suggestionTarget} -> {side}\n" + diag.HeaderLine + "\n" + string.Join("\n", diag.DetailLines));
                         }
                         catch (Exception ex)
                         {
@@ -2032,6 +2314,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {
                             UpdateDiagText("Apply+Save error: " + ex.Message);
                         }
+                    };
+                    btnSaveProps.Click += (s,e) => {
+                        try
+                        {
+                            string path = SaveStrategyProperties();
+                            UpdateDiagText("Properties saved -> \n" + path);
+                        }
+                        catch (Exception ex)
+                        {
+                            UpdateDiagText("Save props error: " + ex.Message);
+                        }
+                    };
+                    btnLoadProps.Click += (s,e) => {
+                        LoadStrategyPropertiesFromFile();
                     };
                     btnCopyClipboard.Click += (s,e) => {
                         try
@@ -2074,6 +2370,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     btnPanel.Children.Add(btnSuggestTarget);
                     btnPanel.Children.Add(btnCopyClipboard);
                     btnPanel.Children.Add(btnForceEligible);
+                    btnPanel.Children.Add(btnSaveProps);
+                    btnPanel.Children.Add(btnLoadProps);
                     btnPanel.Children.Add(btnDiagToggle);
                     // Live hover info line
                     hoverInfoText = new System.Windows.Controls.TextBlock { Text = "Hover: -", Foreground = System.Windows.Media.Brushes.Gainsboro, FontSize = 13, Margin = new System.Windows.Thickness(0,0,0,3) };
@@ -2144,7 +2442,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (double.IsNaN(lastHoverX)) lastHoverX = panelX;
                 double deltaX = Math.Abs(panelX - lastHoverX);
                 bool shouldUpdate = deltaX >= 1.0; // threshold
-                if (lockedDiagBar >= 0) // when locked, keep showing locked; still allow unlock later
+
+                if (lockedDiagBar >= 0)
                 {
                     if (hoverInfoText != null)
                         hoverInfoText.Text = $"Hover: {lastHoverBar} (LOCKED:{lockedDiagBar})";
@@ -2274,6 +2573,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         foreach (var line in diag.DetailLines)
                             sb.AppendLine(line);
                         UpdateDiagText(sb.ToString());
+                        // Emit to local dashboard
+                        SendDiagnosisToWeb(diag, idx);
                     }
                     catch (Exception exInner)
                     {
@@ -2284,6 +2585,195 @@ namespace NinjaTrader.NinjaScript.Strategies
             catch (Exception ex)
             {
                 UpdateDiagText("Diagnosis scheduling error: " + ex.Message);
+            }
+        }
+
+        private static System.Net.Http.HttpClient sharedClient;
+        private static readonly object clientLock = new object();
+        private int diagSentCount = 0;
+        private int diagFailCount = 0;
+        private readonly System.Collections.Generic.List<string> compactBuffer = new System.Collections.Generic.List<string>(64);
+        private DateTime lastCompactFlush = DateTime.MinValue;
+
+        [Display(Name = "EnableDiagLogging", Order = 990)]
+        public bool EnableDiagLogging { get; set; } = true;
+
+        private void EnsureHttpClient()
+        {
+            if (sharedClient == null)
+            {
+                lock (clientLock)
+                {
+                    if (sharedClient == null)
+                    {
+                        sharedClient = new System.Net.Http.HttpClient();
+                        sharedClient.Timeout = TimeSpan.FromMilliseconds(300);
+                        sharedClient.DefaultRequestHeaders.ConnectionClose = false;
+                    }
+                }
+            }
+        }
+
+        private void SendDiagnosisToWeb(dynamic diag, int idx)
+        {
+            try
+            {
+                EnsureHttpClient();
+                double fe = fastEMA != null ? fastEMA[idx] : 0.0;
+                double se = slowEMA != null ? slowEMA[idx] : 0.0;
+                double fg = 0.0, sg = 0.0;
+                // Attempt to parse from diag header lines when available
+                // Fallback: use current computed values
+                fg = currentFastGradientAcceleration + prevFastGradient; // rough placeholder if needed
+                string timeIso = Time[idx].ToString("o");
+                double close = Close[idx];
+                double adxVal = adx != null ? adx[idx] : 0.0;
+                double bw = Math.Abs(fe - se) / (se != 0 ? se : 1.0);
+                string blockersLong = string.Join("|", diag.BlockersLong);
+                string blockersShort = string.Join("|", diag.BlockersShort);
+                // Build JSON manually
+                string json = "{" +
+                    "\"barIndex\":" + idx + "," +
+                    "\"time\":\"" + timeIso + "\"," +
+                    "\"close\":" + close.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"fastEMA\":" + fe.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"slowEMA\":" + se.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"fastGrad\":" + fg.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"slowGrad\":" + sg.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"adx\":" + adxVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"bandwidth\":" + bw.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"blockersLong\":\"" + blockersLong.Replace("\"","'") + "\"," +
+                    "\"blockersShort\":\"" + blockersShort.Replace("\"","'") + "\"" +
+                    "}";
+                var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                var cts = new System.Threading.CancellationTokenSource(300);
+                sharedClient.PostAsync("http://127.0.0.1:5001/diag", content, cts.Token)
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsCompleted && !t.IsFaulted && !t.IsCanceled && t.Result.IsSuccessStatusCode)
+                        {
+                            diagSentCount++;
+                            if (EnableDiagLogging && (diagSentCount % 50 == 0))
+                                Print($"[GRAD] Diag sent ok. total={diagSentCount}");
+                        }
+                        else
+                        {
+                            diagFailCount++;
+                            if (EnableDiagLogging && (diagFailCount % 10 == 0))
+                            {
+                                string msg = t.IsFaulted ? (t.Exception?.GetBaseException()?.Message ?? "faulted") : ($"HTTP {(int)(t.Result?.StatusCode ?? 0)}");
+                                Print($"[GRAD] Diag send fail. totalFail={diagFailCount} msg={msg}");
+                            }
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                diagFailCount++;
+                if (EnableDiagLogging)
+                    Print("[GRAD] Diag send exception: " + ex.Message);
+            }
+        }
+
+        private void StreamCompactDiagnosis()
+        {
+            if (!streamBarDiagnostics) return;
+            try
+            {
+                int idx = CurrentBar;
+                double fe = fastEMA != null ? fastEMA[0] : 0.0;
+                double se = slowEMA != null ? slowEMA[0] : 0.0;
+                double fg = fe - (fastEMA != null && CurrentBar >= 1 ? fastEMA[1] : fe);
+                double sg = se - (slowEMA != null && CurrentBar >= 1 ? slowEMA[1] : se);
+                double accelVal = fg - (fastEMA != null && CurrentBar >= 1 ? (fastEMA[0] - fastEMA[1]) - (CurrentBar >= 2 ? (fastEMA[1] - fastEMA[2]) : 0) : 0);
+                double gradStabVal = Math.Abs(fg - sg);
+                double adxVal = adx != null ? adx[0] : 0.0;
+                double atrVal = atr != null ? atr[0] : 0.0;
+                double rsiVal = rsi != null ? rsi[0] : 0.0;
+                double bw = Math.Abs(fe - se) / (se != 0 ? se : 1.0);
+                string sig = currentSignal;
+                
+                // Include blockers info
+                var blockersL = new System.Collections.Generic.List<string>();
+                var blockersS = new System.Collections.Generic.List<string>();
+                // Quick lightweight blocker check (don't repeat full logic, just key ones)
+                if (Math.Abs(fg) < minEntryFastGradientAbs) { blockersL.Add("FastGradMin"); blockersS.Add("FastGradMin"); }
+                if (requireAccelAlignment && fg * accelVal < 0) blockersL.Add("AccelAlign");
+                if (requireAccelAlignment && fg * accelVal > 0) blockersS.Add("AccelAlign");
+                if (adxVal < minAdxForEntry) { blockersL.Add("ADXMin"); blockersS.Add("ADXMin"); }
+                if (bw > maxBandwidthForEntry) { blockersL.Add("Bandwidth"); blockersS.Add("Bandwidth"); }
+                
+                string json = "{" +
+                    "\"barIndex\":" + idx + "," +
+                    "\"time\":\"" + Time[0].ToString("o") + "\"," +
+                    "\"close\":" + Close[0].ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"fastEMA\":" + fe.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"slowEMA\":" + se.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"fastGrad\":" + fg.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"slowGrad\":" + sg.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"accel\":" + accelVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"gradStab\":" + gradStabVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"adx\":" + adxVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"atr\":" + atrVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"rsi\":" + rsiVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"bandwidth\":" + bw.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"signal\":\"" + sig + "\"," +
+                    "\"blockersLong\":[" + string.Join(",", blockersL.Select(b => "\"" + b + "\"")) + "]," +
+                    "\"blockersShort\":[" + string.Join(",", blockersS.Select(b => "\"" + b + "\"")) + "]" +
+                    "}";
+                // Buffer compact diags and flush in batches to reduce connections
+                compactBuffer.Add(json);
+                var now = DateTime.UtcNow;
+                bool timeDue = (lastCompactFlush == DateTime.MinValue) || ((now - lastCompactFlush).TotalMilliseconds >= 1000);
+                if (compactBuffer.Count >= 20 || timeDue)
+                {
+                    FlushCompactBuffer();
+                    lastCompactFlush = now;
+                }
+            }
+            catch (Exception ex)
+            {
+                diagFailCount++;
+                if (EnableDiagLogging)
+                    Print("[GRAD] Compact diag exception: " + ex.Message);
+            }
+        }
+
+        private void FlushCompactBuffer()
+        {
+            if (compactBuffer.Count == 0) return;
+            try
+            {
+                EnsureHttpClient();
+                string payload = "[" + string.Join(",", compactBuffer) + "]";
+                compactBuffer.Clear();
+                var content = new System.Net.Http.StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+                var cts = new System.Threading.CancellationTokenSource(400);
+                sharedClient.PostAsync("http://127.0.0.1:5001/diag", content, cts.Token)
+                    .ContinueWith(t =>
+                    {
+                        if (!(t.IsCompleted && !t.IsFaulted && !t.IsCanceled) || !(t.Result?.IsSuccessStatusCode ?? false))
+                        {
+                            diagFailCount++;
+                            if (EnableDiagLogging && (diagFailCount % 10 == 0))
+                            {
+                                string msg = t.IsFaulted ? (t.Exception?.GetBaseException()?.Message ?? "faulted") : ($"HTTP {(int)(t.Result?.StatusCode ?? 0)}");
+                                Print($"[GRAD] Batch diag send fail. totalFail={diagFailCount} msg={msg}");
+                            }
+                        }
+                        else
+                        {
+                            diagSentCount++;
+                            if (EnableDiagLogging && (diagSentCount % 10 == 0))
+                                Print($"[GRAD] Batch diag sent ok. total={diagSentCount}");
+                        }
+                    });
+            }
+            catch (Exception ex)
+            {
+                diagFailCount++;
+                if (EnableDiagLogging)
+                    Print("[GRAD] Batch diag exception: " + ex.Message);
             }
         }
 
@@ -2389,14 +2879,16 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             bool priceAboveEMAs = close > fast && close > slow;
             bool priceBelowEMAs = close < fast && close < slow;
-            bool fastStrongForEntryLong = Math.Abs(fastGrad) >= minEntryFastGradientAbs && fastGrad > 0;
-            bool fastStrongForEntryShort = Math.Abs(fastGrad) >= minEntryFastGradientAbs && fastGrad < 0;
+            double diagThrLong = GetEntryFastGradientThreshold(true);
+            double diagThrShort = GetEntryFastGradientThreshold(false);
+            bool fastStrongForEntryLong = Math.Abs(fastGrad) >= diagThrLong && fastGrad > 0;
+            bool fastStrongForEntryShort = Math.Abs(fastGrad) >= diagThrShort && fastGrad < 0;
             bool notOverextended = Math.Abs(fastGrad) <= maxEntryFastGradientAbs;
 
             if (!res.SignalEligibleLong) res.BlockersLong.Add($"EntryBarDelay: streak={streakLong} < {entryBarDelay}");
             if (!(fastGrad > 0 && slowGrad > 0)) res.BlockersLong.Add("GradientDirection: fast>0 && slow>0 required");
             if (!priceAboveEMAs) res.BlockersLong.Add("PricePosition: Close>FastEMA && Close>SlowEMA required");
-            if (!fastStrongForEntryLong) res.BlockersLong.Add($"FastGradMin: |fastGrad|={Math.Abs(fastGrad):F4} < MinEntryFastGradientAbs={minEntryFastGradientAbs:F4}");
+            if (!fastStrongForEntryLong) res.BlockersLong.Add($"FastGradMin: |fastGrad|={Math.Abs(fastGrad):F4} < EntryThr={diagThrLong:F4}{(enableAdaptiveEntryGradient?" (adaptive)":"")}");
             if (!notOverextended) res.BlockersLong.Add($"FastGradMax: |fastGrad|={Math.Abs(fastGrad):F4} > MaxEntryFastGradientAbs={maxEntryFastGradientAbs:F4}");
 
             if (!disableEntryFilters)
@@ -2412,7 +2904,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!res.SignalEligibleShort) res.BlockersShort.Add($"EntryBarDelay: streak={streakShort} < {entryBarDelay}");
             if (!(fastGrad < 0 && slowGrad < 0)) res.BlockersShort.Add("GradientDirection: fast<0 && slow<0 required");
             if (!priceBelowEMAs) res.BlockersShort.Add("PricePosition: Close<FastEMA && Close<SlowEMA required");
-            if (!fastStrongForEntryShort) res.BlockersShort.Add($"FastGradMin: |fastGrad|={Math.Abs(fastGrad):F4} < MinEntryFastGradientAbs={minEntryFastGradientAbs:F4}");
+            if (!fastStrongForEntryShort) res.BlockersShort.Add($"FastGradMin: |fastGrad|={Math.Abs(fastGrad):F4} < EntryThr={diagThrShort:F4}{(enableAdaptiveEntryGradient?" (adaptive)":"")}");
             if (!notOverextended) res.BlockersShort.Add($"FastGradMax: |fastGrad|={Math.Abs(fastGrad):F4} > MaxEntryFastGradientAbs={maxEntryFastGradientAbs:F4}");
 
             if (!disableEntryFilters)
@@ -2720,6 +3212,67 @@ namespace NinjaTrader.NinjaScript.Strategies
             get { return weakReversalDelayPeriod; }
             set { weakReversalDelayPeriod = Math.Max(1, value); }
         }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Adaptive Entry Gradient", Description = "Adapt MinEntryFastGradientAbs near zero-cross and after deep opposite legs.", Order = 10, GroupName = "Parameters")]
+        public bool EnableAdaptiveEntryGradient
+        {
+            get { return enableAdaptiveEntryGradient; }
+            set { enableAdaptiveEntryGradient = value; }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 2.0)]
+        [Display(Name = "Adaptive Near-Zero Mult", Description = "Multiplier applied to entry threshold when recent fast gradient sign flip detected.", Order = 11, GroupName = "Parameters")]
+        public double AdaptiveNearZeroMultiplier
+        {
+            get { return adaptiveNearZeroMultiplier; }
+            set { adaptiveNearZeroMultiplier = Math.Max(0.1, value); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 2.0)]
+        [Display(Name = "Adaptive Deep-Leg Mult", Description = "Multiplier applied to entry threshold when prior opposite leg depth exceeds points threshold.", Order = 12, GroupName = "Parameters")]
+        public double AdaptiveDeepLegMultiplier
+        {
+            get { return adaptiveDeepLegMultiplier; }
+            set { adaptiveDeepLegMultiplier = Math.Max(0.1, value); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1000.0)]
+        [Display(Name = "Adaptive Deep-Leg Points", Description = "Minimum points of opposite leg depth to trigger deep-leg multiplier.", Order = 13, GroupName = "Parameters")]
+        public double AdaptiveDeepLegPoints
+        {
+            get { return adaptiveDeepLegPoints; }
+            set { adaptiveDeepLegPoints = Math.Max(0.0, value); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "Adaptive Lookback Bars", Description = "Bars to scan for zero-flip and deep opposite leg context.", Order = 14, GroupName = "Parameters")]
+        public int AdaptiveLookbackBars
+        {
+            get { return adaptiveLookbackBars; }
+            set { adaptiveLookbackBars = Math.Max(1, value); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "Adaptive Threshold Floor", Description = "Absolute floor; adaptive entry threshold will not drop below this value.", Order = 15, GroupName = "Parameters")]
+        public double AdaptiveMinFloor
+        {
+            get { return adaptiveMinFloor; }
+            set { adaptiveMinFloor = Math.Max(0.0, value); }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stream Bar Diagnostics", Description = "When true, send a compact diagnosis JSON for every completed bar to the local dashboard.", Order = 16, GroupName = "Debug")]
+        public bool StreamBarDiagnostics
+        {
+            get { return streamBarDiagnostics; }
+            set { streamBarDiagnostics = value; }
+        }
         
         [NinjaScriptProperty]
         [Display(Name = "Enable Logging", Description = "Enable detailed logging to Output window and log files (default: true)", Order = 1, GroupName = "Debug")]
@@ -2803,12 +3356,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             set { dumpPropertiesNow = value; }
         }
         
-        [NinjaScriptProperty]
-        [Display(Name = "Hover Debug", Description = "Enable debug prints for mouse hover bar mapping.", Order = 9, GroupName = "Debug")]
+        [Browsable(false)]
+        [XmlIgnore]
         public bool HoverDebug
         {
-            get { return hoverDebug; }
-            set { hoverDebug = value; }
+            get { return false; }
+            set { /* deprecated: no-op */ }
         }
 
         [NinjaScriptProperty]

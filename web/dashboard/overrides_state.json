@@ -1,0 +1,4 @@
+{
+  "MinEntryFastGradientAbs": 0.35,
+  "AdaptiveMinFloor": 0.02
+}

@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>GradientSlope Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    /* Ensure readable text on light success/danger row backgrounds */
+    .table tr.has-background-success-light td,
+    .table tr.has-background-success-light th,
+    .table tr.has-background-danger-light td,
+    .table tr.has-background-danger-light th,
+    tr.has-background-success-light td,
+    tr.has-background-success-light th,
+    tr.has-background-danger-light td,
+    tr.has-background-danger-light th {
+      color: #1a1a1a !important; /* force dark text for contrast */
+    }
+    /* Subtle highlight for current (ongoing) trend row */
+    .table tr.current-row {
+      outline: 2px solid rgba(50, 115, 220, 0.2); /* primary-ish subtle border */
+    }
+  </style>
+</head>
+<body class="has-background-dark">
+<section class="section">
+  <div class="container">
+    <h1 class="title has-text-light">GradientSlope Live Diagnosis</h1>
+    <p class="subtitle has-text-grey-light">Polling local server for updates and rendering charts.</p>
+    <div id="statusBar" class="mb-3">
+      <span class="tag is-dark" id="serverStatus">Server: unknown</span>
+      <span class="tag is-link" id="diagsCount">Diags: 0</span>
+      <span class="tag is-info" id="trendStatus">Trend: waiting</span>
+      <span class="tag is-warning" id="weakGradCount">WeakGrad: 0</span>
+      <span class="tag is-warning" id="rsiBelowCount">RSIBelow: 0</span>
+      <button class="button is-small is-dark" id="postTestBtn" style="margin-left:0.5rem;">Post Test Data</button>
+    </div>
+
+    <div class="columns">
+      <div class="column">
+        <canvas id="fastGradChart" height="120"></canvas>
+      </div>
+      <div class="column">
+        <canvas id="adxChart" height="120"></canvas>
+      </div>
+    </div>
+
+    <div class="box has-background-grey-dark">
+      <div class="field has-addons">
+        <div class="control is-expanded">
+          <input class="input" id="suggestInput" placeholder="Paste JSON diagnosis or click Use Last"/>
+        </div>
+        <div class="control">
+          <button class="button is-info" id="useLastBtn">Use Last</button>
+        </div>
+        <div class="control">
+          <button class="button is-warning" id="suggestBtn">Suggest</button>
+        </div>
+      </div>
+      <pre id="suggestOut" class="has-text-light" style="min-height: 80px; background: #2a2a2a; padding: 10px; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word;"></pre>
+      <div id="suggestionsList" class="content has-text-light" style="margin-top:0.5rem;"></div>
+      <h3 class="title is-6 has-text-light" style="margin-top:0.75rem;">Auto Suggestions</h3>
+      <div id="autoSuggestionsList" class="content has-text-light" style="margin-top:0.25rem;"></div>
+      <div id="overridesBox" class="content has-text-light" style="margin-top:0.75rem;">
+        <h3 class="title is-6 has-text-light" style="margin-bottom:0.25rem;">Active Overrides</h3>
+        <div id="overridesList" class="tags"></div>
+        <h3 class="title is-6 has-text-light" style="margin:0.75rem 0 0.25rem;">Effective Thresholds</h3>
+        <div id="effectiveParams" class="tags"></div>
+        <div id="effectiveLegend" class="content has-text-grey-light" style="font-size:0.75rem; margin-top:0.35rem;">
+          <p><strong>Legend:</strong> <span class="tag is-warning" style="margin-right:4px;">Override</span> value differs from default. Arrows: <span style="color:#ff3860;">▲ stricter</span>, <span style="color:#23d160;">▼ looser</span>.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="box has-background-grey-darker">
+      <div class="level">
+        <div class="level-left">
+          <h2 class="title is-5 has-text-light" style="margin-bottom:0;">Recent Diagnoses</h2>
+        </div>
+        <div class="level-right">
+          <label class="checkbox has-text-grey-light" title="When checked, keep view scrolled to the latest entries">
+            <input type="checkbox" id="autoScrollToggle" checked>
+            Auto-scroll
+          </label>
+        </div>
+      </div>
+      <pre id="diagsOut" class="has-text-light" style="max-height:260px;overflow:auto;min-height:160px;background:#2a2a2a;padding:10px;border-radius:4px;white-space:pre-wrap;word-wrap:break-word;">Waiting for data… ensure server is running and strategy is posting.</pre>
+    </div>
+
+    <div class="box has-background-grey-darker">
+      <h2 class="title is-5 has-text-light">Trend Log</h2>
+      <div id="trend-current" class="content has-text-light" style="margin-bottom: 0.75rem;">No trend yet…</div>
+      <div class="table-container">
+        <table class="table is-striped is-fullwidth is-hoverable">
+          <thead>
+            <tr>
+              <th>Dir</th>
+              <th>Start</th>
+              <th>End</th>
+              <th>Start Bar</th>
+              <th>End Bar</th>
+              <th>Bars</th>
+              <th>Good</th>
+              <th>Bad</th>
+              <th>PnL Proxy</th>
+              <th>Caught</th>
+            </tr>
+          </thead>
+          <tbody id="trend-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+<script src="/static/app.js?v=1732897300"></script>
+</body>
+</html>
