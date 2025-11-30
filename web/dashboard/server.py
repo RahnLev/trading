@@ -30,6 +30,7 @@ def init_db():
         adx REAL,
         gradStab REAL,
         bandwidth REAL,
+        volume REAL,
         blockersLong TEXT,
         blockersShort TEXT,
         trendSide TEXT
@@ -67,8 +68,58 @@ def init_db():
         applied INTEGER
     )
     """)
+    # Entry cancellation tracking for investigation
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS entry_cancellations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL,
+        barIndex INTEGER,
+        fastGrad REAL,
+        rsi REAL,
+        adx REAL,
+        gradStab REAL,
+        bandwidth REAL,
+        volume REAL,
+        blockersLong TEXT,
+        blockersShort TEXT,
+        trendSide TEXT,
+        effectiveMinGrad REAL,
+        effectiveRsiFloor REAL,
+        weakGradStreak INTEGER,
+        rsiBelowStreak INTEGER
+    )
+    """)
     conn.commit()
     conn.close()
+
+def ensure_db_columns():
+    if not USE_SQLITE:
+        return
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        # Helper to check column existence
+        def has_column(table: str, column: str) -> bool:
+            cur.execute(f"PRAGMA table_info({table})")
+            return any(row[1] == column for row in cur.fetchall())
+
+        # Add missing 'volume' columns safely
+        try:
+            if not has_column('diags', 'volume'):
+                cur.execute("ALTER TABLE diags ADD COLUMN volume REAL")
+        except Exception as ex:
+            print('[DB] diags add volume failed:', ex)
+        try:
+            if not has_column('entry_cancellations', 'volume'):
+                cur.execute("ALTER TABLE entry_cancellations ADD COLUMN volume REAL")
+        except Exception as ex:
+            print('[DB] cancellations add volume failed:', ex)
+
+        conn.commit()
+        conn.close()
+        print('[DB] ensure_db_columns complete')
+    except Exception as ex:
+        print('[DB] ensure_db_columns error:', ex)
 
 def db_exec(sql: str, params=()):
     if not USE_SQLITE:
@@ -90,6 +141,7 @@ def db_query_one(sql: str, params=()):
     return row
 
 init_db()
+ensure_db_columns()
 
 # --- Auto-apply evaluator ---
 def evaluate_auto_apply(now_ts: float):
@@ -451,7 +503,7 @@ async def receive_diag(request: Request):
                     blk_long = p.get('blockersLong') or []
                     blk_short = p.get('blockersShort') or []
                     db_exec(
-                        "INSERT INTO diags (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, blockersLong, blockersShort, trendSide) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO diags (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, volume, blockersLong, blockersShort, trendSide) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             p.get('receivedTs'),
                             p.get('barIndex'),
@@ -460,6 +512,7 @@ async def receive_diag(request: Request):
                             float(p.get('ADX') or p.get('adx') or 0.0),
                             float(p.get('GradStab') or p.get('gradStab') or 0.0),
                             float(p.get('Bandwidth') or p.get('bandwidth') or 0.0),
+                            float(p.get('Volume') or p.get('volume') or 0.0),
                             json.dumps(blk_long)[:1000],
                             json.dumps(blk_short)[:1000],
                             side
@@ -509,6 +562,30 @@ async def receive_diag(request: Request):
                 )
                 if fg_abs_local < eff_min_fast_local - 0.02:
                     property_streaks['MinEntryFastGradientAbs'] += 1
+                    # Log entry cancellation for investigation
+                    try:
+                        rsi_val = p.get('RSI') if p.get('RSI') is not None else p.get('rsi')
+                        adx_val = p.get('ADX') if p.get('ADX') is not None else p.get('adx')
+                        grad_stab_val = p.get('GradStab') if p.get('GradStab') is not None else p.get('gradStab')
+                        bandwidth_val = p.get('Bandwidth') if p.get('Bandwidth') is not None else p.get('bandwidth')
+                        blockers_long_val = p.get('BlockersLong', p.get('blockersLong', []))
+                        blockers_short_val = p.get('BlockersShort', p.get('blockersShort', []))
+                        rsi_floor_eff = float(active_overrides.get('RsiEntryFloor', DEFAULT_PARAMS['RsiEntryFloor']))
+                        db_exec("""
+                            INSERT INTO entry_cancellations 
+                            (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, volume,
+                             blockersLong, blockersShort, trendSide, effectiveMinGrad, 
+                             effectiveRsiFloor, weakGradStreak, rsiBelowStreak)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            now_ts, p.get('barIndex'), fast_grad, rsi_val, adx_val, grad_stab_val, bandwidth_val,
+                            float(p.get('Volume') or p.get('volume') or 0.0),
+                            json.dumps(blockers_long_val), json.dumps(blockers_short_val), side,
+                            eff_min_fast_local, rsi_floor_eff,
+                            property_streaks['MinEntryFastGradientAbs'], rsi_below_consec
+                        ))
+                    except Exception as db_ex:
+                        print('[DB] entry_cancellations insert failed:', db_ex)
                 else:
                     property_streaks['MinEntryFastGradientAbs'] = 0
             except Exception:
@@ -738,6 +815,59 @@ def toggle_auto_apply():
     global AUTO_APPLY_ENABLED
     AUTO_APPLY_ENABLED = not AUTO_APPLY_ENABLED
     return JSONResponse({'enabled': AUTO_APPLY_ENABLED})
+
+@app.get('/cancellations')
+def get_cancellations(limit: int = 100, minStreak: int = 1):
+    """Query entry cancellations for analysis"""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'sqlite_disabled'}, status_code=500)
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        query = """
+            SELECT * FROM entry_cancellations 
+            WHERE weakGradStreak >= ?
+            ORDER BY ts DESC 
+            LIMIT ?
+        """
+        cur.execute(query, (minStreak, min(limit, 1000)))
+        rows = cur.fetchall()
+        conn.close()
+        
+        results = []
+        for row in rows:
+            results.append({
+                'id': row['id'],
+                'ts': row['ts'],
+                'localTime': datetime.fromtimestamp(row['ts']).strftime("%Y-%m-%d %H:%M:%S"),
+                'barIndex': row['barIndex'],
+                'fastGrad': row['fastGrad'],
+                'rsi': row['rsi'],
+                'adx': row['adx'],
+                'gradStab': row['gradStab'],
+                'bandwidth': row['bandwidth'],
+                'volume': row['volume'],
+                'blockersLong': json.loads(row['blockersLong']) if row['blockersLong'] else [],
+                'blockersShort': json.loads(row['blockersShort']) if row['blockersShort'] else [],
+                'trendSide': row['trendSide'],
+                'effectiveMinGrad': row['effectiveMinGrad'],
+                'effectiveRsiFloor': row['effectiveRsiFloor'],
+                'weakGradStreak': row['weakGradStreak'],
+                'rsiBelowStreak': row['rsiBelowStreak']
+            })
+        
+        return JSONResponse({
+            'cancellations': results,
+            'count': len(results),
+            'limit': limit,
+            'minStreak': minStreak
+        })
+    except Exception as ex:
+        print('[DB] cancellations query error:', ex)
+        return JSONResponse({'error': str(ex)}, status_code=500)
 
 @app.get('/overrides')
 def get_overrides():
