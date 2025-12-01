@@ -1,0 +1,3 @@
+EntryTime,EntryBar,Direction,EntryPrice,ExitTime,ExitBar,ExitPrice,BarsHeld,RealizedPoints,MFE,MAE,ExitReason,PendingUsed,ConfirmDelta,MinHoldBars,MinEntryFastGrad,ValidationMinFastGrad,ExitConfirmFastEMADelta,FastExitThreshLong,FastExitThreshShort
+2025-11-21 07:12:00,743,LONG,24179.75,2025-11-21 07:20:30,760,24184.50,18,4.75,24.50,3.50,VALIDATION_FAILED:FastGrad<=-1.6786(need>0.15),0,0.00,2,0.50,0.15,0.50,-0.25
+2025-11-21 13:07:00,1453,LONG,24094.00,2025-11-21 13:17:30,1474,24137.75,22,43.75,55.50,0.00,VALIDATION_FAILED:FastGrad<=-0.2699(need>0.15),0,0.00,2,0.50,0.15,0.50,-0.25

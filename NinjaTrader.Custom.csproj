@@ -419,6 +419,7 @@
     <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
     <Compile Include="Indicators\CBASTestingIndicator3.cs" />
     <Compile Include="Strategies\GradientSlopeStrategy.cs" />
+    <Compile Include="Indicators\EMAGradientPair.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

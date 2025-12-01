@@ -1,4 +1,6 @@
 {
-  "MinEntryFastGradientAbs": 0.35,
-  "AdaptiveMinFloor": 0.02
+  "MinEntryFastGradientAbs": 0.008,
+  "AdaptiveMinFloor": 0.008,
+  "RsiEntryFloor": 44,
+  "MinAdxForEntry": 16.0
 }

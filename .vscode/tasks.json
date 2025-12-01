@@ -111,6 +111,66 @@
 				"NinjaTrader.Custom.csproj"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build NinjaTrader Custom",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"NinjaTrader.Custom.csproj",
+				"-c",
+				"Debug"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build NinjaTrader Custom",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"NinjaTrader.Custom.csproj",
+				"-c",
+				"Debug"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build NinjaTrader Custom",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"NinjaTrader.Custom.csproj",
+				"-c",
+				"Debug"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build NinjaTrader Custom",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"NinjaTrader.Custom.csproj",
+				"-c",
+				"Debug"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Build NinjaTrader Custom",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"NinjaTrader.Custom.csproj",
+				"-c",
+				"Debug"
+			],
+			"group": "build"
 		}
 	]
 }

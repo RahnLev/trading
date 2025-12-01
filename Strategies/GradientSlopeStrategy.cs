@@ -77,7 +77,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool inExitCooldown = false;  // Flag to prevent signal updates during cooldown
         
         // Min-hold to avoid same-bar churn
-        private int minHoldBars = 2; // Minimum bars to hold a position before allowing exits (0 = allow same-bar exits)
+        private int minHoldBars = 5; // Minimum bars to hold a position before allowing exits (0 = allow same-bar exits)
 
         // Exit confirmation (two-step) state
         private bool exitPending = false;            // true when an exit is staged awaiting confirmation
@@ -91,6 +91,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double entryPrice = 0.0;
         private DateTime entryTime = DateTime.MinValue;
         private double tradeMFE = 0.0; // favorable move in points (>=0)
+        private bool enableMFETrailingStop = true; // Enable MFE-based trailing stop
+        private double mfeTrailingStopPercent = 0.40; // Exit if profit drops below 40% of max MFE (keeps 60% giveback buffer)
+        private double mfeTrailingMinMFE = 1.5; // Only activate trailing stop after MFE exceeds this value
         private double tradeMAE = 0.0; // adverse move in points (<=0)
         
         // Heartbeat tracking
@@ -143,7 +146,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double weakGradientThreshold = 0.5;  // Threshold for "weak" gradient
         private int weakReversalDelayPeriod = 3;  // Bars to wait after weak reversal
         private double minEntryFastGradientAbs = 0.50; // Minimum absolute fast gradient required for entry only (tunable)
-        private double validationMinFastGradientAbs = 0.15; // Minimum absolute fast gradient required to stay in position
+        private double validationMinFastGradientAbs = 0.09; // Minimum absolute fast gradient required to stay in position
         private double maxEntryFastGradientAbs = 0.60; // Upper cap: disallow entries when fast gradient magnitude is too large (overextension)
 
         // --- Adaptive Entry Gradient Thresholds ---
@@ -807,9 +810,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (myPosition == "LONG" && !tradeAlreadyPlacedThisBar)
             {
                 // Enforce minimum hold before evaluating exits
+                int barsSinceEntry = (entryBar >= 0) ? (CurrentBar - entryBar) : 0;
                 if (entryBar >= 0)
                 {
-                    int barsSinceEntry = CurrentBar - entryBar;
                     if (barsSinceEntry < minHoldBars)
                     {
                         LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
@@ -819,6 +822,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
 
+                // --- MFE TRAILING STOP CHECK (before validation) ---
+                if (enableMFETrailingStop && barsSinceEntry >= minHoldBars && tradeMFE >= mfeTrailingMinMFE)
+                {
+                    double currentProfit = currentClose - entryPrice;
+                    double mfeThreshold = tradeMFE * mfeTrailingStopPercent;
+                    if (currentProfit < mfeThreshold)
+                    {
+                        LogOutput($"EXIT LONG (MFE TRAILING STOP) -> CurrentProfit:{currentProfit:F2} < Threshold:{mfeThreshold:F2} (MFE:{tradeMFE:F2}*{mfeTrailingStopPercent:F2})");
+                        LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            currentSignal, newSignal, "LONG", "EXIT", $"MFE_TRAILING_STOP:Profit={currentProfit:F2}<{mfeThreshold:F2}(MFE={tradeMFE:F2})");
+                        
+                        ExitLong("EnterLong");
+                        string exitSnapshot = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
+                        LogTrade(Time[0], CurrentBar, "EXIT", "LONG", currentClose, quantity, $"MFE_TRAILING_STOP|{exitSnapshot}");
+                        LogTradeSummary(Time[0], CurrentBar, "LONG", currentClose, $"MFE_TRAILING_STOP", 0.0);
+                        lastTradeBar = CurrentBar; exitPending = false;
+                        entryBar = -1; entryPrice = 0.0; entryTime = DateTime.MinValue; tradeMFE = 0; tradeMAE = 0;
+                        return;
+                    }
+                }
+                
                 // --- VALIDATION CHECK: Exit if entry conditions no longer valid ---
                 bool validationFailed = false;
                 string validationReason = "";
@@ -1016,9 +1040,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (myPosition == "SHORT" && !tradeAlreadyPlacedThisBar)
             {
                 // Enforce minimum hold before evaluating exits
+                int barsSinceEntry = (entryBar >= 0) ? (CurrentBar - entryBar) : 0;
                 if (entryBar >= 0)
                 {
-                    int barsSinceEntry = CurrentBar - entryBar;
                     if (barsSinceEntry < minHoldBars)
                     {
                         LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
@@ -1028,6 +1052,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
 
+                // --- MFE TRAILING STOP CHECK (before validation) ---
+                if (enableMFETrailingStop && barsSinceEntry >= minHoldBars && tradeMFE >= mfeTrailingMinMFE)
+                {
+                    double currentProfit = entryPrice - currentClose;
+                    double mfeThreshold = tradeMFE * mfeTrailingStopPercent;
+                    if (currentProfit < mfeThreshold)
+                    {
+                        LogOutput($"EXIT SHORT (MFE TRAILING STOP) -> CurrentProfit:{currentProfit:F2} < Threshold:{mfeThreshold:F2} (MFE:{tradeMFE:F2}*{mfeTrailingStopPercent:F2})");
+                        LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            currentSignal, newSignal, "SHORT", "EXIT", $"MFE_TRAILING_STOP:Profit={currentProfit:F2}<{mfeThreshold:F2}(MFE={tradeMFE:F2})");
+                        
+                        ExitShort("EnterShort");
+                        string exitSnapshot = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
+                        LogTrade(Time[0], CurrentBar, "EXIT", "SHORT", currentClose, quantity, $"MFE_TRAILING_STOP|{exitSnapshot}");
+                        LogTradeSummary(Time[0], CurrentBar, "SHORT", currentClose, $"MFE_TRAILING_STOP", 0.0);
+                        lastTradeBar = CurrentBar; exitPending = false;
+                        entryBar = -1; entryPrice = 0.0; entryTime = DateTime.MinValue; tradeMFE = 0; tradeMAE = 0;
+                        return;
+                    }
+                }
+                
                 // --- VALIDATION CHECK: Exit if entry conditions no longer valid ---
                 bool validationFailed = false;
                 string validationReason = "";
@@ -1392,8 +1437,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Time[0], currentSignal, barsInSignal, entryBarDelay));
                 }
                 
-                // Enter when we reach the specified bar of the signal
-                if (barsInSignal == entryBarDelay)
+                // Enter when we reach or exceed the specified bar of the signal
+                // Changed from == to >= to allow entries on any bar after delay is met
+                if (barsInSignal >= entryBarDelay)
                 {
                     LogOutput($"ENTRY DECISION -> CurrSignal:{currentSignal} BarsInSignal:{barsInSignal} EntryDelay:{entryBarDelay} MyPos:{myPosition} InWeakDelay:{inWeakReversalDelay} TradeAlreadyThisBar:{tradeAlreadyPlacedThisBar} NTPos:{Position.MarketPosition} SignalStartBar:{signalStartBar}");
                     
@@ -3188,7 +3234,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(0.0, 100.0)]
-        [Display(Name = "Validation Min Fast Gradient Abs", Description = "Minimum absolute fast EMA gradient required to STAY in position (validation during position). Default: 0.15", Order = 8, GroupName = "Parameters")]
+        [Display(Name = "Validation Min Fast Gradient Abs", Description = "Minimum absolute fast EMA gradient required to STAY in position (validation during position). Default: 0.09", Order = 8, GroupName = "Parameters")]
         public double ValidationMinFastGradientAbs
         {
             get { return validationMinFastGradientAbs; }
@@ -3202,6 +3248,32 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             get { return maxEntryFastGradientAbs; }
             set { maxEntryFastGradientAbs = Math.Max(0.0, value); }
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable MFE Trailing Stop", Description = "Enable MFE-based trailing stop to protect profits. Default: true", Order = 10, GroupName = "Parameters")]
+        public bool EnableMFETrailingStop
+        {
+            get { return enableMFETrailingStop; }
+            set { enableMFETrailingStop = value; }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "MFE Trailing Stop Percent", Description = "Exit if profit drops below this % of max MFE reached (0.40 = keep 60% giveback buffer). Default: 0.40", Order = 11, GroupName = "Parameters")]
+        public double MFETrailingStopPercent
+        {
+            get { return mfeTrailingStopPercent; }
+            set { mfeTrailingStopPercent = Math.Max(0.0, Math.Min(1.0, value)); }
+        }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 20.0)]
+        [Display(Name = "MFE Trailing Min MFE", Description = "Only activate trailing stop after MFE exceeds this value in points. Default: 1.5", Order = 12, GroupName = "Parameters")]
+        public double MFETrailingMinMFE
+        {
+            get { return mfeTrailingMinMFE; }
+            set { mfeTrailingMinMFE = Math.Max(0.0, value); }
         }
         
         [NinjaScriptProperty]

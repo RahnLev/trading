@@ -1,0 +1,2 @@
+Direction,StartBar,EndBar,Bars,StartTime,EndTime,MeanAbsFastGrad,MinAbsFastGrad,MissReason
+LONG,2662,2690,29,2025-11-21 23:32:00,2025-11-21 23:46:00,0.810552,0.322600,"Fast gradient too weak (0.1839 <= 0.50),0,2661"
