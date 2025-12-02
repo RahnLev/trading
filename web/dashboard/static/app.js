@@ -47,8 +47,9 @@ async function pollDiags() {
         const sg = d.slowGrad != null ? d.slowGrad.toFixed(4) : 'N/A';
         const ac = d.accel != null ? d.accel.toFixed(4) : 'N/A';
         const adx = d.adx != null ? d.adx.toFixed(1) : 'N/A';
+        const rsi = d.rsi != null ? d.rsi.toFixed(1) : 'N/A';
         const gs = d.gradStab != null ? d.gradStab.toFixed(4) : 'N/A';
-        return `${t} bar=${d.barIndex} fastGrad=${fg} slowGrad=${sg} accel=${ac} gradStab=${gs} adx=${adx} blockersL=${(d.blockersLong||[]).length} blockersS=${(d.blockersShort||[]).length}`;
+        return `${t} bar=${d.barIndex} fastGrad=${fg} slowGrad=${sg} accel=${ac} gradStab=${gs} adx=${adx} rsi=${rsi} blockersL=${(d.blockersLong||[]).length} blockersS=${(d.blockersShort||[]).length}`;
       });
       const isPlaceholder = out.textContent === 'Waiting for data… ensure server is running and strategy is posting.';
       const prev = isPlaceholder ? '' : out.textContent;
@@ -62,11 +63,13 @@ async function pollDiags() {
       }
       // Update charts (keep only last 100 points for readability)
       const MAX_CHART_POINTS = 100;
-      items.forEach(d => {
-        fastGradChart.data.labels.push('');
-        fastGradChart.data.datasets[0].data.push(d.fastGrad || 0);
-        adxChart.data.labels.push('');
-        adxChart.data.datasets[0].data.push(d.adx || 0);
+        items.forEach(d => {
+          fastGradChart.data.labels.push('');
+          const fgVal = Number.parseFloat(d.fastGrad);
+          fastGradChart.data.datasets[0].data.push(Number.isFinite(fgVal) ? fgVal : 0);
+          adxChart.data.labels.push('');
+          const adxVal = Number.parseFloat(d.adx);
+          adxChart.data.datasets[0].data.push(Number.isFinite(adxVal) ? adxVal : 0);
       });
       // Trim old data if over limit
       if (fastGradChart.data.labels.length > MAX_CHART_POINTS) {
@@ -84,9 +87,22 @@ async function pollDiags() {
     } else {
       noDataPolls += 1;
       if (noDataPolls >= 5 && lastSince > 0) {
-        console.warn('[DIAGS] No data for 5 polls; resetting watermark to 0');
+        console.warn('[DIAGS] No data for 5 polls; resetting watermark to 0 and clearing charts');
+        // Reset watermark and clear existing chart data to avoid duplicated segments
         lastSince = 0;
         noDataPolls = 0;
+        try {
+          if (fastGradChart) {
+            fastGradChart.data.labels = [];
+            fastGradChart.data.datasets[0].data = [];
+            fastGradChart.update();
+          }
+          if (adxChart) {
+            adxChart.data.labels = [];
+            adxChart.data.datasets[0].data = [];
+            adxChart.update();
+          }
+        } catch {}
       }
     }
     const ss = document.getElementById('serverStatus');

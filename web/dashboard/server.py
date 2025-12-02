@@ -2,8 +2,10 @@ import os
 import time
 import json
 import sqlite3
+import hashlib
 from datetime import datetime
 from typing import List, Dict, Any
+from collections import deque
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -104,6 +106,76 @@ def init_db():
         rsiBelowStreak INTEGER
     )
     """)
+    # Strategy snapshots for session persistence
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS strategy_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL NOT NULL,
+        version TEXT,
+        overrides_json TEXT,
+        streaks_json TEXT,
+        perf_json TEXT,
+        component_hashes_json TEXT,
+        notes TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_ts ON strategy_snapshots(ts DESC)")
+    
+    # AI decision footprints for reasoning replay
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS ai_footprints (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL NOT NULL,
+        action TEXT NOT NULL,
+        details TEXT,
+        reasoning TEXT,
+        diff_summary TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_footprints_ts ON ai_footprints(ts DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_footprints_action ON ai_footprints(action)")
+
+    # Strategy structure index (single-source documentation for AI continuation)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS strategy_index (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL NOT NULL,
+        version TEXT,
+        index_json TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_strategy_index_ts ON strategy_index(ts DESC)")
+    # Development / debugging instrumentation tables
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS dev_classifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL,
+        barIndex INTEGER,
+        side TEXT,
+        fastGrad REAL,
+        accel REAL,
+        fastEMA REAL,
+        close REAL,
+        isBad INTEGER,
+        reason TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dev_classifications_bar ON dev_classifications(barIndex)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dev_classifications_ts ON dev_classifications(ts DESC)")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS dev_metrics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts REAL,
+        metric TEXT,
+        value REAL,
+        details TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_dev_metrics_metric ON dev_metrics(metric)")
+    
     conn.commit()
     # Don't close - keep persistent connection
 
@@ -129,6 +201,18 @@ def ensure_db_columns():
                 cur.execute("ALTER TABLE entry_cancellations ADD COLUMN volume REAL")
         except Exception as ex:
             print('[DB] cancellations add volume failed:', ex)
+        # Add diagnostic enrichment columns if missing
+        for col, ddl in [
+            ('accel','ALTER TABLE diags ADD COLUMN accel REAL'),
+            ('fastEMA','ALTER TABLE diags ADD COLUMN fastEMA REAL'),
+            ('slowEMA','ALTER TABLE diags ADD COLUMN slowEMA REAL'),
+            ('close','ALTER TABLE diags ADD COLUMN close REAL')
+        ]:
+            try:
+                if not has_column('diags', col):
+                    cur.execute(ddl)
+            except Exception as ex:
+                print(f'[DB] diags add {col} failed:', ex)
 
         conn.commit()
         # Don't close - keep persistent connection
@@ -175,6 +259,24 @@ short_hold_streak: int = 0  # consecutive trades held < optimal bars
 recent_entry_blocks: List[Dict[str, Any]] = []  # stores recent entry blocks for analysis
 MAX_ENTRY_BLOCKS = 50
 missed_opportunity_streak: int = 0  # consecutive bars with entry blocked but conditions were good
+
+# --- AI Footprint helper ---
+def log_ai_footprint(action: str, details: str = '', reasoning: str = '', diff_summary: str = ''):
+    """Programmatically log a footprint without needing the REST endpoint."""
+    if not USE_SQLITE:
+        return
+    try:
+        ts = time.time()
+        db_exec(
+            """
+            INSERT INTO ai_footprints (ts, action, details, reasoning, diff_summary)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (ts, action, details, reasoning, diff_summary)
+        )
+        print(f"[AI-FOOTPRINT] Logged({action}) at {ts}")
+    except Exception as ex:
+        print(f"[AI-FOOTPRINT] Log error: {ex}")
 blocker_pattern_counts: Dict[str, int] = {}  # tracks which blockers appear most frequently
 
 def analyze_entry_performance(block_data: Dict[str, Any]):
@@ -371,6 +473,42 @@ def evaluate_auto_apply(now_ts: float):
 # In-memory store (simple ring buffer)
 diags: List[Dict[str, Any]] = []
 MAX_DIAGS = 5000
+
+# --- Lightweight in-memory recent bar cache (normalized subset for fast queries) ---
+# Stores only the most recent BAR_CACHE_MAX normalized bar diagnostic entries.
+# Normalization flattens C# payload variants (FastGrad/fastGrad etc.) into consistent keys.
+BAR_CACHE_MAX = 400  # adjustable; small to keep lookup O(n) trivial
+bar_cache: deque[Dict[str, Any]] = deque(maxlen=BAR_CACHE_MAX)
+
+def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Extract a normalized minimal bar record from a raw diag payload."""
+    try:
+        return {
+            'barIndex': p.get('barIndex') or p.get('BarIndex'),
+            'ts': p.get('receivedTs'),
+            'localTime': p.get('localTime') or p.get('time'),
+            'fastGrad': float(p.get('FastGrad') or p.get('fastGrad') or 0.0),
+            'slowGrad': float(p.get('SlowGrad') or p.get('slowGrad') or 0.0),
+            'accel': float(p.get('Accel') or p.get('accel') or 0.0),
+            'adx': float(p.get('ADX') or p.get('adx') or 0.0),
+            'rsi': float(p.get('RSI') or p.get('rsi') or 0.0),
+            'fastEMA': float(p.get('FastEMA') or p.get('fastEMA') or 0.0),
+            'slowEMA': float(p.get('SlowEMA') or p.get('slowEMA') or 0.0),
+            'close': float(p.get('Close') or p.get('close') or 0.0),
+            'gradStab': float(p.get('GradStab') or p.get('gradStab') or 0.0),
+            'bandwidth': float(p.get('Bandwidth') or p.get('bandwidth') or 0.0),
+            'unrealized': float(p.get('Unrealized') or p.get('unrealized') or 0.0),
+            'trendSide': p.get('trendSide') or p.get('TrendSide') or None,
+        }
+    except Exception:
+        # Fallback with minimal keys if casting fails
+        return {
+            'barIndex': p.get('barIndex') or p.get('BarIndex'),
+            'ts': p.get('receivedTs'),
+            'fastGrad': p.get('FastGrad') or p.get('fastGrad'),
+            'slowGrad': p.get('SlowGrad') or p.get('slowGrad'),
+        }
+
 
 # Minimum consecutive bars required to confirm a trend flip
 MIN_CONSEC_FOR_TREND_FLIP = 2  # adjust as needed
@@ -592,6 +730,12 @@ async def receive_diag(request: Request):
             if len(diags) > MAX_DIAGS:
                 del diags[:len(diags) - MAX_DIAGS]
 
+            # Update recent bar cache with normalized record
+            try:
+                bar_cache.append(_normalize_bar(p))
+            except Exception as _ex_bc:
+                print('[BARCACHE] append error:', _ex_bc)
+
             # Log every 50 and show keys to verify what's being sent
             if len(diags) % 50 == 0:
                 keys = sorted(p.keys())
@@ -603,6 +747,12 @@ async def receive_diag(request: Request):
             side = "BULL" if float(fast_grad) >= 0 else "BEAR"
             now_ts = time.time()
             global current_trend, trend_segments, pending_flip_side, pending_flip_count
+            # Add trendSide enrichment to last cached bar if matching
+            try:
+                if bar_cache and bar_cache[-1].get('barIndex') == p.get('barIndex'):
+                    bar_cache[-1]['trendSide'] = side
+            except Exception:
+                pass
             if (current_trend is None) or (current_trend.get("side") is None):
                 current_trend = {
                     "side": side,
@@ -667,6 +817,9 @@ async def receive_diag(request: Request):
                         # Good: fastGrad positive and price above EMA
                         # Bad: fastGrad negative OR strong deceleration (accel < -0.01 and fg < 0.02)
                         is_bad = (fg < 0) or (accel < -0.01 and fg < 0.02)
+                        reason = []
+                        if fg < 0: reason.append("fastGrad<0 counter-trend")
+                        if (accel < -0.01 and fg < 0.02): reason.append("deceleration")
                         current_trend["good"] += 0 if is_bad else 1
                         current_trend["bad"] += 1 if is_bad else 0
                         current_trend["pnlProxy"] += (close_f - fast_f)
@@ -674,9 +827,34 @@ async def receive_diag(request: Request):
                         # Good: fastGrad negative and price below EMA
                         # Bad: fastGrad positive OR strong acceleration (accel > 0.01 and fg > -0.02)
                         is_bad = (fg > 0) or (accel > 0.01 and fg > -0.02)
+                        reason = []
+                        if fg > 0: reason.append("fastGrad>0 counter-trend")
+                        if (accel > 0.01 and fg > -0.02): reason.append("acceleration")
                         current_trend["good"] += 0 if is_bad else 1
                         current_trend["bad"] += 1 if is_bad else 0
                         current_trend["pnlProxy"] += (fast_f - close_f)
+                    # Mirror counts to legacy keys for UI consistency
+                    current_trend["good_candles"] = current_trend.get("good", 0)
+                    current_trend["bad_candles"] = current_trend.get("bad", 0)
+                    # Persist classification for debugging
+                    try:
+                        if USE_SQLITE:
+                            db_exec(
+                                "INSERT INTO dev_classifications (ts, barIndex, side, fastGrad, accel, fastEMA, close, isBad, reason) VALUES (?,?,?,?,?,?,?,?,?)",
+                                (
+                                    p.get('receivedTs'),
+                                    p.get('barIndex'),
+                                    side,
+                                    fg,
+                                    accel,
+                                    fast_f,
+                                    close_f,
+                                    1 if is_bad else 0,
+                                    ";".join(reason) if reason else ("good" if not is_bad else "bad")
+                                )
+                            )
+                    except Exception as ex_cls:
+                        print('[DB] dev_classifications insert failed:', ex_cls)
                     trend_goodbad_updates += 1
                 else:
                     trend_inputs_missing_count += 1
@@ -687,8 +865,12 @@ async def receive_diag(request: Request):
                 if USE_SQLITE:
                     blk_long = p.get('blockersLong') or []
                     blk_short = p.get('blockersShort') or []
+                    accel_val = p.get('Accel') if (p.get('Accel') is not None) else p.get('accel')
+                    fast_ema_val = p.get('FastEMA') if (p.get('FastEMA') is not None) else p.get('fastEMA')
+                    slow_ema_val = p.get('SlowEMA') if (p.get('SlowEMA') is not None) else p.get('slowEMA')
+                    close_val = p.get('Close') if (p.get('Close') is not None) else p.get('close')
                     db_exec(
-                        "INSERT INTO diags (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, volume, blockersLong, blockersShort, trendSide) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO diags (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, volume, accel, fastEMA, slowEMA, close, blockersLong, blockersShort, trendSide) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             p.get('receivedTs'),
                             p.get('barIndex'),
@@ -698,6 +880,10 @@ async def receive_diag(request: Request):
                             float(p.get('GradStab') or p.get('gradStab') or 0.0),
                             float(p.get('Bandwidth') or p.get('bandwidth') or 0.0),
                             float(p.get('Volume') or p.get('volume') or 0.0),
+                            float(accel_val or 0.0),
+                            float(fast_ema_val or 0.0),
+                            float(slow_ema_val or 0.0),
+                            float(close_val or 0.0),
                             json.dumps(blk_long)[:1000],
                             json.dumps(blk_short)[:1000],
                             side
@@ -705,6 +891,25 @@ async def receive_diag(request: Request):
                     )
             except Exception as db_ex:
                 print('[DB] diag insert failed:', db_ex)
+            # Debug metric: static bad count anomaly detection every 25 bars
+            try:
+                if USE_SQLITE and current_trend.get('count',0) % 25 == 0:
+                    # If bad stayed zero while at least 10 bearish or bullish bars processed and fg variance observed
+                    bad_val = current_trend.get('bad',0)
+                    good_val = current_trend.get('good',0)
+                    count_val = current_trend.get('count',0)
+                    if bad_val == 0 and count_val >= 25:
+                        db_exec(
+                            "INSERT INTO dev_metrics (ts, metric, value, details) VALUES (?,?,?,?)",
+                            (time.time(), 'anomaly_no_bad_bars', 1, f'side={side} count={count_val} good={good_val} bad={bad_val}')
+                        )
+                    else:
+                        db_exec(
+                            "INSERT INTO dev_metrics (ts, metric, value, details) VALUES (?,?,?,?)",
+                            (time.time(), 'trend_progress', count_val, f'good={good_val} bad={bad_val}')
+                        )
+            except Exception as exm:
+                print('[DB] dev_metrics insert failed:', exm)
 
             # ---- Weak gradient auto-suggestion counter update ----
             try:
@@ -942,6 +1147,61 @@ def debugdump(n: int = 50):
         'recent': diags[-n:],
         'count': len(diags),
     })
+
+@app.get('/bars/latest')
+def bars_latest(limit: int = 50):
+    """Return latest normalized bar records from in-memory cache with optional classification join."""
+    limit = max(1, min(limit, BAR_CACHE_MAX))
+    bars = list(bar_cache)[-limit:]
+    if USE_SQLITE and bars:
+        idx = [b.get('barIndex') for b in bars if b.get('barIndex') is not None]
+        if idx:
+            try:
+                placeholders = ','.join(['?'] * len(idx))
+                cur = get_db_connection().cursor()
+                cur.execute(f"SELECT barIndex, isBad, reason FROM dev_classifications WHERE barIndex IN ({placeholders}) ORDER BY id DESC", idx)
+                cls_map = {}
+                for row in cur.fetchall():
+                    b_i, is_bad, reason = row
+                    if b_i not in cls_map:
+                        cls_map[b_i] = (is_bad, reason)
+                for b in bars:
+                    bi = b.get('barIndex')
+                    if bi in cls_map:
+                        b['isBad'] = int(cls_map[bi][0])
+                        b['badReason'] = cls_map[bi][1]
+            except Exception as ex:
+                print('[BARS] classification join error:', ex)
+    return JSONResponse({'bars': bars, 'count': len(bars)})
+
+@app.get('/bars/around')
+def bars_around(center: int, window: int = 10):
+    """Return bars around a center barIndex (inclusive range)."""
+    window = max(1, min(window, 100))
+    lo = center - window
+    hi = center + window
+    subset = [b for b in bar_cache if isinstance(b.get('barIndex'), int) and lo <= b['barIndex'] <= hi]
+    subset.sort(key=lambda x: x.get('barIndex'))
+    if USE_SQLITE and subset:
+        idx = [b.get('barIndex') for b in subset if b.get('barIndex') is not None]
+        if idx:
+            try:
+                placeholders = ','.join(['?'] * len(idx))
+                cur = get_db_connection().cursor()
+                cur.execute(f"SELECT barIndex, isBad, reason FROM dev_classifications WHERE barIndex IN ({placeholders}) ORDER BY id DESC", idx)
+                cls_map = {}
+                for row in cur.fetchall():
+                    b_i, is_bad, reason = row
+                    if b_i not in cls_map:
+                        cls_map[b_i] = (is_bad, reason)
+                for b in subset:
+                    bi = b.get('barIndex')
+                    if bi in cls_map:
+                        b['isBad'] = int(cls_map[bi][0])
+                        b['badReason'] = cls_map[bi][1]
+            except Exception as ex:
+                print('[BARS] classification join error:', ex)
+    return JSONResponse({'center': center, 'window': window, 'bars': subset, 'count': len(subset)})
 
 @app.post('/trade_completed')
 async def trade_completed(request: Request):
@@ -1313,20 +1573,535 @@ def delete_override(prop: str):
             print('[DB] override delete history insert failed:', db_ex)
         effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
         return JSONResponse({'status': 'ok', 'removed': prop, 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS})
-    @app.get('/dbstats')
-    def dbstats():
-        if not USE_SQLITE:
-            return JSONResponse({'sqlite': False})
-        try:
-            d_count = db_query_one('SELECT COUNT(*) FROM diags') or [0]
-            o_count = db_query_one('SELECT COUNT(*) FROM overrides_history') or [0]
-            a_count = db_query_one('SELECT COUNT(*) FROM auto_apply_events') or [0]
-            s_count = db_query_one('SELECT COUNT(*) FROM suggestions') or [0]
-            return JSONResponse({'sqlite': True, 'diags': d_count[0], 'overrides_history': o_count[0], 'auto_apply_events': a_count[0], 'suggestions': s_count[0]})
-        except Exception as ex:
-            return JSONResponse({'sqlite': True, 'error': str(ex)}, status_code=500)
     effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
     return JSONResponse({'status': 'not_found', 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS}, status_code=404)
+
+@app.get('/dbstats')
+def dbstats():
+    if not USE_SQLITE:
+        return JSONResponse({'sqlite': False})
+    try:
+        d_count = db_query_one('SELECT COUNT(*) FROM diags') or [0]
+        o_count = db_query_one('SELECT COUNT(*) FROM overrides_history') or [0]
+        a_count = db_query_one('SELECT COUNT(*) FROM auto_apply_events') or [0]
+        s_count = db_query_one('SELECT COUNT(*) FROM suggestions') or [0]
+        snap_count = db_query_one('SELECT COUNT(*) FROM strategy_snapshots') or [0]
+        foot_count = db_query_one('SELECT COUNT(*) FROM ai_footprints') or [0]
+        return JSONResponse({'sqlite': True, 'diags': d_count[0], 'overrides_history': o_count[0], 'auto_apply_events': a_count[0], 'suggestions': s_count[0], 'snapshots': snap_count[0], 'footprints': foot_count[0]})
+    except Exception as ex:
+        return JSONResponse({'sqlite': True, 'error': str(ex)}, status_code=500)
+
+# --- Strategy Snapshot & AI Footprint Endpoints ---
+
+def compute_file_hash(filepath: str) -> str:
+    """Compute SHA256 hash of a file for change detection."""
+    try:
+        with open(filepath, 'rb') as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception as ex:
+        print(f"[HASH] Error hashing {filepath}: {ex}")
+        return "error"
+
+def create_strategy_snapshot(notes: str = "") -> Dict[str, Any]:
+    """Create a strategy snapshot capturing current state for session persistence."""
+    try:
+        # Component hashes for change detection
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        component_hashes = {}
+        key_files = [
+            os.path.join(base_path, 'Strategies', 'GradientSlopeStrategy.cs'),
+            os.path.join(base_path, 'Indicators', 'CBASTestingIndicator3.cs'),
+        ]
+        for fpath in key_files:
+            if os.path.exists(fpath):
+                fname = os.path.basename(fpath)
+                component_hashes[fname] = compute_file_hash(fpath)
+        
+        # Performance summary from trades table
+        perf_summary = {}
+        if USE_SQLITE:
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cutoff_ts = time.time() - (7 * 86400)  # last 7 days
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN realized_points > 0 THEN 1 ELSE 0 END) as winners,
+                        SUM(realized_points) as total_pnl,
+                        AVG(realized_points) as avg_pnl,
+                        AVG(mfe) as avg_mfe,
+                        AVG(bars_held) as avg_bars_held
+                    FROM trades
+                    WHERE entry_time >= ?
+                """, (cutoff_ts,))
+                row = cur.fetchone()
+                if row:
+                    perf_summary = {
+                        'total_trades': row[0] or 0,
+                        'winners': row[1] or 0,
+                        'total_pnl': row[2] or 0.0,
+                        'avg_pnl': row[3] or 0.0,
+                        'avg_mfe': row[4] or 0.0,
+                        'avg_bars_held': row[5] or 0.0,
+                        'period_days': 7
+                    }
+            except Exception as db_ex:
+                print(f"[SNAPSHOT] Error querying trades: {db_ex}")
+        
+        # Current trend segment
+        trend_summary = {
+            'side': current_trend.get('side'),
+            'count': current_trend.get('count', 0),
+            'good': current_trend.get('good', 0),
+            'bad': current_trend.get('bad', 0),
+            'pnl_proxy': current_trend.get('pnlProxy', 0.0)
+        }
+        
+        snapshot = {
+            'ts': time.time(),
+            'version': '1.0',
+            'overrides': active_overrides.copy(),
+            'streaks': property_streaks.copy(),
+            'performance': perf_summary,
+            'trend': trend_summary,
+            'component_hashes': component_hashes,
+            'notes': notes,
+            'diags_count': len(diags),
+            'trend_segments_count': len(trend_segments)
+        }
+        def build_strategy_index() -> Dict[str, Any]:
+            """Create a documented index of the strategy structure and recent analyses for AI continuity."""
+            # Summarize recent trade analysis
+            trade_summary = {
+                'recent_count': len(recent_trades),
+                'poor_capture_streak': exit_poor_performance_streak,
+                'short_hold_streak': short_hold_streak,
+                'samples': recent_trades[-5:]  # last few for context
+            }
+            # Summarize recent entry block analysis
+            entry_summary = {
+                'recent_blocks': len(recent_entry_blocks),
+                'missed_opportunity_streak': missed_opportunity_streak,
+                'common_blockers': blocker_pattern_counts,
+                'samples': recent_entry_blocks[-5:]
+            }
+            # Current config and state
+            cfg = {
+                'defaults': DEFAULT_PARAMS,
+                'overrides': active_overrides,
+                'streaks': property_streaks,
+            }
+            # Components and hashes
+            snapshot = create_strategy_snapshot()
+            components = snapshot.get('component_hashes', {})
+            trend = snapshot.get('trend', {})
+
+            # Narrative guidance
+            guidance = [
+                'If missed_opportunity_streak is elevated and common_blockers include FastGradMin or ADXMin, consider loosening thresholds within bounds.',
+                'If exit_poor_performance_streak rises, reduce ValidationMinFastGradientAbs or increase MinHoldBars per AUTO_APPLY_STEPS.',
+                'Use overrides_history and auto_apply_events tables to correlate changes with outcomes.'
+            ]
+            index_obj = {
+                'ts': time.time(),
+                'version': '1.0',
+                'components': components,
+                'config': cfg,
+                'trend': trend,
+                'trade_analysis': trade_summary,
+                'entry_analysis': entry_summary,
+                'diags_count': len(diags),
+                'guidance': guidance
+            }
+            # Log a footprint whenever we rebuild the index to aid continuity
+            try:
+                log_ai_footprint(
+                    action='INDEX_REBUILT',
+                    details=json.dumps({'components': list(components.keys()), 'diags_count': len(diags)}),
+                    reasoning='Periodic index rebuild for AI continuity',
+                    diff_summary='N/A'
+                )
+            except Exception as _ex:
+                pass
+            return index_obj
+
+        @app.post('/structure/doc/save')
+        def save_structure_index():
+            """Persist a strategy structure index document into the DB."""
+            try:
+                idx = build_strategy_index()
+                db_exec(
+                    "INSERT INTO strategy_index (ts, version, index_json) VALUES (?,?,?)",
+                    (idx['ts'], idx['version'], json.dumps(idx))
+                )
+                return JSONResponse({'status': 'ok', 'saved_ts': idx['ts']})
+            except Exception as ex:
+                return JSONResponse({'error': str(ex)}, status_code=500)
+
+        @app.get('/structure/doc/latest')
+        def get_structure_index_latest():
+            """Retrieve the latest saved strategy structure index document."""
+            try:
+                conn = get_db_connection()
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM strategy_index ORDER BY ts DESC LIMIT 1")
+                row = cur.fetchone()
+                if not row:
+                    # If none saved, return a fresh index without saving
+                    return JSONResponse(build_strategy_index())
+                return JSONResponse(json.loads(row['index_json']))
+            except Exception as ex:
+                return JSONResponse({'error': str(ex)}, status_code=500)
+        
+        return snapshot
+    except Exception as ex:
+        print(f"[SNAPSHOT] Creation error: {ex}")
+        return {'error': str(ex)}
+
+@app.get('/snapshot/latest')
+def get_latest_snapshot():
+    """Retrieve the most recent strategy snapshot."""
+    if not USE_SQLITE:
+        # Return ephemeral snapshot if DB disabled
+        return JSONResponse(create_strategy_snapshot())
+    
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM strategy_snapshots ORDER BY ts DESC LIMIT 1")
+        row = cur.fetchone()
+        
+        if row:
+            snapshot = {
+                'id': row['id'],
+                'ts': row['ts'],
+                'version': row['version'],
+                'overrides': json.loads(row['overrides_json']) if row['overrides_json'] else {},
+                'streaks': json.loads(row['streaks_json']) if row['streaks_json'] else {},
+                'performance': json.loads(row['perf_json']) if row['perf_json'] else {},
+                'component_hashes': json.loads(row['component_hashes_json']) if row['component_hashes_json'] else {},
+                'notes': row['notes'],
+                'created_at': row['created_at']
+            }
+            return JSONResponse(snapshot)
+        else:
+            # No stored snapshot, return current state
+            return JSONResponse(create_strategy_snapshot())
+    except Exception as ex:
+        print(f"[SNAPSHOT] Error retrieving latest: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/dev/metrics/latest')
+def dev_metrics_latest(limit: int = 50):
+    """Return latest development/debug metrics."""
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT ts, metric, value, details FROM dev_metrics ORDER BY ts DESC LIMIT ?", (min(limit,200),))
+        rows = cur.fetchall()
+        return JSONResponse({'metrics': [dict(r) for r in rows], 'count': len(rows)})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/dev/classifications/latest')
+def dev_classifications_latest(limit: int = 100):
+    """Return latest per-bar classification decisions."""
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT ts, barIndex, side, fastGrad, accel, isBad, reason FROM dev_classifications ORDER BY ts DESC LIMIT ?", (min(limit,500),))
+        rows = cur.fetchall()
+        return JSONResponse({'classifications': [dict(r) for r in rows], 'count': len(rows)})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/dev/scan/anomalies')
+def dev_scan_anomalies():
+    """Scan recent metrics for anomalies (e.g., missing bad bars)."""
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT ts, metric, value, details FROM dev_metrics WHERE metric='anomaly_no_bad_bars' ORDER BY ts DESC LIMIT 20")
+        anomalies = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT COUNT(*) FROM dev_classifications WHERE isBad=1")
+        bad_total = cur.fetchone()[0]
+        # Log footprint about anomaly state
+        try:
+            log_ai_footprint(
+                action='ANOMALY_SCAN',
+                details=json.dumps({'anomalies_count': len(anomalies), 'bad_total': bad_total}),
+                reasoning='Track anomaly: prolonged no-bad-bars condition',
+                diff_summary='N/A'
+            )
+        except Exception:
+            pass
+        return JSONResponse({'anomalies': anomalies, 'bad_classifications_total': bad_total})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/dev/dedup/diags')
+def dev_dedup_diags():
+    """Remove duplicate diags entries keeping latest per barIndex."""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Count before
+        cur.execute('SELECT COUNT(*) FROM diags')
+        before = cur.fetchone()[0]
+        # Delete rows whose id is not the max id for their barIndex
+        cur.execute('DELETE FROM diags WHERE id NOT IN (SELECT MAX(id) FROM diags GROUP BY barIndex)')
+        conn.commit()
+        cur.execute('SELECT COUNT(*) FROM diags')
+        after = cur.fetchone()[0]
+        removed = before - after
+        # Metric record
+        try:
+            db_exec("INSERT INTO dev_metrics (ts, metric, value, details) VALUES (?,?,?,?)", (time.time(), 'dedup_diags', removed, f'before={before} after={after}'))
+        except Exception:
+            pass
+        return JSONResponse({'status': 'ok', 'removed': removed, 'remaining': after})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/dev/scan/bad')
+def dev_scan_bad(limit: int = 500):
+    """Recompute bad classifications from stored diags and compare with dev_classifications."""
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        # Fetch latest diags with needed fields
+        cur.execute("SELECT id, ts, barIndex, fastGrad, accel, fastEMA, close, trendSide FROM diags ORDER BY id DESC LIMIT ?", (min(limit,2000),))
+        rows = cur.fetchall()
+        recomputed = []
+        mismatches = 0
+        for r in rows:
+            fg = float(r['fastGrad'] or 0.0)
+            accel = float(r['accel'] or 0.0)
+            fastEMA = float(r['fastEMA'] or 0.0)
+            close = float(r['close'] or 0.0)
+            side = r['trendSide']
+            is_bad = False
+            if side == 'BULL':
+                is_bad = (fg < 0) or (accel < -0.01 and fg < 0.02)
+            elif side == 'BEAR':
+                is_bad = (fg > 0) or (accel > 0.01 and fg > -0.02)
+            recomputed.append({'barIndex': r['barIndex'], 'side': side, 'fastGrad': fg, 'accel': accel, 'fastEMA': fastEMA, 'close': close, 'isBad': int(is_bad)})
+        # Compare with last classifications
+        cur.execute("SELECT barIndex, isBad FROM dev_classifications ORDER BY id DESC LIMIT ?", (len(recomputed),))
+        cls_rows = cur.fetchall()
+        cls_map = {}
+        for cr in cls_rows:
+            b, ib = cr
+            if b not in cls_map:
+                cls_map[b] = ib
+        for item in recomputed:
+            prev = cls_map.get(item['barIndex'])
+            if prev is not None and int(prev) != item['isBad']:
+                mismatches += 1
+        return JSONResponse({'recomputed_count': len(recomputed), 'mismatches': mismatches, 'sample': recomputed[:25]})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/snapshot/save')
+async def save_snapshot(request: Request):
+    """Save a strategy snapshot to the database."""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+    
+    try:
+        payload = await request.json()
+        notes = payload.get('notes', '')
+        
+        snapshot = create_strategy_snapshot(notes)
+        
+        if 'error' in snapshot:
+            return JSONResponse({'error': snapshot['error']}, status_code=500)
+        
+        db_exec("""
+            INSERT INTO strategy_snapshots 
+            (ts, version, overrides_json, streaks_json, perf_json, component_hashes_json, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            snapshot['ts'],
+            snapshot['version'],
+            json.dumps(snapshot['overrides']),
+            json.dumps(snapshot['streaks']),
+            json.dumps(snapshot['performance']),
+            json.dumps(snapshot['component_hashes']),
+            snapshot['notes']
+        ))
+        
+        print(f"[SNAPSHOT] Saved snapshot at {snapshot['ts']} with notes: {notes[:50]}")
+        return JSONResponse({'status': 'ok', 'snapshot': snapshot})
+    except Exception as ex:
+        print(f"[SNAPSHOT] Save error: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/snapshot/list')
+def list_snapshots(limit: int = 20):
+    """List recent strategy snapshots."""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+    
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, ts, version, notes, created_at
+            FROM strategy_snapshots 
+            ORDER BY ts DESC 
+            LIMIT ?
+        """, (min(limit, 100),))
+        
+        snapshots = []
+        for row in cur.fetchall():
+            snapshots.append({
+                'id': row['id'],
+                'ts': row['ts'],
+                'version': row['version'],
+                'notes': row['notes'],
+                'created_at': row['created_at'],
+                'local_time': datetime.fromtimestamp(row['ts']).strftime("%Y-%m-%d %H:%M:%S")
+            })
+        
+        return JSONResponse({'snapshots': snapshots, 'count': len(snapshots)})
+    except Exception as ex:
+        print(f"[SNAPSHOT] List error: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+
+@app.post('/ai/footprint/add')
+async def add_ai_footprint(request: Request):
+    """Log an AI decision footprint for reasoning replay."""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+    
+    try:
+        payload = await request.json()
+        action = payload.get('action', '')
+        details = payload.get('details', '')
+        reasoning = payload.get('reasoning', '')
+        diff_summary = payload.get('diff_summary', '')
+        
+        if not action:
+            return JSONResponse({'error': 'action required'}, status_code=400)
+        
+        ts = time.time()
+        db_exec("""
+            INSERT INTO ai_footprints (ts, action, details, reasoning, diff_summary)
+            VALUES (?, ?, ?, ?, ?)
+        """, (ts, action, details, reasoning, diff_summary))
+        
+        print(f"[AI-FOOTPRINT] Logged: {action} at {ts}")
+        return JSONResponse({'status': 'ok', 'ts': ts, 'action': action})
+    except Exception as ex:
+        print(f"[AI-FOOTPRINT] Add error: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/advisor/recommendations')
+async def advisor_recommendations(request: Request):
+    """Accept timeframe advisor recommendations and persist to ai_footprints."""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+    try:
+        payload = await request.json()
+        instrument = payload.get('instrument', '')
+        timeframe = payload.get('timeframe', '')
+        recommendation = payload.get('recommendation', '')  # Prefer30s/Prefer60s/Keep
+        explanation = payload.get('explanation', '')
+        metrics = payload.get('metrics', {})
+        if not recommendation:
+            return JSONResponse({'error': 'recommendation required'}, status_code=400)
+        details = json.dumps({
+            'instrument': instrument,
+            'timeframe': timeframe,
+            'recommendation': recommendation,
+            'metrics': metrics
+        })
+        reasoning = explanation or 'TimeframeAdvisor heuristic evaluation'
+        ts = time.time()
+        db_exec(
+            "INSERT INTO ai_footprints (ts, action, details, reasoning, diff_summary) VALUES (?,?,?,?,?)",
+            (ts, 'TIMEFRAME_ADVICE', details, reasoning, '')
+        )
+        return JSONResponse({'status': 'ok', 'ts': ts})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/advisor/recommendations/latest')
+def advisor_recommendations_latest(limit: int = 50):
+    """List latest timeframe advisor recommendations from ai_footprints."""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT ts, details, reasoning FROM ai_footprints WHERE action='TIMEFRAME_ADVICE' ORDER BY ts DESC LIMIT ?", (min(limit,200),))
+        rows = cur.fetchall()
+        recs = []
+        for r in rows:
+            d = {}
+            try:
+                d = json.loads(r['details'])
+            except Exception:
+                d = {'raw': r['details']}
+            recs.append({'ts': r['ts'], 'details': d, 'reasoning': r['reasoning']})
+        return JSONResponse({'recommendations': recs, 'count': len(recs)})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/ai/footprints')
+def get_ai_footprints(limit: int = 50, action: str = None):
+    """Retrieve AI decision footprints."""
+    if not USE_SQLITE:
+        return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+    
+    try:
+        conn = get_db_connection()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        
+        if action:
+            cur.execute("""
+                SELECT * FROM ai_footprints 
+                WHERE action = ?
+                ORDER BY ts DESC 
+                LIMIT ?
+            """, (action, min(limit, 200)))
+        else:
+            cur.execute("""
+                SELECT * FROM ai_footprints 
+                ORDER BY ts DESC 
+                LIMIT ?
+            """, (min(limit, 200),))
+        
+        footprints = []
+        for row in cur.fetchall():
+            footprints.append({
+                'id': row['id'],
+                'ts': row['ts'],
+                'action': row['action'],
+                'details': row['details'],
+                'reasoning': row['reasoning'],
+                'diff_summary': row['diff_summary'],
+                'created_at': row['created_at'],
+                'local_time': datetime.fromtimestamp(row['ts']).strftime("%Y-%m-%d %H:%M:%S")
+            })
+        
+        return JSONResponse({'footprints': footprints, 'count': len(footprints)})
+    except Exception as ex:
+        print(f"[AI-FOOTPRINT] Query error: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
 if __name__ == '__main__':
     import uvicorn
     port = int(os.environ.get('PORT', '5001'))

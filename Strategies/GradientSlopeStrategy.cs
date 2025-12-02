@@ -73,8 +73,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         
         // Exit cooldown tracking - prevent consecutive trades
         private DateTime lastExitTime = DateTime.MinValue;
-        private int exitCooldownSeconds = 30;  // Wait 30 seconds after exit before allowing new entry
-        private bool inExitCooldown = false;  // Flag to prevent signal updates during cooldown
+        private int exitCooldownSeconds = 0;  // Disabled cooldown
+        private bool inExitCooldown = false;  // Cooldown disabled
         
         // Min-hold to avoid same-bar churn
         private int minHoldBars = 5; // Minimum bars to hold a position before allowing exits (0 = allow same-bar exits)
@@ -106,6 +106,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         private TextPosition hudPosition = TextPosition.BottomLeft; // Default away from chart header
         private SimpleFont hudSimpleFont = null;     // HUD font (created at DataLoaded)
         private int cooldownStartBar = -1;          // Track bar when cooldown started
+        // Advisor support metrics (lightweight defaults)
+        private double gradientStability = 0.0;     // proxy: abs(fastEMA[0]-fastEMA[1])
+        private int recentWhipsawCount = 0;         // quick signal flips count (basic)
+        private int recentTradesCount = 0;          // rough trade activity counter
+        private Queue<double> fastGradWindow = new Queue<double>(); // rolling for stability
+        private int fastGradWindowCapacity = 25;
         private bool autoAddGradientPanel = true;   // Auto-add EMAGradientPair panel
         private bool gradientPanelAdded = false;    // Ensure we add only once
         private int hudFontSize = 10;               // HUD font size
@@ -576,6 +582,92 @@ namespace NinjaTrader.NinjaScript.Strategies
         
         protected override void OnBarUpdate()
         {
+                                    // Update simple stability proxy and decay counters
+                                    try
+                                    {
+                                        double fastGradNow = (CurrentBar >= 1 ? fastEMA[0] - fastEMA[1] : 0);
+                                        gradientStability = Math.Abs(fastGradNow);
+                                        fastGradWindow.Enqueue(fastGradNow);
+                                        while (fastGradWindow.Count > fastGradWindowCapacity)
+                                            fastGradWindow.Dequeue();
+                                        if (fastGradWindow.Count >= 5)
+                                        {
+                                            // compute stddev for better stability metric
+                                            double mean = 0; foreach (var v in fastGradWindow) mean += v; mean /= fastGradWindow.Count;
+                                            double var = 0; foreach (var v in fastGradWindow) { var += (v - mean) * (v - mean); }
+                                            var /= fastGradWindow.Count;
+                                            gradientStability = Math.Sqrt(var);
+                                        }
+                                        // Lightweight decay of activity counters
+                                        if (recentWhipsawCount > 0) recentWhipsawCount--;
+                                        if (recentTradesCount > 0) recentTradesCount--;
+                                    }
+                                    catch {}
+                        // Periodic timeframe advisory (every 25 bars on first tick)
+                        if (IsFirstTickOfBar && CurrentBar % 25 == 0)
+                        {
+                            try
+                            {
+                                var advisor = new TimeframeAdvisor();
+                                var ctx = new TimeframeAdvisor.Context
+                                {
+                                    ADX = adx != null ? adx[0] : 0,
+                                    ATR = atr != null ? atr[0] : 0,
+                                    FastGradient = (CurrentBar >= 1 ? fastEMA[0] - fastEMA[1] : 0),
+                                    SlowGradient = (CurrentBar >= 1 ? slowEMA[0] - slowEMA[1] : 0),
+                                    GradientStability = gradientStability,
+                                    BarsSinceEntry = (entryBar >= 0 ? CurrentBar - entryBar : -1),
+                                    RecentWhipsawCount = recentWhipsawCount,
+                                    RecentTrades = recentTradesCount
+                                };
+                                var rec = advisor.Evaluate(ctx);
+                                var msg = advisor.Explain(ctx, rec);
+                                if (enableLogging)
+                                    LogOutput($"TIMEFRAME_ADVICE: {rec} -> {msg}");
+                                LogToCSV(Time[0], CurrentBar, Close[0], fastEMA[0], slowEMA[0], ctx.FastGradient, ctx.SlowGradient,
+                                    currentSignal, currentSignal, myPosition, "TIMEFRAME_ADVICE", $"{rec}:{msg}|ADX={ctx.ADX:F1}|ATR={ctx.ATR:F2}|Whipsaws={ctx.RecentWhipsawCount}");
+
+                                // Post to dashboard for UI display
+                                Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        using (var client = new HttpClient())
+                                        {
+                                            var payload = new
+                                            {
+                                                instrument = Instrument.FullName,
+                                                timeframe = BarsPeriod.Value,
+                                                recommendation = rec.ToString(),
+                                                explanation = msg,
+                                                metrics = new {
+                                                    ADX = ctx.ADX,
+                                                    ATR = ctx.ATR,
+                                                    GradientStability = gradientStability,
+                                                    Whipsaws = ctx.RecentWhipsawCount
+                                                }
+                                            };
+                                            // Build minimal JSON manually to avoid extra dependencies
+                                            var json = "{"
+                                                + "\"instrument\":\"" + Instrument.FullName + "\"," 
+                                                + "\"timeframe\":" + BarsPeriod.Value + ","
+                                                + "\"recommendation\":\"" + rec.ToString() + "\"," 
+                                                + "\"explanation\":\"" + msg.Replace("\"","'") + "\"," 
+                                                + "\"metrics\":{"
+                                                    + "\"ADX\":" + ctx.ADX.ToString(System.Globalization.CultureInfo.InvariantCulture) + ","
+                                                    + "\"ATR\":" + ctx.ATR.ToString(System.Globalization.CultureInfo.InvariantCulture) + ","
+                                                    + "\"GradientStability\":" + gradientStability.ToString(System.Globalization.CultureInfo.InvariantCulture) + ","
+                                                    + "\"Whipsaws\":" + ctx.RecentWhipsawCount + "}"
+                                                + "}";
+                                            var content = new StringContent(json, Encoding.UTF8, "application/json");
+                                            await client.PostAsync("http://127.0.0.1:5001/advisor/recommendations", content);
+                                        }
+                                    }
+                                    catch { }
+                                });
+                            }
+                            catch { }
+                        }
             // Manual property dump trigger (auto-resets)
             if (dumpPropertiesNow)
             {
@@ -604,36 +696,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Periodic poll for dashboard overrides (lightweight, throttled)
             PollOverridesIfNeeded();
             
-            // CHECK EXIT COOLDOWN - stay flat for 30 seconds after any exit
-            if (inExitCooldown && lastExitTime != DateTime.MinValue)
-            {
-                double secondsSinceExit = (Time[0] - lastExitTime).TotalSeconds;
-                if (secondsSinceExit >= exitCooldownSeconds)
-                {
-                    // Cooldown expired
-                    inExitCooldown = false;
-                    Print($"[GRAD] {Time[0]} | EXIT COOLDOWN EXPIRED - Ready to trade again");
-                }
-                else
-                {
-                    // Still in cooldown - stay flat
-                    currentSignal = "FLAT";
-                    signalStartBar = -1;
-                    if (showChartAnnotations)
-                    {
-                        // Color bars during cooldown for clarity
-                        try { BarBrushes[0] = Brushes.DimGray; CandleOutlineBrushes[0] = Brushes.Gray; } catch {}
-                    }
-                    
-                    if (showHud)
-                    {
-                        var secsLeft = Math.Max(0, exitCooldownSeconds - (int)((Time[0] - lastExitTime).TotalSeconds));
-                        string cooldownPrefix = (hudPosition == TextPosition.TopLeft ? HudOffsetPrefix() : string.Empty);
-                        Draw.TextFixed(this, "HUD_Cooldown", cooldownPrefix + $"COOLDOWN: {secsLeft}s left", hudPosition);
-                    }
-                    return;
-                }
-            }
+            // Exit cooldown disabled
 
             // PERFORMANCE SAFETY: Heavy logic & logging only on first tick of bar
             // Intrabar (non-first ticks): perform ONLY immediate exit checks (no logging) then return.
@@ -878,9 +941,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     LogTrade(Time[0], CurrentBar, "EXIT", "LONG", currentClose, quantity, $"VALIDATION_FAILED:{validationReason}|{exitSnapshot_longVal}");
                     LogTradeSummary(Time[0], CurrentBar, "LONG", currentClose, $"VALIDATION_FAILED:{validationReason}", 0.0);
                     lastTradeBar = CurrentBar;
-                    lastExitTime = Time[0];
-                    inExitCooldown = true;
-                    cooldownStartBar = CurrentBar;
+                    // Cooldown disabled: do not set lastExitTime/inExitCooldown
+                    cooldownStartBar = -1;
                     myPosition = "FLAT";
                     currentSignal = "FLAT";
                     signalStartBar = -1;
@@ -890,7 +952,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Draw.Diamond(this, $"ExitLong_Val_{CurrentBar}", false, 0, Close[0], Brushes.Gold);
                         Draw.Text(this, $"ExitLong_Val_T_{CurrentBar}", "EXIT (VAL)", 0, Close[0] + 4*TickSize, Brushes.Gold);
                     }
-                    LogOutput($"[GRAD] {Time[0]} | EXIT COOLDOWN STARTED - No trading for {exitCooldownSeconds} seconds");
+                    // Cooldown disabled: no cooldown log
                     return; // Skip rest of logic
                 }
                 
@@ -987,9 +1049,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                             LogTrade(Time[0], CurrentBar, "EXIT", "LONG", currentClose, quantity, $"CONFIRMED:{exitPendingReason};FastEMAΔ={emaDrop:F2}>= {exitConfirmFastEMADelta:F2}|{exitSnapshot_longConf}");
                             LogTradeSummary(Time[0], CurrentBar, "LONG", currentClose, $"CONFIRMED:{exitPendingReason}", emaDrop);
                             lastTradeBar = CurrentBar;
-                            lastExitTime = Time[0];
-                            inExitCooldown = true;
-                            cooldownStartBar = CurrentBar;
+                            // Cooldown disabled
+                            cooldownStartBar = -1;
                             myPosition = "FLAT";
                             currentSignal = "FLAT";
                             signalStartBar = -1;
@@ -1108,9 +1169,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     LogTrade(Time[0], CurrentBar, "EXIT", "SHORT", currentClose, quantity, $"VALIDATION_FAILED:{validationReason}|{exitSnapshot_shortVal}");
                     LogTradeSummary(Time[0], CurrentBar, "SHORT", currentClose, $"VALIDATION_FAILED:{validationReason}", 0.0);
                     lastTradeBar = CurrentBar;
-                    lastExitTime = Time[0];
-                    inExitCooldown = true;
-                    cooldownStartBar = CurrentBar;
+                    // Cooldown disabled
+                    cooldownStartBar = -1;
                     myPosition = "FLAT";
                     currentSignal = "FLAT";
                     signalStartBar = -1;
@@ -1120,7 +1180,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Draw.Diamond(this, $"ExitShort_Val_{CurrentBar}", false, 0, Close[0], Brushes.Gold);
                         Draw.Text(this, $"ExitShort_Val_T_{CurrentBar}", "EXIT (VAL)", 0, Close[0] - 6*TickSize, Brushes.Gold);
                     }
-                    LogOutput($"[GRAD] {Time[0]} | EXIT COOLDOWN STARTED - No trading for {exitCooldownSeconds} seconds");
+                    // Cooldown disabled: no cooldown log
                     return; // Skip rest of logic
                 }
                 
@@ -1217,9 +1277,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                             LogTrade(Time[0], CurrentBar, "EXIT", "SHORT", currentClose, quantity, $"CONFIRMED:{exitPendingReason};FastEMAΔ={emaRise:F2}>= {exitConfirmFastEMADelta:F2}|{exitSnapshot_shortConf}");
                             LogTradeSummary(Time[0], CurrentBar, "SHORT", currentClose, $"CONFIRMED:{exitPendingReason}", emaRise);
                             lastTradeBar = CurrentBar;
-                            lastExitTime = Time[0];
-                            inExitCooldown = true;
-                            cooldownStartBar = CurrentBar;
+                            // Cooldown disabled
+                            cooldownStartBar = -1;
                             myPosition = "FLAT";
                             currentSignal = "FLAT";
                             signalStartBar = -1;
@@ -1577,7 +1636,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bool slowGradPositive = slowGradient > 0;
                     bool closeAboveFastEMA = currentClose > fastEMAValue;
                     bool closeAboveSlowEMA = currentClose > slowEMAValue;
-                    string entryConditions = $"ENTRY_DECISION: Signal={currentSignal} Bar={barsInSignal}/{entryBarDelay} Valid={conditionsStillValid} ShouldReverse={shouldReverse} PriceRising={priceRising} FastGrad={fastGradient:F4}({(fastGradPositive?"POS":"NEG")}) SlowGrad={slowGradient:F4}({(slowGradPositive?"POS":"NEG")}) Close={currentClose:F2} FastEMA={fastEMAValue:F2}({(closeAboveFastEMA?"ABOVE":"BELOW")}) SlowEMA={slowEMAValue:F2}({(closeAboveSlowEMA?"ABOVE":"BELOW")}) Thr={(currentSignal=="LONG"?GetEntryFastGradientThreshold(true):GetEntryFastGradientThreshold(false)):F2}{(enableAdaptiveEntryGradient?"(adaptive)":"")}";
+                    string entryConditions = $"ENTRY_DECISION: Signal={currentSignal} Bar={barsInSignal}/{entryBarDelay} Valid={conditionsStillValid} ShouldReverse={shouldReverse} PriceRising={priceRising} FastGrad={fastGradient:F4}({(fastGradPositive?"POS":"NEG")}) SlowGrad={slowGradient:F4}({(slowGradPositive?"POS":"NEG")}) RSI={(rsi!=null?rsi[0]:0):F1} Close={currentClose:F2} FastEMA={fastEMAValue:F2}({(closeAboveFastEMA?"ABOVE":"BELOW")}) SlowEMA={slowEMAValue:F2}({(closeAboveSlowEMA?"ABOVE":"BELOW")}) Thr={(currentSignal=="LONG"?GetEntryFastGradientThreshold(true):GetEntryFastGradientThreshold(false)):F2}{(enableAdaptiveEntryGradient?"(adaptive)":"")}";
                     LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, currentSignal, myPosition, "ENTRY_DECISION", entryConditions);
                     
@@ -1604,8 +1663,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             LogTradeSummary(Time[0], CurrentBar, "LONG", currentClose, $"ENTRY_PHASE_VALIDATION_FAILED:{invalidationReason}", 0.0);
                             myPosition = "FLAT";
                             lastTradeBar = CurrentBar;
-                            lastExitTime = Time[0];
-                            inExitCooldown = true;
+                            // Cooldown disabled
                             currentSignal = "FLAT";
                             signalStartBar = -1;
                             entryBar = -1; entryPrice = 0.0; entryTime = DateTime.MinValue; tradeMFE = 0; tradeMAE = 0;
@@ -1624,8 +1682,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             LogTradeSummary(Time[0], CurrentBar, "SHORT", currentClose, $"ENTRY_PHASE_VALIDATION_FAILED:{invalidationReason}", 0.0);
                             myPosition = "FLAT";
                             lastTradeBar = CurrentBar;
-                            lastExitTime = Time[0];
-                            inExitCooldown = true;
+                            // Cooldown disabled
                             currentSignal = "FLAT";
                             signalStartBar = -1;
                             entryBar = -1; entryPrice = 0.0; entryTime = DateTime.MinValue; tradeMFE = 0; tradeMAE = 0;
@@ -1783,7 +1840,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if ((DateTime.Now - lastHeartbeatTime).TotalSeconds >= heartbeatIntervalSeconds)
             {
                 lastHeartbeatTime = DateTime.Now;
-                string heartbeatInfo = $"HEARTBEAT: Signal={currentSignal} MyPos={myPosition} NTPos={Position.MarketPosition} FastGrad={fastGradient:F4} SlowGrad={slowGradient:F4} Close={currentClose:F2} FastEMA={fastEMAValue:F2} SlowEMA={slowEMAValue:F2} InWeakDelay={inWeakReversalDelay} SignalStartBar={signalStartBar} LastTradeBar={lastTradeBar}";
+                string heartbeatInfo = $"HEARTBEAT: Signal={currentSignal} MyPos={myPosition} NTPos={Position.MarketPosition} FastGrad={fastGradient:F4} SlowGrad={slowGradient:F4} RSI={(rsi!=null?rsi[0]:0):F1} Close={currentClose:F2} FastEMA={fastEMAValue:F2} SlowEMA={slowEMAValue:F2} InWeakDelay={inWeakReversalDelay} SignalStartBar={signalStartBar} LastTradeBar={lastTradeBar}";
                 LogToCSV(Time[0], CurrentBar, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                     currentSignal, currentSignal, myPosition, "HEARTBEAT", heartbeatInfo);
                 if (showHud)

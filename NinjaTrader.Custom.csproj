@@ -420,6 +420,7 @@
     <Compile Include="Indicators\CBASTestingIndicator3.cs" />
     <Compile Include="Strategies\GradientSlopeStrategy.cs" />
     <Compile Include="Indicators\EMAGradientPair.cs" />
+    <Compile Include="Strategies\TimeframeAdvisor.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">
