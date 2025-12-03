@@ -1,0 +1,1468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Filter Analysis - Entry Attempts</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2d3561 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #60a5fa;
+            margin-bottom: 15px;
+            font-size: 28px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .control-group input {
+            background: #1a1f3a;
+            border: 1px solid #374151;
+            border-radius: 5px;
+            padding: 8px 12px;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .control-group input:focus {
+            outline: none;
+            border-color: #60a5fa;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #1a1f3a;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #9ca3af;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+
+        .stat-value.danger {
+            color: #ef4444;
+        }
+
+        .stat-value.success {
+            color: #10b981;
+        }
+
+        .table-container {
+            background: #1a1f3a;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-x: auto;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead {
+            background: #2d3561;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #60a5fa;
+            border-bottom: 2px solid #374151;
+            white-space: nowrap;
+        }
+
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #374151;
+        }
+
+        tr:hover {
+            background: #252b47;
+        }
+
+        .bar-index {
+            font-weight: bold;
+            color: #60a5fa;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .bar-index:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
+        
+        .detail-row {
+            background: #1a1f3a !important;
+            border-left: 3px solid #60a5fa;
+        }
+        
+        .detail-row td {
+            padding: 0 !important;
+        }
+        
+        .detail-content {
+            padding: 20px;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                max-height: 0;
+            }
+            to {
+                opacity: 1;
+                max-height: 1000px;
+            }
+        }
+
+        .direction-long {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .direction-short {
+            color: #ef4444;
+            font-weight: 600;
+        }
+
+        .trend-match {
+            color: #10b981;
+        }
+
+        .trend-mismatch {
+            color: #f59e0b;
+        }
+
+        .filter-pass {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+            border-left: 3px solid #10b981;
+            font-weight: 600;
+        }
+
+        .filter-block {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border-left: 3px solid #ef4444;
+            font-weight: 600;
+        }
+
+        .filter-na {
+            background: rgba(107, 114, 128, 0.1);
+            color: #6b7280;
+        }
+
+        .status-entered {
+            background: rgba(16, 185, 129, 0.3);
+        }
+
+        .status-blocked {
+            background: rgba(239, 68, 68, 0.2);
+        }
+
+        .profit-cell {
+            font-weight: bold;
+        }
+
+        .profit-high {
+            color: #10b981;
+        }
+
+        .profit-medium {
+            color: #f59e0b;
+        }
+
+        .profit-low {
+            color: #6b7280;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #9ca3af;
+        }
+
+        .spinner {
+            border: 3px solid #374151;
+            border-top: 3px solid #60a5fa;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            font-size: 12px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-box {
+            width: 20px;
+            height: 20px;
+            border-radius: 3px;
+        }
+
+        /* Entry Readiness Panel */
+        .entry-panel {
+            background: #111634;
+            padding: 14px;
+            border-radius: 10px;
+            margin-bottom: 16px;
+            border-left: 4px solid #3b82f6;
+        }
+        .entry-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .badge-ok { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.35); }
+        .badge-no { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.35); }
+        .chip {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 3px 6px 3px 0;
+            border-radius: 6px;
+            font-size: 12px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+        .chip:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .chip.editable {
+            cursor: pointer;
+        }
+        .chip.ok { background: rgba(16,185,129,0.15); color: #10b981; border-color: rgba(16,185,129,0.35); }
+        .chip.no { background: rgba(239,68,68,0.15); color: #ef4444; border-color: rgba(239,68,68,0.35); }
+        .chip.neutral { background: rgba(107,114,128,0.15); color: #9ca3af; border-color: rgba(107,114,128,0.35); }
+        
+        .entry-sections {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .entry-col { 
+            display: flex;
+            flex-direction: column;
+        }
+        .entry-col h4 { font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
+        .chips-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0;
+        }
+        .muted { color: #9ca3af; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Filter Analysis - Entry Attempts</h1>
+        <p id="subtitle">Real-time analysis of entry filters showing which blocked good trades (red) vs approved good trades (green)</p>
+        
+        <div class="controls" style="display: none;">
+            <div class="control-group">
+                <label title="Minimum ADX value required to allow entry. Higher values filter for stronger trends.">Min ADX for Entry</label>
+                <input type="number" id="adx-threshold" value="16" step="0.5" min="0" title="Minimum ADX value required to allow entry. Higher values filter for stronger trends.">
+            </div>
+            <div class="control-group">
+                <label title="Minimum RSI value required for LONG entries. Helps avoid entering longs in oversold conditions.">RSI Long Floor</label>
+                <input type="number" id="rsi-long-threshold" value="32" step="1" min="0" max="100" title="Minimum RSI value required for LONG entries. Helps avoid entering longs in oversold conditions.">
+            </div>
+            <div class="control-group">
+                <label title="Minimum RSI value required for SHORT entries. Helps avoid entering shorts in overbought conditions.">RSI Short Floor</label>
+                <input type="number" id="rsi-short-threshold" value="50" step="1" min="0" max="100" title="Minimum RSI value required for SHORT entries. Helps avoid entering shorts in overbought conditions.">
+            </div>
+            <div class="control-group">
+                <label title="Minimum absolute fast EMA gradient (slope) required for entry. Filters weak or sideways moves.">Min |FastGrad|</label>
+                <input type="number" id="fastgrad-threshold" value="0.008" step="0.001" min="0" title="Minimum absolute fast EMA gradient (slope) required for entry. Filters weak or sideways moves.">
+            </div>
+            <div class="control-group">
+                <label title="Maximum gradient stability (volatility of EMA slope). Lower values require more consistent directional movement.">Max Grad Stability</label>
+                <input type="number" id="gradstab-threshold" value="2.0" step="0.1" min="0" title="Maximum gradient stability (volatility of EMA slope). Lower values require more consistent directional movement.">
+            </div>
+            <div class="control-group">
+                <label title="Overextension cap — maximum bandwidth allowed for entry. Lower values avoid chasing stretched moves.">Overextend Cap (Max Bandwidth)</label>
+                <input type="number" id="bandwidth-threshold" value="0.12" step="0.01" min="0" title="Overextension cap — maximum bandwidth allowed for entry. Lower values avoid chasing stretched moves.">
+            </div>
+            <div class="control-group">
+                <label title="Minimum forward profit (in points) required to classify a bar as a 'good trade' for missed opportunity analysis.">Min Profit Threshold (pts)</label>
+                <input type="number" id="profit-threshold" value="4.0" step="0.5" min="0" title="Minimum forward profit (in points) required to classify a bar as a 'good trade' for missed opportunity analysis.">
+            </div>
+            <div class="control-group" style="display: none;">
+                <label>Max Entry Fast Gradient Abs</label>
+                <input type="number" id="maxgrad-threshold" value="0.8" step="0.1" min="0">
+            </div>
+            <div class="control-group" style="align-self: end;">
+                <button onclick="recalculate()">🔄 Recalculate</button>
+            </div>
+            <div class="control-group" style="align-self: end;">
+                <button onclick="applyToStrategy()" style="background: #10b981;">✅ Apply to Strategy</button>
+            </div>
+            <div class="control-group" style="align-self: end;">
+                <button onclick="resetEntryReadiness()" style="background: #f59e0b; color:white;">♻️ Entry Readiness Reset</button>
+            </div>
+            <div class="control-group" style="align-self: end;">
+                <button onclick="clearPositionState()" style="background: #ef4444;">🗑️ Clear Position State</button>
+            </div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(16, 185, 129, 0.2); border-left: 3px solid #10b981;"></div>
+                <span>Pass (Good Trade)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(239, 68, 68, 0.2); border-left: 3px solid #ef4444;"></div>
+                <span>Block (Good Trade)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(107, 114, 128, 0.1);"></div>
+                <span>N/A</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-card">
+            <div class="stat-label">Total Attempts</div>
+            <div class="stat-value" id="stat-total">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Entered</div>
+            <div class="stat-value success" id="stat-entered">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Blocked</div>
+            <div class="stat-value danger" id="stat-blocked">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Good Trades Missed</div>
+            <div class="stat-value danger" id="stat-missed">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Avg Missed Profit</div>
+            <div class="stat-value" id="stat-avg-missed">-</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #f59e0b;">
+            <div class="stat-label">Exit Status</div>
+            <div class="stat-value" style="font-size: 14px; color: #f59e0b;" id="stat-exit-status">FLAT</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #ef4444; cursor: pointer;" onclick="clearPositionState()" title="Click to reset position state if dashboard shows wrong position">
+            <div class="stat-label">Reset Position</div>
+            <div class="stat-value" style="font-size: 24px; color: #ef4444;">🗑️</div>
+        </div>
+    </div>
+
+    <!-- Hidden inputs for editable chip values -->
+    <div style="display:none;">
+        <input type="number" id="atr-threshold" value="0">
+    </div>
+
+    <div id="entry-readiness" class="entry-panel" style="display:none;"></div>
+
+    <div id="exit-breakdown" style="display:none; background:#1a1f3a; padding:12px 16px; border-radius:8px; margin: -4px 0 18px 0; border-left:4px solid #8b5cf6;">
+        <h3 style="margin:0 0 6px 0; font-size:13px; letter-spacing:0.5px; color:#c4b5fd; font-weight:600;">Exit Decision Breakdown (Latest)</h3>
+        <div id="exit-trace-summary" style="font-size:12px; color:#9ca3af; margin-bottom:6px;"></div>
+        <table style="width:100%; font-size:12px; border-collapse:collapse;">
+            <thead>
+                <tr style="text-align:left; color:#9ca3af;">
+                    <th style="padding:4px 6px; border-bottom:1px solid #374151;">Condition</th>
+                    <th style="padding:4px 6px; border-bottom:1px solid #374151;">Value</th>
+                    <th style="padding:4px 6px; border-bottom:1px solid #374151;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="exit-trace-body"></tbody>
+        </table>
+    </div>
+
+    <div class="table-container">
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Loading entry attempts...</p>
+        </div>
+        <table id="data-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Bar</th>
+                    <th>Time</th>
+                    <th>Signal</th>
+                    <th>Trend (Start Bar)</th>
+                    <th>Status</th>
+                    <th>Fwd PnL</th>
+                    <th>ADX</th>
+                    <th>RSI</th>
+                    <th>FastGrad</th>
+                    <th>Accel</th>
+                    <th>GradStab</th>
+                    <th>Bandwidth</th>
+                    <th>Close vs EMA</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let barData = [];
+        let logData = [];
+        let trendSegments = [];
+        // Track user-edited thresholds to persist across WebSocket updates and page reloads
+        let userThresholdOverrides = {};
+        try {
+            const stored = localStorage.getItem('userThresholdOverrides');
+            if (stored) userThresholdOverrides = JSON.parse(stored);
+        } catch(e) {}
+        // Cache last known good thresholds to use as fallback
+        let lastKnownThresholds = {};
+
+        // Dynamic server base URL: use current origin by default; allow ?port= override
+        const params = new URLSearchParams(window.location.search);
+        const overridePort = params.get('port');
+        const isHttp = window.location.protocol.startsWith('http');
+        const scheme = isHttp ? window.location.protocol : 'http:';
+        const host = (isHttp && window.location.hostname) ? window.location.hostname : '127.0.0.1';
+        const effectivePort = overridePort || (isHttp ? (window.location.port || '') : '51888');
+        const BASE_URL = `${scheme}//${host}${effectivePort ? `:${effectivePort}` : ''}`;
+
+        async function loadData() {
+            try {
+                // Load bar data
+                const barsResponse = await fetch(`${BASE_URL}/bars/latest?limit=400`);
+                const barsData = await barsResponse.json();
+                barData = barsData.bars || [];
+                
+                // Load log data (actual entry decisions)
+                const logsResponse = await fetch(`${BASE_URL}/logs/recent?limit=1000`);
+                const logsData = await logsResponse.json();
+                logData = logsData.logs || [];
+                
+                // Load trend segments
+                const trendsResponse = await fetch(`${BASE_URL}/trends/segments?limit=50`);
+                const trendsData = await trendsResponse.json();
+                trendSegments = trendsData.segments || [];
+                if (trendsData.current) {
+                    trendSegments.push(trendsData.current);
+                }
+                
+                // Update subtitle with bar count and range
+                const barCount = barData.length;
+                const minBar = barCount > 0 ? Math.min(...barData.map(b => b.barIndex)) : 0;
+                const maxBar = barCount > 0 ? Math.max(...barData.map(b => b.barIndex)) : 0;
+                console.log('[FILTER] Loaded bars:', barCount, 'range:', minBar, '-', maxBar);
+                console.log('[FILTER] Sample bar:', barData[0]);
+                document.getElementById('subtitle').textContent = 
+                    `Analyzing ${barCount} bars in cache (${minBar} - ${maxBar})`;
+                
+                // Calculate forward PnL for each bar and apply threshold fallbacks
+                for (let i = 0; i < barData.length; i++) {
+                    const bar = barData[i];
+                    const futureWindow = barData.slice(i + 1, i + 6);
+                    
+                    if (futureWindow.length > 0) {
+                        const futureHigh = Math.max(...futureWindow.map(b => b.close));
+                        const futureLow = Math.min(...futureWindow.map(b => b.close));
+                        
+                        bar.forwardPnlLong = futureHigh - bar.close;
+                        bar.forwardPnlShort = bar.close - futureLow;
+                    } else {
+                        bar.forwardPnlLong = 0;
+                        bar.forwardPnlShort = 0;
+                    }
+                    
+                    // Apply threshold fallbacks and user overrides to all bars
+                    applyUserOverrides(bar);
+                }
+                
+                // Freshness gate: hide stale data if latest bar is too old
+                const latestTs = barData.length > 0 ? Math.max(...barData.map(b => b.ts || 0)) : 0;
+                const ageSec = (Date.now() / 1000) - latestTs;
+                if (!latestTs || ageSec > 120) {
+                    const loadingEl = document.getElementById('loading');
+                    const tableEl = document.getElementById('data-table');
+                    tableEl.style.display = 'none';
+                    loadingEl.style.display = 'block';
+                    loadingEl.innerHTML = '<div class="spinner"></div><p>Stale or empty data detected on port ' + (effectivePort || '') + ' (age ' + Math.floor(ageSec) + 's). Retrying every 5 seconds...</p><div style="margin-top:8px; font-size:12px; color:#9ca3af;">Tip: open with ?port=51888 if server runs there.</div><button onclick="loadData()" style="margin-top:15px; padding:8px 16px; background:#10b981; color:white; border:none; border-radius:5px; cursor:pointer; font-size:14px;">🔄 Refresh Now</button>';
+                    // Auto-retry every 5 seconds when stale
+                    setTimeout(loadData, 5000);
+                    return;
+                }
+                
+                recalculate();
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('loading').innerHTML = '<p style="color: #ef4444;">Error loading data. Make sure the dashboard server is running.</p>';
+            }
+        }
+
+        function toggleDetailRow(detailRow, bar) {
+            if (detailRow.style.display === 'none') {
+                // Expand: show the row and render content
+                detailRow.style.display = 'table-row';
+                renderEntryReadinessInline(bar, `detail-${bar.barIndex}`);
+                expandedBars.add(bar.barIndex);
+            } else {
+                // Collapse: hide the row
+                detailRow.style.display = 'none';
+                expandedBars.delete(bar.barIndex);
+            }
+        }
+
+        function renderEntryReadinessInline(bar, containerId) {
+            const container = document.getElementById(containerId);
+            if (!bar || !container) return;
+
+            const boolBadge = (ok, label) => `<span class="badge ${ok?'badge-ok':'badge-no'}" title="${label}">${ok? 'Ready' : 'Not Ready'}</span>`;
+            
+            // Enhanced chip function with optional editability
+            const chip = (label, ok, tip='', editable=false, paramKey='', currentValue=null) => {
+                const editableClass = editable ? 'editable' : '';
+                const dataAttrs = editable ? `data-param="${paramKey}" data-value="${currentValue}"` : '';
+                return `<span class="chip ${editableClass} ${ok===null?'neutral':(ok?'ok':'no')}" title="${tip} ${editable?'(Click to edit)':''}" ${dataAttrs}>${label}</span>`;
+            };
+            
+            // Stacked chip: current value on top, filter condition on bottom
+            const stackedChip = (currentVal, condition, ok, editable=false, paramKey='', currentValue=null) => {
+                const editableClass = editable ? 'editable' : '';
+                const dataAttrs = editable ? `data-param="${paramKey}" data-value="${currentValue}"` : '';
+                const colorClass = ok===null? 'neutral' : (ok? 'ok' : 'no');
+                const top = `<div style="font-size:12px;font-weight:700;text-align:center;padding-bottom:4px;border-bottom:1px solid currentColor;">${currentVal}</div>`;
+                const bottom = `<div style="font-size:11px;text-align:center;opacity:0.9;">${condition}</div>`;
+                return `<span class="chip ${editableClass} ${colorClass}" ${dataAttrs} title="${currentVal} • ${condition}">${top}${bottom}</span>`;
+            };
+
+            const fmt = (v, d=2) => (v===null||v===undefined?'-':Number(v).toFixed(d));
+
+            // Resolve ATR value from possible fields
+            const getAtrVal = (b) => {
+                const candidates = [b.atr, b.atrValue, b.currentAtr, b.atrNow, b.atrCur];
+                for (const v of candidates) {
+                    if (v !== null && v !== undefined && !Number.isNaN(Number(v))) return Number(v);
+                }
+                return null;
+            };
+
+            // Inline helper to render ATR chip with current value stacked above condition label
+            const atrChip = (atrVal, atrThr, ok, editable=false, paramKey='', currentValue=null) => {
+                const editableClass = editable ? 'editable' : '';
+                const dataAttrs = editable ? `data-param="${paramKey}" data-value="${currentValue}"` : '';
+                const colorClass = ok===null? 'neutral' : (ok? 'ok' : 'no');
+                const atrValDisplay = atrVal !== null ? fmt(atrVal,2) : '--';
+                const top = `<div style="font-size:12px;font-weight:700;text-align:center;padding-bottom:4px;border-bottom:1px solid currentColor;">ATR=${atrValDisplay}</div>`;
+                const bottom = `<div style="font-size:11px;text-align:center;opacity:0.9;">ATR<=${fmt(atrThr,2)}</div>`;
+                return `<span class="chip ${editableClass} ${colorClass}" ${dataAttrs} title="ATR current=${atrValDisplay} • threshold=${fmt(atrThr,2)}">${top}${bottom}</span>`;
+            };
+
+            const longChips = [
+                chip(`Signal (streak ${bar.streakLong||0}/${bar.entryBarDelay||0})`, !!bar.signalEligibleLong, 'Bars in a row meeting direction vs entryBarDelay'),
+                chip(`Direction (fg>0 && sg>0)`, !!bar.gradDirLongOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
+                chip(`Position (Close>EMAs)`, !!bar.priceAboveEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
+                stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG>=${fmt(bar.entryGradThrLong,3)}`, !!bar.fastStrongForEntryLong, true, 'minEntryFastGradientAbs', bar.entryGradThrLong),
+                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
+                stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
+                stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
+                stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
+                chip(`Accel align`, !!bar.accelAlignOkLong, `fg=${fmt(bar.fastGrad,3)} accel=${fmt(bar.accel,3)}`),
+                atrChip(getAtrVal(bar), bar.maxATRForEntry, bar.maxATRForEntry? !!bar.atrOk : null, true, 'maxATRForEntry', bar.maxATRForEntry),
+                stackedChip(`RSI=${fmt(bar.rsi,1)}`, `RSI>=${fmt(bar.minRSIForEntry,1)}`, bar.minRSIForEntry? !!bar.rsiOk : null, true, 'minRSIForEntry', bar.minRSIForEntry),
+            ].join('');
+
+            const shortChips = [
+                chip(`Signal (streak ${bar.streakShort||0}/${bar.entryBarDelay||0})`, !!bar.signalEligibleShort, 'Bars in a row meeting direction vs entryBarDelay'),
+                chip(`Direction (fg<0 && sg<0)`, !!bar.gradDirShortOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
+                chip(`Position (Close&lt;EMAs)`, !!bar.priceBelowEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
+                stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG<=${fmt(-bar.entryGradThrShort,3)}`, !!bar.fastStrongForEntryShort, true, 'minEntryFastGradientAbs', bar.entryGradThrShort),
+                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
+                stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
+                stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
+                stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
+                chip(`Accel align`, !!bar.accelAlignOkShort, `fg=${fmt(bar.fastGrad,3)} accel=${fmt(bar.accel,3)}`),
+                atrChip(getAtrVal(bar), bar.maxATRForEntry, bar.maxATRForEntry? !!bar.atrOk : null, true, 'maxATRForEntry', bar.maxATRForEntry),
+                stackedChip(`RSI=${fmt(bar.rsi,1)}`, `RSI>=${fmt(bar.minRSIForEntry,1)}`, bar.minRSIForEntry? !!bar.rsiOk : null, true, 'minRSIForEntry', bar.minRSIForEntry),
+            ].join('');
+
+            // Always render two badges; if timing fields are missing, show placeholders
+            container.innerHTML = `
+                <div class="entry-header">
+                    <div>
+                        <div style="font-weight:700; color:#60a5fa;">Entry Readiness — Bar ${bar.barIndex} <span class="muted">${bar.localTime||''}</span></div>
+                        <div class="muted">Close ${fmt(bar.close)} • FastEMA ${fmt(bar.fastEMA)} • SlowEMA ${fmt(bar.slowEMA)} • FastGrad ${fmt(bar.fastGrad,3)}</div>
+                        <div class="muted" style="margin-top:4px;">
+                            Signal: ${bar.signal || 'UNKNOWN'} • Position: ${bar.myPosition || 'UNKNOWN'} •
+                            Bars in Signal: ${(bar.barsInSignal !== undefined ? bar.barsInSignal : '?')}/${bar.entryBarDelay||'?'} ${bar.entryDelayMet === undefined ? '⧗' : (bar.entryDelayMet ? '✓' : '✗')} •
+                            ${bar.inWeakReversalDelay ? '⚠️ Weak Reversal Delay' : ''}
+                        </div>
+                    </div>
+                    <div>
+                        <span style="margin-right:8px;">Long:</span>${`${boolBadge(!!bar.entryLongReady,'Filters')} ${boolBadge(bar.canEnterLong === undefined ? null : !!bar.canEnterLong, bar.canEnterLong === undefined ? 'Timing' : 'Can enter')}`}
+                        <span style="margin:0 8px 0 16px;">Short:</span>${`${boolBadge(!!bar.entryShortReady,'Filters')} ${boolBadge(bar.canEnterShort === undefined ? null : !!bar.canEnterShort, bar.canEnterShort === undefined ? 'Timing' : 'Can enter')}`}
+                    </div>
+                </div>
+                <div class="entry-sections">
+                    <div class="entry-col">
+                        <h4>Long Conditions</h4>
+                        <div class="chips-container">${longChips}</div>
+                    </div>
+                    <div class="entry-col">
+                        <h4>Short Conditions</h4>
+                        <div class="chips-container">${shortChips}</div>
+                    </div>
+                </div>
+                <div style="margin-top:12px; display:flex; gap:10px; justify-content:flex-end;">
+                    <button onclick="recalculate()" style="padding:6px 12px; background:#60a5fa; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">🔄 Recalculate</button>
+                    <button onclick="applyToStrategy()" style="padding:6px 12px; background:#10b981; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">✅ Apply to Strategy</button>
+                </div>
+            `;
+            
+            // Add click handlers to editable chips
+            container.querySelectorAll('.chip.editable').forEach(chip => {
+                chip.addEventListener('click', () => editChipValue(chip));
+            });
+        }
+
+        function renderEntryReadiness(bar) {
+            const panel = document.getElementById('entry-readiness');
+            if (!bar) { panel.style.display = 'none'; return; }
+
+            const boolBadge = (ok, label) => `<span class="badge ${ok?'badge-ok':'badge-no'}" title="${label}">${ok? 'Ready' : 'Not Ready'}</span>`;
+            
+            // Enhanced chip function with optional editability
+            const chip = (label, ok, tip='', editable=false, paramKey='', currentValue=null) => {
+                const editableClass = editable ? 'editable' : '';
+                const dataAttrs = editable ? `data-param="${paramKey}" data-value="${currentValue}"` : '';
+                return `<span class="chip ${editableClass} ${ok===null?'neutral':(ok?'ok':'no')}" title="${tip} ${editable?'(Click to edit)':''}" ${dataAttrs}>${label}</span>`;
+            };
+            
+            // Stacked chip: current value on top, filter condition on bottom
+            const stackedChip = (currentVal, condition, ok, editable=false, paramKey='', currentValue=null) => {
+                const editableClass = editable ? 'editable' : '';
+                const dataAttrs = editable ? `data-param="${paramKey}" data-value="${currentValue}"` : '';
+                const colorClass = ok===null? 'neutral' : (ok? 'ok' : 'no');
+                const top = `<div style="font-size:12px;font-weight:700;text-align:center;padding-bottom:4px;border-bottom:1px solid currentColor;">${currentVal}</div>`;
+                const bottom = `<div style="font-size:11px;text-align:center;opacity:0.9;">${condition}</div>`;
+                return `<span class="chip ${editableClass} ${colorClass}" ${dataAttrs} title="${currentVal} • ${condition}">${top}${bottom}</span>`;
+            };
+
+            const fmt = (v, d=2) => (v===null||v===undefined?'-':Number(v).toFixed(d));
+
+            // Resolve ATR value from possible fields
+            const getAtrVal = (b) => {
+                const candidates = [b.atr, b.atrValue, b.currentAtr, b.atrNow, b.atrCur];
+                for (const v of candidates) {
+                    if (v !== null && v !== undefined && !Number.isNaN(Number(v))) return Number(v);
+                }
+                return null;
+            };
+
+            // Helper to render ATR chip with stacked layout (value over condition)
+            const atrChip = (atrVal, atrThr, ok, editable=false, paramKey='', currentValue=null) => {
+                const editableClass = editable ? 'editable' : '';
+                const dataAttrs = editable ? `data-param="${paramKey}" data-value="${currentValue}"` : '';
+                const colorClass = ok===null? 'neutral' : (ok? 'ok' : 'no');
+                const atrValDisplay = atrVal !== null ? fmt(atrVal,2) : '--';
+                const top = `<div style="font-size:12px;font-weight:700;text-align:center;padding-bottom:4px;border-bottom:1px solid currentColor;">ATR=${atrValDisplay}</div>`;
+                const bottom = `<div style="font-size:11px;text-align:center;opacity:0.9;">ATR<=${fmt(atrThr,2)}</div>`;
+                return `<span class="chip ${editableClass} ${colorClass}" ${dataAttrs} title="ATR current=${atrValDisplay} • threshold=${fmt(atrThr,2)}">${top}${bottom}</span>`;
+            };
+
+            const longChips = [
+                chip(`Signal (streak ${bar.streakLong||0}/${bar.entryBarDelay||0})`, !!bar.signalEligibleLong, 'Bars in a row meeting direction vs entryBarDelay'),
+                chip(`Direction (fg>0 && sg>0)`, !!bar.gradDirLongOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
+                chip(`Position (Close>EMAs)`, !!bar.priceAboveEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
+                stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG>=${fmt(bar.entryGradThrLong,3)}`, !!bar.fastStrongForEntryLong, true, 'minEntryFastGradientAbs', bar.entryGradThrLong),
+                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
+                stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
+                stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
+                stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
+                chip(`Accel align`, !!bar.accelAlignOkLong, `fg=${fmt(bar.fastGrad,3)} accel=${fmt(bar.accel,3)}`),
+                atrChip(getAtrVal(bar), bar.maxATRForEntry, bar.maxATRForEntry? !!bar.atrOk : null, true, 'maxATRForEntry', bar.maxATRForEntry),
+                stackedChip(`RSI=${fmt(bar.rsi,1)}`, `RSI>=${fmt(bar.minRSIForEntry,1)}`, bar.minRSIForEntry? !!bar.rsiOk : null, true, 'minRSIForEntry', bar.minRSIForEntry),
+            ].join('');
+
+            const shortChips = [
+                chip(`Signal (streak ${bar.streakShort||0}/${bar.entryBarDelay||0})`, !!bar.signalEligibleShort, 'Bars in a row meeting direction vs entryBarDelay'),
+                chip(`Direction (fg<0 && sg<0)`, !!bar.gradDirShortOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
+                chip(`Position (Close&lt;EMAs)`, !!bar.priceBelowEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
+                stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG<=${fmt(-bar.entryGradThrShort,3)}`, !!bar.fastStrongForEntryShort, true, 'minEntryFastGradientAbs', bar.entryGradThrShort),
+                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
+                stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
+                stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
+                stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
+                chip(`Accel align`, !!bar.accelAlignOkShort, `fg=${fmt(bar.fastGrad,3)} accel=${fmt(bar.accel,3)}`),
+                atrChip(getAtrVal(bar), bar.maxATRForEntry, bar.maxATRForEntry? !!bar.atrOk : null, true, 'maxATRForEntry', bar.maxATRForEntry),
+                stackedChip(`RSI=${fmt(bar.rsi,1)}`, `RSI>=${fmt(bar.minRSIForEntry,1)}`, bar.minRSIForEntry? !!bar.rsiOk : null, true, 'minRSIForEntry', bar.minRSIForEntry),
+            ].join('');
+
+            panel.innerHTML = `
+                <div class="entry-header">
+                    <div>
+                        <div style="font-weight:700; color:#60a5fa;">Entry Readiness — Bar ${bar.barIndex} <span class="muted">${bar.localTime||''}</span></div>
+                        <div class="muted">Close ${fmt(bar.close)} • FastEMA ${fmt(bar.fastEMA)} • SlowEMA ${fmt(bar.slowEMA)} • FastGrad ${fmt(bar.fastGrad,3)}</div>
+                        ${bar.barsInSignal !== undefined ? `
+                        <div class="muted" style="margin-top:4px;">
+                            Signal: ${bar.signal} • Position: ${bar.myPosition||'?'} • 
+                            Bars in Signal: ${bar.barsInSignal}/${bar.entryBarDelay||0} ${bar.entryDelayMet ? '✓' : '✗'} • 
+                            ${bar.inWeakReversalDelay ? '⚠️ Weak Reversal Delay' : ''}
+                        </div>` : ''}
+                    </div>
+                    <div>
+                        <span style="margin-right:8px;">Long:</span>${bar.canEnterLong !== undefined ? 
+                            `${boolBadge(!!bar.canEnterLong,'Can enter')} ${boolBadge(!!bar.entryLongReady,'Filters')}` 
+                            : 
+                            boolBadge(!!bar.entryLongReady,'Entry ready')}
+                        <span style="margin:0 8px 0 16px;">Short:</span>${bar.canEnterShort !== undefined ? 
+                            `${boolBadge(!!bar.canEnterShort,'Can enter')} ${boolBadge(!!bar.entryShortReady,'Filters')}` 
+                            : 
+                            boolBadge(!!bar.entryShortReady,'Entry ready')}
+                    </div>
+                </div>
+                <div class="entry-sections">
+                    <div class="entry-col">
+                        <h4>Long Conditions</h4>
+                        <div class="chips-container">${longChips}</div>
+                    </div>
+                    <div class="entry-col">
+                        <h4>Short Conditions</h4>
+                        <div class="chips-container">${shortChips}</div>
+                    </div>
+                </div>
+                <div style="margin-top:12px; display:flex; gap:10px; justify-content:flex-end;">
+                    <button onclick="recalculate()" style="padding:6px 12px; background:#60a5fa; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">🔄 Recalculate</button>
+                    <button onclick="applyToStrategy()" style="padding:6px 12px; background:#10b981; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">✅ Apply to Strategy</button>
+                    <button onclick="resetEntryReadiness()" style="padding:6px 12px; background:#f59e0b; color:white; border:none; border-radius:5px; cursor:pointer; font-size:13px;">♻️ Entry Readiness Reset</button>
+                </div>
+            `;
+
+            // Debug trace to confirm rendering
+            console.debug('[EntryReadiness] Rendered panel for bar', bar.barIndex, '— Reset button should be present.');
+            panel.style.display = 'block';
+            
+            // Add click handlers to editable chips
+            panel.querySelectorAll('.chip.editable').forEach(chip => {
+                chip.addEventListener('click', () => editChipValue(chip));
+            });
+        }
+        
+        async function editChipValue(chipElement) {
+            const param = chipElement.getAttribute('data-param');
+            const currentValue = parseFloat(chipElement.getAttribute('data-value'));
+            
+            const newValue = prompt(`Enter new value for ${param}:`, currentValue);
+            if (newValue !== null && !isNaN(parseFloat(newValue))) {
+                const value = parseFloat(newValue);
+                
+                // Map frontend param names to strategy property names
+                const paramMap = {
+                    'minAdxForEntry': 'MinAdxForEntry',
+                    'minRSIForEntry': 'RsiEntryFloor',
+                    'maxGradientStabilityForEntry': 'MaxGradientStabilityForEntry',
+                    'maxBandwidthForEntry': 'MaxBandwidthForEntry',
+                    'maxATRForEntry': 'MaxATRForEntry',
+                    'entryGradThrLong': 'MinEntryFastGradientAbs',
+                    'entryGradThrShort': 'MinEntryFastGradientAbs'
+                };
+                const strategyProperty = paramMap[param] || param;
+                
+                // Apply directly to strategy
+                try {
+                    // Prefer WebSocket apply for instant two-way; fallback to HTTP
+                    if (window.ws && window.wsConnected) {
+                        try { window.ws.send(JSON.stringify({ type: 'apply', property: strategyProperty, value: value })); } catch (e) {
+                            console.warn('[APPLY] WebSocket send failed:', e);
+                        }
+                    }
+                    
+                    console.log('[APPLY] Sending to:', `${BASE_URL}/apply`, 'property:', strategyProperty, 'value:', value);
+                    const response = await fetch(`${BASE_URL}/apply`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ property: strategyProperty, value: value })
+                    });
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Server returned ${response.status}: ${errorText}`);
+                    }
+                    
+                    const result = await response.json();
+                    console.log('[APPLY] Server response:', result);
+                    
+                    if (result.status === 'ok' || !result.error) {
+                        // Store override persistently so WebSocket updates don't overwrite
+                        userThresholdOverrides[param] = value;
+                        try { localStorage.setItem('userThresholdOverrides', JSON.stringify(userThresholdOverrides)); } catch(e) {}
+                        
+                        // Update data-value attribute immediately
+                        chipElement.setAttribute('data-value', value);
+                        
+                        // Update all matching chips in the current view immediately
+                        document.querySelectorAll(`[data-param="${param}"]`).forEach(chip => {
+                            chip.setAttribute('data-value', value);
+                            // Update the display text in the chip
+                            const parts = chip.innerHTML.split('</div>');
+                            if (parts.length >= 2) {
+                                // Keep the format but update the threshold part
+                                const topDiv = parts[0] + '</div>';
+                                const paramFormatted = param.includes('max') ? '<=' : '>=';
+                                chip.innerHTML = topDiv + `<div style="font-size:11px;text-align:center;opacity:0.9;">${getParamLabel(param)}${paramFormatted}${value.toFixed(getParamDecimals(param))}</div>`;
+                            }
+                        });
+                        
+                        // Refresh the display with new threshold immediately
+                        if (barData.length > 0) {
+                            const latest = [...barData].sort((a,b)=> (b.barIndex||0)-(a.barIndex||0))[0];
+                            applyUserOverrides(latest);
+                            renderEntryReadiness(latest);
+                        }
+                        
+                        // Trigger recalculation to update bar cache
+                        if (window.ws && window.wsConnected) {
+                            try { window.ws.send(JSON.stringify({ type: 'recalculate' })); } catch (e) {}
+                        }
+                        await fetch(`${BASE_URL}/recalculate`, { method: 'POST' });
+                    } else {
+                        const msg = result.message || result.error || 'Unknown error';
+                        alert(`✗ Error updating ${param}: ${msg}`);
+                    }
+                } catch (error) {
+                    console.error('[APPLY] Error:', error);
+                    alert(`✗ Error applying to strategy: ${error.message}\n\nCheck browser console for details.\nMake sure server is running on ${BASE_URL}`);
+                }
+            }
+        }
+        
+        function applyUserOverrides(bar) {
+            // First, use last known good thresholds as fallback for any missing values
+            const thresholdFields = ['entryGradThrLong', 'entryGradThrShort', 'minAdxForEntry', 
+                'maxGradientStabilityForEntry', 'minBandwidthForEntry', 'maxBandwidthForEntry', 
+                'maxATRForEntry', 'minRSIForEntry', 'maxRSIForEntry'];
+            
+            for (const field of thresholdFields) {
+                if (bar[field] !== undefined && bar[field] !== null && !isNaN(bar[field])) {
+                    // Update cache with valid value
+                    lastKnownThresholds[field] = bar[field];
+                } else if (lastKnownThresholds[field] !== undefined) {
+                    // Use cached value as fallback
+                    bar[field] = lastKnownThresholds[field];
+                }
+            }
+            
+            // Apply any user-edited threshold overrides (highest priority)
+            for (const [param, value] of Object.entries(userThresholdOverrides)) {
+                bar[param] = value;
+            }
+            return bar;
+        }
+        
+        function getParamLabel(param) {
+            const labels = {
+                'minAdxForEntry': 'ADX',
+                'minRSIForEntry': 'RSI',
+                'minEntryFastGradientAbs': 'FG',
+                'maxGradientStabilityForEntry': 'GS',
+                'maxBandwidthForEntry': 'BW',
+                'maxATRForEntry': 'ATR',
+                'maxEntryFastGradientAbs': '|FG|'
+            };
+            return labels[param] || param;
+        }
+        
+        function getParamDecimals(param) {
+            const decimals = {
+                'minAdxForEntry': 1,
+                'minRSIForEntry': 1,
+                'minEntryFastGradientAbs': 3,
+                'maxGradientStabilityForEntry': 2,
+                'maxBandwidthForEntry': 3,
+                'maxATRForEntry': 2,
+                'maxEntryFastGradientAbs': 2
+            };
+            return decimals[param] || 2;
+        }
+
+        function getThresholds() {
+            return {
+                adx: parseFloat(document.getElementById('adx-threshold').value),
+                rsiLong: parseFloat(document.getElementById('rsi-long-threshold').value),
+                rsiShort: parseFloat(document.getElementById('rsi-short-threshold').value),
+                fastGrad: parseFloat(document.getElementById('fastgrad-threshold').value),
+                gradStab: parseFloat(document.getElementById('gradstab-threshold').value),
+                bandwidth: parseFloat(document.getElementById('bandwidth-threshold').value),
+                maxGrad: parseFloat(document.getElementById('maxgrad-threshold').value),
+                minProfit: parseFloat(document.getElementById('profit-threshold').value)
+            };
+        }
+
+        function checkFilters(bar, direction, thresholds) {
+            const filters = {
+                adx: { pass: bar.adx >= thresholds.adx, value: bar.adx.toFixed(1) },
+                rsi: { pass: direction === 'LONG' ? bar.rsi >= thresholds.rsiLong : bar.rsi <= thresholds.rsiShort, value: bar.rsi.toFixed(1) },
+                fastGrad: { pass: direction === 'LONG' ? bar.fastGrad >= thresholds.fastGrad : bar.fastGrad <= -thresholds.fastGrad, value: bar.fastGrad.toFixed(3) },
+                accel: { pass: direction === 'LONG' ? (bar.fastGrad > 0 ? bar.accel >= 0 : true) : (bar.fastGrad < 0 ? bar.accel <= 0 : true), value: bar.accel.toFixed(3) },
+                gradStab: { pass: bar.gradStab <= thresholds.gradStab, value: bar.gradStab.toFixed(3) },
+                bandwidth: { pass: bar.bandwidth <= thresholds.bandwidth, value: bar.bandwidth.toFixed(6) },
+                closeVsEma: { pass: direction === 'LONG' ? bar.close >= bar.fastEMA : bar.close <= bar.fastEMA, value: `${bar.close.toFixed(2)} vs ${bar.fastEMA.toFixed(2)}` }
+            };
+            
+            const allPass = Object.values(filters).every(f => f.pass);
+            return { filters, allPass };
+        }
+
+        // Track which bars are expanded
+        let expandedBars = new Set();
+
+        function recalculate() {
+            const thresholds = getThresholds();
+            const tbody = document.getElementById('table-body');
+            
+            // Save expanded state before clearing
+            const currentExpanded = new Set(expandedBars);
+            
+            tbody.innerHTML = '';
+            
+            let totalAttempts = 0;
+            let entered = 0;
+            let blocked = 0;
+            let missedGoodTrades = 0;
+            let totalMissedProfit = 0;
+
+            // Build a map of actual entries from logs
+            const actualEntries = new Map();
+            logData.forEach(log => {
+                if (log.action === 'ENTRY' && log.barIndex) {
+                    actualEntries.set(log.barIndex, log.direction);
+                }
+            });
+            
+            // Find the most recent entry/exit to determine position and exit state
+            // Only consider recent logs (last 5 minutes or 200 bars to avoid stale historical data)
+            let currentPosition = null;
+            let currentPositionBar = null;
+            let exitPending = false;
+            let exitPendingReason = "";
+            let exitBlocked = false;
+            let exitBlockedReason = "";
+            let exitConsidering = false;
+            let exitConsiderReason = "";
+            
+            const now = Date.now() / 1000; // Current time in seconds
+            const TIME_WINDOW = 300; // 5 minutes
+            const recentLogs = logData.filter(log => (now - (log.ts || 0)) < TIME_WINDOW);
+            
+            // Decide position by latest timestamped position-changing event
+            const timeSorted = [...recentLogs].sort((a,b) => (b.ts || 0) - (a.ts || 0));
+            const latestPosEvent = timeSorted.find(l => l.action === 'EXIT' || l.action === 'ENTRY');
+            if (latestPosEvent) {
+                if (latestPosEvent.action === 'EXIT') {
+                    currentPosition = null;
+                    currentPositionBar = null;
+                } else if (latestPosEvent.action === 'ENTRY' && latestPosEvent.barIndex) {
+                    currentPosition = { direction: latestPosEvent.direction, entryBar: latestPosEvent.barIndex, reason: latestPosEvent.reason };
+                    currentPositionBar = latestPosEvent.barIndex;
+                    // If any EXIT appears after the entry by timestamp, clear position
+                    const exitAfterEntry = timeSorted.find(l => l.action === 'EXIT' && (l.ts || 0) > (latestPosEvent.ts || 0));
+                    if (exitAfterEntry) {
+                        currentPosition = null;
+                        currentPositionBar = null;
+                    }
+                }
+            }
+            
+            // Check for exit state signals from most recent logs based on timestamp order
+            if (currentPosition) {
+                for (const log of timeSorted) {
+                    if ((log.ts || 0) < (latestPosEvent.ts || 0)) break; // Only check logs after entry time
+                    if (log.action === 'EXIT_PENDING' && log.direction === currentPosition.direction) {
+                        exitPending = true;
+                        exitPendingReason = log.reason || "";
+                        break;
+                    }
+                    if (log.action === 'EXIT_BLOCKED' && log.direction === currentPosition.direction) {
+                        exitBlocked = true;
+                        exitBlockedReason = log.reason || "";
+                        break;
+                    }
+                    if (log.action === 'EXIT_CONSIDER' && log.direction === currentPosition.direction) {
+                        exitConsidering = true;
+                        exitConsiderReason = log.reason || "";
+                        break;
+                    }
+                }
+            }
+            
+            // Build a map of trend start bars
+            const trendStartMap = new Map();
+            trendSegments.forEach(seg => {
+                if (seg.startBarIndex) {
+                    trendStartMap.set(seg.side, seg.startBarIndex);
+                }
+            });
+            
+            // Process bars in reverse order (newest first)
+            const reversedBars = [...barData].reverse();
+            let filteredOutCount = 0;
+            
+            reversedBars.forEach(bar => {
+                // Check if we're in a position at this bar
+                const inPosition = currentPositionBar && bar.barIndex >= currentPositionBar;
+                
+                // Only show bars where there's a clear entry signal OR we're in a position
+                // Relax trend requirement: allow bars with strong gradients even if trendSide is null
+                const longSignal = bar.fastGrad >= thresholds.fastGrad && (bar.trendSide === 'BULL' || bar.trendSide === null);
+                const shortSignal = bar.fastGrad <= -thresholds.fastGrad && (bar.trendSide === 'BEAR' || bar.trendSide === null);
+                
+                if (!longSignal && !shortSignal && !inPosition) {
+                    filteredOutCount++;
+                    return;
+                }
+                
+                const direction = inPosition ? currentPosition.direction : (longSignal ? 'LONG' : 'SHORT');
+                const potentialProfit = direction === 'LONG' ? bar.forwardPnlLong : bar.forwardPnlShort;
+                const isGoodTrade = potentialProfit >= thresholds.minProfit;
+                
+                // Check if NinjaTrader actually entered this trade
+                const actuallyEntered = actualEntries.has(bar.barIndex) && actualEntries.get(bar.barIndex) === direction;
+                
+                const { filters, allPass } = checkFilters(bar, direction, thresholds);
+                
+                totalAttempts++;
+                if (actuallyEntered) {
+                    entered++;
+                } else {
+                    blocked++;
+                    if (isGoodTrade) {
+                        missedGoodTrades++;
+                        totalMissedProfit += potentialProfit;
+                    }
+                }
+                
+                const row = document.createElement('tr');
+                row.className = actuallyEntered ? 'status-entered' : 'status-blocked';
+                
+                const trendMatch = (direction === 'LONG' && bar.trendSide === 'BULL') || (direction === 'SHORT' && bar.trendSide === 'BEAR');
+                
+                let profitClass = 'profit-low';
+                if (potentialProfit >= 10) profitClass = 'profit-high';
+                else if (potentialProfit >= 4) profitClass = 'profit-medium';
+                
+                // Format time properly - use localTime from API
+                const timeStr = bar.localTime || '-';
+                
+                // Find trend start bar for this bar's trend
+                let trendStartBar = null;
+                for (let seg of trendSegments) {
+                    if (seg.side === bar.trendSide && 
+                        seg.startBarIndex <= bar.barIndex && 
+                        (!seg.endBarIndex || seg.endBarIndex >= bar.barIndex)) {
+                        trendStartBar = seg.startBarIndex;
+                        break;
+                    }
+                }
+                
+                const trendInfo = bar.trendSide ? 
+                    `${bar.trendSide}${trendStartBar ? ` (from ${trendStartBar})` : ''}` : 
+                    '-';
+                
+                // Determine status display
+                let statusText = '';
+                if (inPosition && bar.barIndex > currentPositionBar) {
+                    statusText = `🔵 IN POSITION (from ${currentPositionBar})`;
+                } else if (actuallyEntered) {
+                    statusText = '✅ ENTERED (NT)';
+                } else if (allPass) {
+                    statusText = '⚠️ WOULD ENTER';
+                } else {
+                    statusText = '⛔ BLOCKED';
+                }
+                
+                row.innerHTML = `
+                    <td class="bar-index" data-bar-index="${bar.barIndex}" title="Click to expand/collapse details">${bar.barIndex}</td>
+                    <td>${timeStr}</td>
+                    <td class="direction-${direction.toLowerCase()}">${direction}</td>
+                    <td class="${trendMatch ? 'trend-match' : 'trend-mismatch'}">${trendInfo}</td>
+                    <td>${statusText}</td>
+                    <td class="profit-cell ${profitClass}">${potentialProfit.toFixed(2)}</td>
+                    <td class="${getCellClass(filters.adx.pass, isGoodTrade, allPass)}">${filters.adx.value}</td>
+                    <td class="${getCellClass(filters.rsi.pass, isGoodTrade, allPass)}">${filters.rsi.value}</td>
+                    <td class="${getCellClass(filters.fastGrad.pass, isGoodTrade, allPass)}">${filters.fastGrad.value}</td>
+                    <td class="${getCellClass(filters.accel.pass, isGoodTrade, allPass)}">${filters.accel.value}</td>
+                    <td class="${getCellClass(filters.gradStab.pass, isGoodTrade, allPass)}">${filters.gradStab.value}</td>
+                    <td class="${getCellClass(filters.bandwidth.pass, isGoodTrade, allPass)}">${filters.bandwidth.value}</td>
+                    <td class="${getCellClass(filters.closeVsEma.pass, isGoodTrade, allPass)}">${filters.closeVsEma.value}</td>
+                `;
+
+                // Create detail row for expansion
+                const detailRow = document.createElement('tr');
+                detailRow.className = 'detail-row';
+                detailRow.style.display = 'none';
+                detailRow.innerHTML = `
+                    <td colspan="13">
+                        <div class="detail-content" id="detail-${bar.barIndex}"></div>
+                    </td>
+                `;
+
+                // Add click handler to bar-index cell only
+                const barIndexCell = row.querySelector('.bar-index');
+                barIndexCell.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleDetailRow(detailRow, bar);
+                });
+                
+                tbody.appendChild(row);
+                tbody.appendChild(detailRow);
+                
+                // Restore expanded state if this bar was previously expanded
+                if (currentExpanded.has(bar.barIndex)) {
+                    detailRow.style.display = 'table-row';
+                    renderEntryReadinessInline(bar, `detail-${bar.barIndex}`);
+                    expandedBars.add(bar.barIndex);
+                }
+            });
+            
+            // Update stats
+            console.log('[FILTER] Processed:', totalAttempts, 'attempts, filtered out:', filteredOutCount, 'bars');
+            document.getElementById('stat-total').textContent = totalAttempts;
+            document.getElementById('stat-entered').textContent = entered;
+            document.getElementById('stat-blocked').textContent = blocked;
+            document.getElementById('stat-missed').textContent = missedGoodTrades;
+            document.getElementById('stat-avg-missed').textContent = missedGoodTrades > 0 ? (totalMissedProfit / missedGoodTrades).toFixed(2) + ' pts' : '0 pts';
+            
+            // Update exit status
+            const exitStatusElem = document.getElementById('stat-exit-status');
+            if (!currentPosition) {
+                exitStatusElem.textContent = 'FLAT';
+                exitStatusElem.style.color = '#9ca3af';
+                document.getElementById('exit-breakdown').style.display = 'none';
+            } else {
+                let status = `${currentPosition.direction} from ${currentPositionBar}`;
+                if (exitPending) {
+                    status = `⏳ EXIT PENDING\n${exitPendingReason}`;
+                    exitStatusElem.style.color = '#f59e0b';
+                } else if (exitBlocked) {
+                    status = `🛡️ EXIT BLOCKED\n${exitBlockedReason}`;
+                    exitStatusElem.style.color = '#10b981';
+                } else if (exitConsidering) {
+                    status = `⚠️ CONSIDERING EXIT\n${exitConsiderReason}`;
+                    exitStatusElem.style.color = '#ef4444';
+                } else {
+                    exitStatusElem.style.color = '#60a5fa';
+                }
+                exitStatusElem.innerHTML = status.replace(/\n/g, '<br>');
+
+                // EXIT TRACE breakdown
+                const traceLogs = logData.filter(l => l.action === 'EXIT_TRACE' && l.direction === currentPosition.direction);
+                if (traceLogs.length > 0) {
+                    const latestTrace = traceLogs.sort((a,b)=> (b.barIndex||0)-(a.barIndex||0))[0];
+                    const bodyEl = document.getElementById('exit-trace-body');
+                    bodyEl.innerHTML = '';
+                    document.getElementById('exit-trace-summary').textContent = latestTrace.reason || '';
+                    const d = latestTrace.data || {};
+                    const add = (label, value, pass, tooltip = '') => {
+                        const tr = document.createElement('tr');
+                        const titleAttr = tooltip ? ` title="${tooltip}"` : '';
+                        tr.innerHTML = `<td style='padding:4px 6px; cursor:${tooltip?'help':'default'};'${titleAttr}>${label}</td><td style='padding:4px 6px; color:#e5e7eb;'>${value ?? '-'}</td><td style='padding:4px 6px; font-weight:600; color:${pass===null?'#6b7280':(pass? '#10b981':'#ef4444')};'>${pass===null?'-':(pass?'OK':'NO')}</td>`;
+                        bodyEl.appendChild(tr);
+                    };
+                    // Shared values
+                    add('FastGrad', d.fastGrad, null, 'Fast EMA gradient value (slope rate of change)');
+                    add('SlowGrad', d.slowGrad, null, 'Slow EMA gradient value (slope rate of change)');
+                    add('Close', d.close, null, 'Current bar close price');
+                    add('FastEMA', d.fastEMA, null, 'Fast EMA value at current bar');
+                    add('SlowEMA', d.slowEMA, null, 'Slow EMA value at current bar');
+                    if (currentPosition.direction === 'LONG') {
+                        add('Grad <= Thr', d['grad<=Thresh'], d['grad<=Thresh']==='True', 'FastGrad must be <= exit threshold for LONG exit consideration');
+                        add('Close < FastEMA', d.priceBelowFastEMA, d.priceBelowFastEMA==='True', 'Price must drop below Fast EMA to trigger exit');
+                        add('Close < SlowEMA', d.priceBelowSlowEMA, d.priceBelowSlowEMA==='True', 'Price below Slow EMA indicates stronger exit signal');
+                    } else {
+                        add('Grad >= Thr', d['grad>=Thresh'], d['grad>=Thresh']==='True', 'FastGrad must be >= exit threshold for SHORT exit consideration');
+                        add('Close > FastEMA', d.priceAboveFastEMA, d.priceAboveFastEMA==='True', 'Price must rise above Fast EMA to trigger exit');
+                        add('Close > SlowEMA', d.priceAboveSlowEMA, d.priceAboveSlowEMA==='True', 'Price above Slow EMA indicates stronger exit signal');
+                    }
+                    add('Dual Guard OK', d.dualGuardOk, d.dualGuardOk==='True', 'If enabled, requires BOTH price conditions vs Fast+Slow EMA to be met');
+                    add('FastEMA Exit Trigger', d.fastEMAExit, d.fastEMAExit==='True', 'Primary exit signal based on FastEMA gradient threshold + price crossing');
+                    add('Anti-Exit Block', d.antiExitBlock, d.antiExitBlock==='False', 'Blocks exit when strong continuation signals present (fast gradient, RSI, ADX)');
+                    add('Pending', d.pending, d.pending==='True', 'Exit is staged; awaiting additional Fast EMA drop/rise for confirmation');
+                    if (d.pending==='True') {
+                        add('Anchor FastEMA', d.pendingAnchorFastEMA, null, 'Fast EMA value when exit pending was initiated (anchor for delta calculation)');
+                        add('Δ Needed', d.pendingDeltaNeed, null, 'Required Fast EMA change to confirm exit');
+                        add('Δ Current', d.pendingDeltaCurrent, null, 'Current Fast EMA change since pending started');
+                    }
+                    add('Bars Since Entry', d.barsSinceEntry, null, 'Number of bars held since entry');
+                    add('Min Hold Bars', d.minHoldBars, null, 'Minimum bars required before exit evaluation begins');
+                    add('MFE Trailing Active', d.mfeTrailingActive, d.mfeTrailingActive==='True', 'MFE trailing stop is active (MFE threshold reached)');
+                    add('Trade MFE', d.tradeMFE, null, 'Maximum Favorable Excursion (best profit so far) in ticks');
+                    add('Should Exit Final', d.shouldExitFinal, d.shouldExitFinal==='True', 'Final exit decision after all conditions evaluated');
+                    document.getElementById('exit-breakdown').style.display = 'block';
+                } else {
+                    document.getElementById('exit-breakdown').style.display = 'none';
+                }
+            }
+            
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('data-table').style.display = 'table';
+
+            // Default: show latest bar readiness
+            if (barData.length > 0) {
+                const latest = [...barData].sort((a,b)=> (b.barIndex||0)-(a.barIndex||0))[0];
+                applyUserOverrides(latest);
+                renderEntryReadiness(latest);
+            }
+        }
+
+        function getCellClass(filterPass, isGoodTrade, entryAllowed) {
+            if (!isGoodTrade) {
+                return 'filter-na'; // Not a good trade, so filter status is N/A
+            }
+            
+            if (filterPass) {
+                return 'filter-pass'; // Filter passed on a good trade (green)
+            } else {
+                return 'filter-block'; // Filter blocked a good trade (red)
+            }
+        }
+
+        async function applyToStrategy() {
+            if (!confirm('Apply current threshold values to the running strategy?')) return;
+            
+            const thresholds = getThresholds();
+            const overrides = [];
+            
+            // Map webpage fields to strategy property names
+            if (thresholds.adx) overrides.push({ property: 'minAdxForEntry', value: thresholds.adx });
+            if (thresholds.rsiLong) overrides.push({ property: 'rsiLongFloor', value: thresholds.rsiLong });
+            if (thresholds.rsiShort) overrides.push({ property: 'rsiShortFloor', value: thresholds.rsiShort });
+            if (thresholds.fastGrad) overrides.push({ property: 'minEntryFastGradientAbs', value: thresholds.fastGrad });
+            if (thresholds.gradStab) overrides.push({ property: 'maxGradientStabilityForEntry', value: thresholds.gradStab });
+            if (thresholds.bandwidth) overrides.push({ property: 'MaxBandwidthForEntry', value: thresholds.bandwidth });
+            if (thresholds.maxGrad) overrides.push({ property: 'MaxEntryFastGradientAbs', value: thresholds.maxGrad });
+            
+            try {
+                for (const override of overrides) {
+                    if (window.ws && window.wsConnected) {
+                        try { window.ws.send(JSON.stringify({ type: 'apply', property: override.property, value: override.value })); } catch (e) {}
+                    }
+                    const response = await fetch(`${BASE_URL}/apply`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(override)
+                    });
+                    const result = await response.json();
+                    if (result.status !== 'ok') {
+                        const msg = result.message || result.error || 'Unknown error';
+                        alert(`Error setting ${override.property}: ${msg}`);
+                        return;
+                    }
+                }
+                alert(`Successfully applied ${overrides.length} parameter(s) to strategy:\n` + 
+                      overrides.map(o => `${o.property} = ${o.value}`).join('\n'));
+            } catch (error) {
+                alert('Error applying to strategy: ' + error.message);
+            }
+        }
+
+        async function clearPositionState() {
+            if (!confirm('Clear all cached logs and reset position state?')) return;
+            try {
+                const response = await fetch(`${BASE_URL}/logs/clear`, { method: 'POST' });
+                const result = await response.json();
+                if (result.status === 'ok') {
+                    alert('Position state cleared successfully');
+                    loadData();
+                } else {
+                    alert('Error clearing position state: ' + result.message);
+                }
+            } catch (error) {
+                alert('Error clearing position state: ' + error.message);
+            }
+        }
+
+        // WebSocket: connect and use as primary update channel
+        (function setupWS(){
+            function wsUrlFromBase(base) {
+                try { const u = new URL(base); const proto = (u.protocol === 'https:') ? 'wss:' : 'ws:'; return `${proto}//${u.host}/ws`; } catch { return `${base.replace('http','ws')}/ws`; }
+            }
+            try {
+                window.ws = new WebSocket(wsUrlFromBase(BASE_URL));
+                window.wsConnected = false;
+                window.ws.onopen = function(){ window.wsConnected = true; if (window.refreshInterval) clearInterval(window.refreshInterval); };
+                window.ws.onclose = function(){ window.wsConnected = false; /* resume polling fallback */ window.refreshInterval = setInterval(loadData, 1000); };
+                window.ws.onerror = function(){ /* keep polling */ };
+                window.ws.onmessage = function(evt){
+                    try {
+                        const msg = JSON.parse(evt.data);
+                        if (msg.type === 'diag' && msg.data) {
+                            // Directly render latest diagnostic without re-fetching
+                            const d = msg.data;
+                            const latest = {
+                                barIndex: d.barIndex,
+                                fastGrad: d.fastGrad,
+                                slowGrad: d.slowGrad,
+                                accel: d.accel,
+                                adx: d.adx,
+                                fastEMA: d.fastEMA,
+                                slowEMA: d.slowEMA,
+                                close: d.close,
+                                atr: d.atr,
+                                rsi: d.rsi,
+                                gradStab: d.gradStab,
+                                bandwidth: d.bandwidth,
+                                blockersLong: d.blockersLong || [],
+                                blockersShort: d.blockersShort || [],
+                                entryLongReady: (d.blockersLong && d.blockersLong.length === 0),
+                                entryShortReady: (d.blockersShort && d.blockersShort.length === 0),
+                                // Timing fields
+                                barsInSignal: d.barsInSignal,
+                                signalStartBar: d.signalStartBar,
+                                entryDelayMet: d.entryDelayMet,
+                                canEnterLong: d.canEnterLong,
+                                canEnterShort: d.canEnterShort,
+                                myPosition: d.myPosition,
+                                inWeakReversalDelay: d.inWeakReversalDelay,
+                                // Threshold fields for chip display
+                                entryGradThrLong: d.entryGradThrLong,
+                                entryGradThrShort: d.entryGradThrShort,
+                                minAdxForEntry: d.minAdxForEntry,
+                                maxGradientStabilityForEntry: d.maxGradientStabilityForEntry,
+                                minBandwidthForEntry: d.minBandwidthForEntry,
+                                maxBandwidthForEntry: d.maxBandwidthForEntry,
+                                maxATRForEntry: d.maxATRForEntry,
+                                minRSIForEntry: d.minRSIForEntry,
+                                maxRSIForEntry: d.maxRSIForEntry
+                            };
+                            // Apply user threshold overrides before rendering
+                            applyUserOverrides(latest);
+                            // Render instantly without HTTP fetch
+                            try { 
+                                renderEntryReadiness(latest);
+                                // Add visual pulse to show update
+                                const panel = document.getElementById('entry-readiness-panel');
+                                if (panel) {
+                                    panel.style.transition = 'box-shadow 0.3s ease';
+                                    panel.style.boxShadow = '0 0 20px rgba(96, 165, 250, 0.6)';
+                                    setTimeout(() => { panel.style.boxShadow = ''; }, 300);
+                                }
+                            } catch(e) { /* fallback to full reload */ loadData(); }
+                        } else if (msg.type === 'overrides') {
+                            // Overrides changed; reload to refresh thresholds
+                            loadData();
+                        } else if (msg.type === 'apply_ack' || msg.type === 'recalculate_ack') {
+                            loadData();
+                        }
+                    } catch(e){}
+                };
+            } catch(e) { /* fallback only */ }
+        })();
+
+        // Load data on page load and refresh; polling acts as fallback
+        loadData();
+        window.refreshInterval = setInterval(loadData, 500);
+    </script>
+</body>
+</html>
