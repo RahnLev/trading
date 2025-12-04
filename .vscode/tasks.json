@@ -172,5 +172,19 @@
 			],
 			"group": "build"
 		}
+		,
+		{
+			"label": "Run Dashboard",
+			"type": "shell",
+			"command": "${workspaceFolder}\\web\\dashboard\\start-dashboard.cmd",
+			"options": {
+				"cwd": "${workspaceFolder}\\web\\dashboard"
+			},
+			"problemMatcher": [],
+			"presentation": {
+				"reveal": "always",
+				"panel": "dedicated"
+			}
+		}
 	]
 }

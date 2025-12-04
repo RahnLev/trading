@@ -7,10 +7,88 @@ from datetime import datetime
 from typing import List, Dict, Any
 from collections import deque
 from fastapi import FastAPI, Request
+from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# Add CORS middleware to allow browser access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+ws_clients: List[WebSocket] = []
+
+async def ws_broadcast(message: Dict[str, Any]):
+    """Broadcast a JSON message to all connected WebSocket clients."""
+    stale: List[WebSocket] = []
+    for ws in ws_clients:
+        try:
+            await ws.send_json(message)
+        except Exception:
+            stale.append(ws)
+    # Remove stale connections
+    for s in stale:
+        try:
+            ws_clients.remove(s)
+        except ValueError:
+            pass
+
+@app.websocket('/ws')
+async def ws_endpoint(ws: WebSocket):
+    await ws.accept()
+    ws_clients.append(ws)
+    try:
+        # On connect: send a brief status snapshot
+        await ws.send_json({
+            'type': 'welcome',
+            'diags_count': len(diags),
+            'ts': time.time()
+        })
+        while True:
+            data = await ws.receive_json()
+            msg_type = data.get('type')
+            if msg_type == 'apply':
+                # Route to existing apply logic
+                prop = data.get('property')
+                val = data.get('value') if 'value' in data else data.get('recommend')
+                # Construct a fake Request with JSON body is non-trivial; call helper directly
+                # Refactor apply logic into a small helper
+                result = _apply_override_direct(prop, val)
+                await ws.send_json({'type': 'apply_ack', **result})
+            elif msg_type == 'recalculate':
+                result = _recalculate_direct()
+                await ws.send_json({'type': 'recalculate_ack', **result})
+            else:
+                await ws.send_json({'type': 'error', 'message': 'unknown_ws_message', 'received': data})
+    except WebSocketDisconnect:
+        # Client disconnected
+        try:
+            ws_clients.remove(ws)
+        except ValueError:
+            pass
+    except Exception as ex:
+        try:
+            await ws.send_json({'type': 'error', 'message': str(ex)})
+        except Exception:
+            pass
+        try:
+            ws_clients.remove(ws)
+        except ValueError:
+            pass
+
+def parse_bool(val):
+    """Parse strategy's string booleans (true/false) to Python bool."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ('true', '1', 'yes')
+    return bool(val)
 
 # --- SQLite configuration with connection pooling ---
 USE_SQLITE = True
@@ -480,6 +558,10 @@ MAX_DIAGS = 5000
 BAR_CACHE_MAX = 400  # adjustable; small to keep lookup O(n) trivial
 bar_cache: deque[Dict[str, Any]] = deque(maxlen=BAR_CACHE_MAX)
 
+# --- Log entry cache for tracking actual strategy decisions ---
+LOG_CACHE_MAX = 1000  # Keep last 1000 log entries (entry/exit/filter decisions)
+log_cache: deque[Dict[str, Any]] = deque(maxlen=LOG_CACHE_MAX)
+
 def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
     """Extract a normalized minimal bar record from a raw diag payload."""
     try:
@@ -487,6 +569,10 @@ def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
             'barIndex': p.get('barIndex') or p.get('BarIndex'),
             'ts': p.get('receivedTs'),
             'localTime': p.get('localTime') or p.get('time'),
+            'open': float(p.get('Open') or p.get('open') or 0.0),
+            'high': float(p.get('High') or p.get('high') or 0.0),
+            'low': float(p.get('Low') or p.get('low') or 0.0),
+            'close': float(p.get('Close') or p.get('close') or 0.0),
             'fastGrad': float(p.get('FastGrad') or p.get('fastGrad') or 0.0),
             'slowGrad': float(p.get('SlowGrad') or p.get('slowGrad') or 0.0),
             'accel': float(p.get('Accel') or p.get('accel') or 0.0),
@@ -494,11 +580,42 @@ def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
             'rsi': float(p.get('RSI') or p.get('rsi') or 0.0),
             'fastEMA': float(p.get('FastEMA') or p.get('fastEMA') or 0.0),
             'slowEMA': float(p.get('SlowEMA') or p.get('slowEMA') or 0.0),
-            'close': float(p.get('Close') or p.get('close') or 0.0),
             'gradStab': float(p.get('GradStab') or p.get('gradStab') or 0.0),
             'bandwidth': float(p.get('Bandwidth') or p.get('bandwidth') or 0.0),
             'unrealized': float(p.get('Unrealized') or p.get('unrealized') or 0.0),
             'trendSide': p.get('trendSide') or p.get('TrendSide') or None,
+            # entry diagnostics (flat fields)
+            'signalEligibleLong': bool(p.get('signalEligibleLong')),
+            'signalEligibleShort': bool(p.get('signalEligibleShort')),
+            'streakLong': int(p.get('streakLong') or 0),
+            'streakShort': int(p.get('streakShort') or 0),
+            'priceAboveEMAs': bool(p.get('priceAboveEMAs')),
+            'priceBelowEMAs': bool(p.get('priceBelowEMAs')),
+            'gradDirLongOk': bool(p.get('gradDirLongOk')),
+            'gradDirShortOk': bool(p.get('gradDirShortOk')),
+            'fastStrongForEntryLong': bool(p.get('fastStrongForEntryLong')),
+            'fastStrongForEntryShort': bool(p.get('fastStrongForEntryShort')),
+            'notOverextended': parse_bool(p.get('notOverextended')),
+            'adxOk': parse_bool(p.get('adxOk')),
+            'gradStabOk': parse_bool(p.get('gradStabOk')),
+            'bandwidthOk': parse_bool(p.get('bandwidthOk')),
+            'accelAlignOkLong': parse_bool(p.get('accelAlignOkLong')),
+            'accelAlignOkShort': parse_bool(p.get('accelAlignOkShort')),
+            'atrOk': parse_bool(p.get('atrOk')),
+            'rsiOk': parse_bool(p.get('rsiOk')),
+            'entryLongReady': bool(p.get('entryLongReady')),
+            'entryShortReady': bool(p.get('entryShortReady')),
+            # thresholds snapshot
+            'entryGradThrLong': float(p.get('entryGradThrLong') or 0.0),
+            'entryGradThrShort': float(p.get('entryGradThrShort') or 0.0),
+            'maxEntryFastGradAbs': float(p.get('maxEntryFastGradAbs') or 0.0),
+            'minAdxForEntry': float(p.get('minAdxForEntry') or 0.0),
+            'maxGradientStabilityForEntry': float(p.get('maxGradientStabilityForEntry') or 0.0),
+            'minBandwidthForEntry': float(p.get('minBandwidthForEntry') or 0.0),
+            'maxBandwidthForEntry': float(p.get('maxBandwidthForEntry') or 0.0),
+            'maxATRForEntry': float(p.get('maxATRForEntry') or 0.0),
+            'minRSIForEntry': float(p.get('minRSIForEntry') or 0.0),
+            'entryBarDelay': int(p.get('entryBarDelay') or 0),
         }
     except Exception:
         # Fallback with minimal keys if casting fails
@@ -554,11 +671,12 @@ AUTO_APPLY_STEPS = {
     'MinHoldBars': 1,  # increase to force longer holds (positive)
 }
 AUTO_APPLY_BOUNDS = {
-    'MinEntryFastGradientAbs': (0.05, 1.0),
-    'MinAdxForEntry': (10.0, 30.0),  # ADX bounds
+    'MinEntryFastGradientAbs': (0.001, 1.0),
+    'MinAdxForEntry': (8.0, 30.0),  # ADX bounds
     'RsiEntryFloor': (30.0, 70.0),
     'ValidationMinFastGradientAbs': (0.05, 0.20),  # exit threshold bounds
     'MinHoldBars': (2, 10),  # hold time bounds
+    'MaxBandwidthForEntry': (0.05, 0.60),  # overextension cap
 }
 AUTO_APPLY_COOLDOWN_SEC = 300  # min seconds between auto applies for same property
 AUTO_APPLY_DAILY_LIMIT = 5     # per property per calendar day
@@ -629,6 +747,7 @@ DEFAULT_PARAMS = {
     'MaxGradientStabilityForEntry': 2.0,
     'MinEntryFastGradientAbs': 0.30,
     'MaxBandwidthForEntry': 0.120,
+    'MaxEntryFastGradientAbs': 0.80,  # overextension cap - max absolute fast gradient for entry
     # Adaptive entry controls
     'AdaptiveMinFloor': 0.30,
     'AdaptiveNearZeroMultiplier': 0.85,
@@ -658,6 +777,42 @@ def index():
 def favicon():
     # Silence browser favicon requests; you can add a real icon in /static later
     return HTMLResponse(status_code=204)
+
+@app.get('/filter_analysis.html', response_class=HTMLResponse)
+@app.get('/filter_analysis', response_class=HTMLResponse)
+def filter_analysis():
+    # Serve the filter analysis page
+    analysis_path = os.path.join(os.path.dirname(static_dir), 'filter_analysis.html')
+    try:
+        with open(analysis_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return HTMLResponse(f'<h1>Filter Analysis Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
+@app.get('/ping')
+def ping():
+    return JSONResponse({'status': 'ok', 'time': time.time()})
+
+@app.post('/recalculate')
+def recalculate():
+    """Trigger a lightweight recalculation cycle: recompute effective params,
+    run auto-apply evaluator once, and return current state for the UI.
+    """
+    try:
+        effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
+        if AUTO_APPLY_ENABLED:
+            evaluate_auto_apply(time.time())
+            # Refresh effective after potential changes
+            effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
+        return JSONResponse({
+            'status': 'ok',
+            'effectiveParams': effective,
+            'overrides': active_overrides,
+            'streaks': property_streaks,
+            'recentAutoApplyEvents': auto_apply_events_cache[-10:]
+        })
+    except Exception as ex:
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
     
 @app.get('/health')
 def health():
@@ -742,255 +897,158 @@ async def receive_diag(request: Request):
                 print(f"[SERVER] Received diags: {len(diags)} last barIndex={p.get('barIndex')} time={p.get('localTime')}")
                 print(f"[SERVER] Keys in payload: {keys}")
 
-            # Trend update
-            fast_grad = p.get("FastGrad") or p.get("fastGrad") or 0.0
-            side = "BULL" if float(fast_grad) >= 0 else "BEAR"
-            now_ts = time.time()
-            global current_trend, trend_segments, pending_flip_side, pending_flip_count
-            # Add trendSide enrichment to last cached bar if matching
+            # Broadcast compact diagnostic to WebSocket clients
             try:
-                if bar_cache and bar_cache[-1].get('barIndex') == p.get('barIndex'):
-                    bar_cache[-1]['trendSide'] = side
-            except Exception:
-                pass
-            if (current_trend is None) or (current_trend.get("side") is None):
-                current_trend = {
-                    "side": side,
-                    "startTs": now_ts,
-                    "startLocal": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "startBarIndex": p.get("barIndex"),
-                    "count": 0,
-                    "good": 0,
-                    "bad": 0,
-                    "pnlProxy": 0.0,
+                compact = {
+                    'receivedAt': p.get('receivedTs'),
+                    'time': p.get('localTime') or p.get('time'),
+                    'barIndex': p.get('barIndex') or p.get('BarIndex'),
+                    'fastGrad': p.get('fastGrad') if p.get('fastGrad') is not None else p.get('FastGrad'),
+                    'slowGrad': p.get('slowGrad') if p.get('slowGrad') is not None else p.get('SlowGrad'),
+                    'accel': p.get('accel') if p.get('accel') is not None else p.get('Accel'),
+                    'adx': p.get('adx') if p.get('adx') is not None else p.get('ADX'),
+                    'fastEMA': p.get('fastEMA') if p.get('fastEMA') is not None else p.get('FastEMA'),
+                    'slowEMA': p.get('slowEMA') if p.get('slowEMA') is not None else p.get('SlowEMA'),
+                    'close': p.get('close') if p.get('close') is not None else p.get('Close'),
+                    'atr': p.get('atr') if p.get('atr') is not None else p.get('ATR'),
+                    'rsi': p.get('rsi') if p.get('rsi') is not None else p.get('RSI'),
+                    'signal': p.get('signal') if p.get('signal') is not None else p.get('Signal'),
+                    'blockersLong': p.get('blockersLong') or [],
+                    'blockersShort': p.get('blockersShort') or [],
+                    'gradStab': p.get('gradStab') or p.get('GradStab'),
+                    'bandwidth': p.get('bandwidth') or p.get('Bandwidth'),
+                    # Timing fields if present
+                    'barsInSignal': p.get('barsInSignal'),
+                    'signalStartBar': p.get('signalStartBar'),
+                    'entryDelayMet': p.get('entryDelayMet'),
+                    'canEnterLong': p.get('canEnterLong'),
+                    'canEnterShort': p.get('canEnterShort'),
+                    'myPosition': p.get('myPosition'),
+                    'inWeakReversalDelay': p.get('inWeakReversalDelay'),
+                    # Threshold fields for chip display
+                    'entryGradThrLong': p.get('entryGradThrLong'),
+                    'entryGradThrShort': p.get('entryGradThrShort'),
+                    'minAdxForEntry': p.get('minAdxForEntry'),
+                    'maxGradientStabilityForEntry': p.get('maxGradientStabilityForEntry'),
+                    'minBandwidthForEntry': p.get('minBandwidthForEntry'),
+                    'maxBandwidthForEntry': p.get('maxBandwidthForEntry'),
+                    'maxATRForEntry': p.get('maxATRForEntry'),
+                    'minRSIForEntry': p.get('minRSIForEntry'),
+                    'maxEntryFastGradientAbs': p.get('maxEntryFastGradientAbs') or p.get('MaxEntryFastGradientAbs'),
+                    # Condition result booleans
+                    'adxOk': p.get('adxOk'),
+                    'gradStabOk': p.get('gradStabOk'),
+                    'bandwidthOk': p.get('bandwidthOk'),
+                    'atrOk': p.get('atrOk'),
+                    'rsiOk': p.get('rsiOk'),
+                    'accelAlignOkLong': p.get('accelAlignOkLong'),
+                    'accelAlignOkShort': p.get('accelAlignOkShort'),
+                    'fastStrongForEntryLong': p.get('fastStrongForEntryLong'),
+                    'fastStrongForEntryShort': p.get('fastStrongForEntryShort'),
+                    'notOverextended': p.get('notOverextended'),
+                    'priceAboveEMAs': p.get('priceAboveEMAs'),
+                    'priceBelowEMAs': p.get('priceBelowEMAs'),
+                    'gradDirLongOk': p.get('gradDirLongOk'),
+                    'gradDirShortOk': p.get('gradDirShortOk'),
+                    'signalEligibleLong': p.get('signalEligibleLong'),
+                    'signalEligibleShort': p.get('signalEligibleShort'),
+                    'streakLong': p.get('streakLong'),
+                    'streakShort': p.get('streakShort'),
+                    'entryBarDelay': p.get('entryBarDelay')
                 }
-            elif current_trend.get("side") != side:
-                # Handle potential trend flip with confirmation logic
-                if pending_flip_side == side:
-                    pending_flip_count += 1
-                else:
-                    pending_flip_side = side
-                    pending_flip_count = 1
-
-                # Confirm flip only after required consecutive bars
-                if pending_flip_count >= MIN_CONSEC_FOR_TREND_FLIP:
-                    current_trend["endTs"] = now_ts
-                    current_trend["endLocal"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    current_trend["endBarIndex"] = p.get("barIndex")
-                    trend_segments.append(current_trend)
-                    current_trend = {
-                        "side": side,
-                        "startTs": now_ts,
-                        "startLocal": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "startBarIndex": p.get("barIndex"),
-                        "count": 0,
-                        "good": 0,
-                        "bad": 0,
-                        "pnlProxy": 0.0,
-                    }
-                    # reset pending flip state
-                    pending_flip_side = None
-                    pending_flip_count = 0
-            else:
-                # Same side continues, reset any pending opposite flip
-                pending_flip_side = None
-                pending_flip_count = 0
-
-            current_trend["count"] += 1
-            close = p.get("Close") if (p.get("Close") is not None) else p.get("close")
-            fast_ema = p.get("FastEMA") if (p.get("FastEMA") is not None) else p.get("fastEMA")
-            fast_grad_val = p.get("FastGrad") if (p.get("FastGrad") is not None) else p.get("fastGrad")
-            accel_val = p.get("Accel") if (p.get("Accel") is not None) else p.get("accel")
-            try:
-                global trend_inputs_missing_count, trend_goodbad_updates
-                if (close is not None) and (fast_ema is not None):
-                    close_f = float(close)
-                    fast_f = float(fast_ema)
-                    fg = float(fast_grad_val) if fast_grad_val is not None else 0.0
-                    accel = float(accel_val) if accel_val is not None else 0.0
-                    
-                    # Improved bad bar detection: check momentum direction vs trend direction
-                    # BULL trend: bad if fastGrad turns negative (counter-trend momentum)
-                    # BEAR trend: bad if fastGrad turns positive (counter-trend momentum)
-                    # Also consider strong deceleration as bad (accel opposing gradient)
-                    if side == "BULL":
-                        # Good: fastGrad positive and price above EMA
-                        # Bad: fastGrad negative OR strong deceleration (accel < -0.01 and fg < 0.02)
-                        is_bad = (fg < 0) or (accel < -0.01 and fg < 0.02)
-                        reason = []
-                        if fg < 0: reason.append("fastGrad<0 counter-trend")
-                        if (accel < -0.01 and fg < 0.02): reason.append("deceleration")
-                        current_trend["good"] += 0 if is_bad else 1
-                        current_trend["bad"] += 1 if is_bad else 0
-                        current_trend["pnlProxy"] += (close_f - fast_f)
-                    else:  # BEAR
-                        # Good: fastGrad negative and price below EMA
-                        # Bad: fastGrad positive OR strong acceleration (accel > 0.01 and fg > -0.02)
-                        is_bad = (fg > 0) or (accel > 0.01 and fg > -0.02)
-                        reason = []
-                        if fg > 0: reason.append("fastGrad>0 counter-trend")
-                        if (accel > 0.01 and fg > -0.02): reason.append("acceleration")
-                        current_trend["good"] += 0 if is_bad else 1
-                        current_trend["bad"] += 1 if is_bad else 0
-                        current_trend["pnlProxy"] += (fast_f - close_f)
-                    # Mirror counts to legacy keys for UI consistency
-                    current_trend["good_candles"] = current_trend.get("good", 0)
-                    current_trend["bad_candles"] = current_trend.get("bad", 0)
-                    # Persist classification for debugging
-                    try:
-                        if USE_SQLITE:
-                            db_exec(
-                                "INSERT INTO dev_classifications (ts, barIndex, side, fastGrad, accel, fastEMA, close, isBad, reason) VALUES (?,?,?,?,?,?,?,?,?)",
-                                (
-                                    p.get('receivedTs'),
-                                    p.get('barIndex'),
-                                    side,
-                                    fg,
-                                    accel,
-                                    fast_f,
-                                    close_f,
-                                    1 if is_bad else 0,
-                                    ";".join(reason) if reason else ("good" if not is_bad else "bad")
-                                )
-                            )
-                    except Exception as ex_cls:
-                        print('[DB] dev_classifications insert failed:', ex_cls)
-                    trend_goodbad_updates += 1
-                else:
-                    trend_inputs_missing_count += 1
-            except Exception:
-                trend_inputs_missing_count += 1
-            # --- Persist to SQLite (basic subset) ---
-            try:
-                if USE_SQLITE:
-                    blk_long = p.get('blockersLong') or []
-                    blk_short = p.get('blockersShort') or []
-                    accel_val = p.get('Accel') if (p.get('Accel') is not None) else p.get('accel')
-                    fast_ema_val = p.get('FastEMA') if (p.get('FastEMA') is not None) else p.get('fastEMA')
-                    slow_ema_val = p.get('SlowEMA') if (p.get('SlowEMA') is not None) else p.get('slowEMA')
-                    close_val = p.get('Close') if (p.get('Close') is not None) else p.get('close')
-                    db_exec(
-                        "INSERT INTO diags (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, volume, accel, fastEMA, slowEMA, close, blockersLong, blockersShort, trendSide) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            p.get('receivedTs'),
-                            p.get('barIndex'),
-                            float(p.get('FastGrad') or p.get('fastGrad') or 0.0),
-                            float(p.get('RSI') or p.get('rsi') or 0.0),
-                            float(p.get('ADX') or p.get('adx') or 0.0),
-                            float(p.get('GradStab') or p.get('gradStab') or 0.0),
-                            float(p.get('Bandwidth') or p.get('bandwidth') or 0.0),
-                            float(p.get('Volume') or p.get('volume') or 0.0),
-                            float(accel_val or 0.0),
-                            float(fast_ema_val or 0.0),
-                            float(slow_ema_val or 0.0),
-                            float(close_val or 0.0),
-                            json.dumps(blk_long)[:1000],
-                            json.dumps(blk_short)[:1000],
-                            side
-                        )
-                    )
-            except Exception as db_ex:
-                print('[DB] diag insert failed:', db_ex)
-            # Debug metric: static bad count anomaly detection every 25 bars
-            try:
-                if USE_SQLITE and current_trend.get('count',0) % 25 == 0:
-                    # If bad stayed zero while at least 10 bearish or bullish bars processed and fg variance observed
-                    bad_val = current_trend.get('bad',0)
-                    good_val = current_trend.get('good',0)
-                    count_val = current_trend.get('count',0)
-                    if bad_val == 0 and count_val >= 25:
-                        db_exec(
-                            "INSERT INTO dev_metrics (ts, metric, value, details) VALUES (?,?,?,?)",
-                            (time.time(), 'anomaly_no_bad_bars', 1, f'side={side} count={count_val} good={good_val} bad={bad_val}')
-                        )
-                    else:
-                        db_exec(
-                            "INSERT INTO dev_metrics (ts, metric, value, details) VALUES (?,?,?,?)",
-                            (time.time(), 'trend_progress', count_val, f'good={good_val} bad={bad_val}')
-                        )
-            except Exception as exm:
-                print('[DB] dev_metrics insert failed:', exm)
-
-            # ---- Weak gradient auto-suggestion counter update ----
-            try:
-                global weak_grad_consec
-                effective_min_fast = float(active_overrides.get('MinEntryFastGradientAbs', DEFAULT_PARAMS['MinEntryFastGradientAbs']))
-                adaptive_floor = float(active_overrides.get('AdaptiveMinFloor', DEFAULT_PARAMS['AdaptiveMinFloor']))
-                effective_min_fast = max(adaptive_floor, effective_min_fast)
-                fg_abs = abs(float(fast_grad))
-                tolerance = 0.02
-                if fg_abs < effective_min_fast - tolerance:
-                    weak_grad_consec += 1
-                else:
-                    weak_grad_consec = 0
-            except Exception:
+                await ws_broadcast({'type': 'diag', 'data': compact})
+            except Exception as _ex_ws:
+                # Non-fatal
                 pass
-
-            # ---- RSI below floor streak counter ----
-            try:
-                global rsi_below_consec
-                rsi_val = p.get('RSI') if p.get('RSI') is not None else p.get('rsi')
-                if rsi_val is not None:
-                    rsi_f = float(rsi_val)
-                    rsi_floor = float(active_overrides.get('RsiEntryFloor', DEFAULT_PARAMS['RsiEntryFloor']))
-                    tolerance = 0.5
-                    if rsi_f < rsi_floor - tolerance:
-                        rsi_below_consec += 1
-                        property_streaks['RsiEntryFloor'] += 1
-                    else:
-                        rsi_below_consec = 0
-                        property_streaks['RsiEntryFloor'] = 0
-            except Exception:
-                pass
-
-            # ---- Property-specific streak accumulation for auto-apply (fast gradient) ----
-            try:
-                fg_abs_local = abs(float(fast_grad))
-                eff_min_fast_local = max(
-                    float(active_overrides.get('AdaptiveMinFloor', DEFAULT_PARAMS['AdaptiveMinFloor'])),
-                    float(active_overrides.get('MinEntryFastGradientAbs', DEFAULT_PARAMS['MinEntryFastGradientAbs']))
-                )
-                if fg_abs_local < eff_min_fast_local - 0.02:
-                    property_streaks['MinEntryFastGradientAbs'] += 1
-                    # Log entry cancellation for investigation
-                    try:
-                        rsi_val = p.get('RSI') if p.get('RSI') is not None else p.get('rsi')
-                        adx_val = p.get('ADX') if p.get('ADX') is not None else p.get('adx')
-                        grad_stab_val = p.get('GradStab') if p.get('GradStab') is not None else p.get('gradStab')
-                        bandwidth_val = p.get('Bandwidth') if p.get('Bandwidth') is not None else p.get('bandwidth')
-                        blockers_long_val = p.get('BlockersLong', p.get('blockersLong', []))
-                        blockers_short_val = p.get('BlockersShort', p.get('blockersShort', []))
-                        rsi_floor_eff = float(active_overrides.get('RsiEntryFloor', DEFAULT_PARAMS['RsiEntryFloor']))
-                        db_exec("""
-                            INSERT INTO entry_cancellations 
-                            (ts, barIndex, fastGrad, rsi, adx, gradStab, bandwidth, volume,
-                             blockersLong, blockersShort, trendSide, effectiveMinGrad, 
-                             effectiveRsiFloor, weakGradStreak, rsiBelowStreak)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            now_ts, p.get('barIndex'), fast_grad, rsi_val, adx_val, grad_stab_val, bandwidth_val,
-                            float(p.get('Volume') or p.get('volume') or 0.0),
-                            json.dumps(blockers_long_val), json.dumps(blockers_short_val), side,
-                            eff_min_fast_local, rsi_floor_eff,
-                            property_streaks['MinEntryFastGradientAbs'], rsi_below_consec
-                        ))
-                    except Exception as db_ex:
-                        print('[DB] entry_cancellations insert failed:', db_ex)
-                else:
-                    property_streaks['MinEntryFastGradientAbs'] = 0
-            except Exception:
-                pass
-
-            # ---- Evaluate auto-apply conditions ----
-            try:
-                if AUTO_APPLY_ENABLED:
-                    evaluate_auto_apply(now_ts)
-            except Exception as ex_auto:
-                print('[AUTO] evaluation error:', ex_auto)
         except Exception as ex:
-            print("[SERVER] diag process error:", ex)
+            print(f"[DIAG] Error processing item: {ex}")
+    
+    return JSONResponse({"status": "ok", "count": len(items)})
 
-    return {"status": "ok", "received": len(items)}
+# --- Small helpers to re-use apply/recalculate logic for WebSocket ---
+def _recalculate_direct() -> Dict[str, Any]:
+    try:
+        effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
+        if AUTO_APPLY_ENABLED:
+            evaluate_auto_apply(time.time())
+            effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
+        return {
+            'status': 'ok',
+            'effectiveParams': effective,
+            'overrides': active_overrides,
+            'streaks': property_streaks,
+            'recentAutoApplyEvents': auto_apply_events_cache[-10:]
+        }
+    except Exception as ex:
+        return {'status': 'error', 'message': str(ex)}
+
+def _apply_override_direct(prop: Any, val: Any) -> Dict[str, Any]:
+    try:
+        if prop is None:
+            return {'error': 'missing_property', 'message': 'Provide property'}
+        if val is None:
+            return {'error': 'missing_value', 'message': 'Provide value'}
+        alias_map = {
+            'minadxforentry': 'MinAdxForEntry',
+            'minAdxForEntry': 'MinAdxForEntry',
+            'rsientryfloor': 'RsiEntryFloor',
+            'RsiEntryFloor': 'RsiEntryFloor',
+            'rsishortfloor': 'RsiEntryFloor',
+            'RsiShortFloor': 'RsiEntryFloor',
+            'rsilongfloor': 'RsiEntryFloor',
+            'RsiLongFloor': 'RsiEntryFloor',
+            'fastgrad': 'MinEntryFastGradientAbs',
+            'FastGrad': 'MinEntryFastGradientAbs',
+            'overextend': 'MaxBandwidthForEntry',
+            'Overextend': 'MaxBandwidthForEntry',
+            'maxbandwidthforentry': 'MaxBandwidthForEntry',
+            'MaxBandwidthForEntry': 'MaxBandwidthForEntry',
+            'minentryfastgradientabs': 'MinEntryFastGradientAbs',
+            'MinEntryFastGradientAbs': 'MinEntryFastGradientAbs',
+            'maxentryfastgradientabs': 'MaxEntryFastGradientAbs',
+            'MaxEntryFastGradientAbs': 'MaxEntryFastGradientAbs',
+            'validationminfastgradientabs': 'ValidationMinFastGradientAbs',
+            'ValidationMinFastGradientAbs': 'ValidationMinFastGradientAbs',
+            'minholdbars': 'MinHoldBars',
+            'MinHoldBars': 'MinHoldBars',
+            'maxgradientstabilityforentry': 'MaxGradientStabilityForEntry',
+            'MaxGradientStabilityForEntry': 'MaxGradientStabilityForEntry'
+        }
+        prop_n = alias_map.get(prop, alias_map.get(str(prop).lower(), prop))
+        known_props = set(DEFAULT_PARAMS.keys())
+        if prop_n not in known_props:
+            return {'error': 'unknown_property', 'property': prop_n, 'known': sorted(list(known_props))}
+        try:
+            val_f = float(val)
+        except Exception:
+            return {'error': 'invalid_value', 'message': f'Value for {prop_n} must be numeric', 'received': val}
+        bounds = AUTO_APPLY_BOUNDS.get(prop_n)
+        if bounds:
+            lo, hi = bounds
+            if not (lo <= val_f <= hi):
+                return {'error': 'out_of_bounds', 'property': prop_n, 'value': val_f, 'bounds': {'min': lo, 'max': hi}}
+        prev = active_overrides.get(prop_n)
+        active_overrides[prop_n] = val_f
+        print(f"[APPLY/WS] Override set {prop_n}={val} (prev={prev})")
+        try:
+            if USE_SQLITE:
+                db_exec(
+                    "INSERT INTO overrides_history (ts, property, oldValue, newValue, source) VALUES (?,?,?,?,?)",
+                    (time.time(), prop_n, float(prev) if prev is not None else None, val_f, 'ws')
+                )
+        except Exception:
+            pass
+        save_overrides_to_disk()
+        effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
+        # Also broadcast new effective params to all clients
+        try:
+            import asyncio
+            asyncio.create_task(ws_broadcast({'type': 'overrides', 'effectiveParams': effective, 'overrides': active_overrides}))
+        except Exception:
+            pass
+        return {'status': 'ok', 'property': prop_n, 'value': val_f, 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS}
+    except Exception as ex:
+        return {'status': 'error', 'message': str(ex)}
 
 @app.get('/stats')
 def stats():
@@ -1174,6 +1232,51 @@ def bars_latest(limit: int = 50):
                 print('[BARS] classification join error:', ex)
     return JSONResponse({'bars': bars, 'count': len(bars)})
 
+@app.post('/log')
+async def post_log(request: Request):
+    """Receive log entries from strategy (entry/exit/filter decisions)."""
+    try:
+        payload = await request.json()
+        log_entry = {
+            'ts': time.time(),
+            'barIndex': payload.get('barIndex'),
+            'action': payload.get('action'),  # 'ENTRY', 'EXIT', 'FILTER_BLOCK'
+            'direction': payload.get('direction'),  # 'LONG', 'SHORT'
+            'reason': payload.get('reason', ''),
+            'data': payload.get('data', {})  # Additional context
+        }
+        log_cache.append(log_entry)
+        return JSONResponse({'status': 'ok', 'cached': len(log_cache)})
+    except Exception as e:
+        print(f'[LOG] Error: {e}')
+        return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
+
+@app.get('/logs/recent')
+def get_recent_logs(limit: int = 100):
+    """Get recent log entries."""
+    limit = max(1, min(limit, LOG_CACHE_MAX))
+    logs = list(log_cache)[-limit:]
+    return JSONResponse({'logs': logs, 'count': len(logs)})
+
+@app.post('/logs/clear')
+async def clear_logs():
+    """Clear the log cache (useful to reset position tracking)."""
+    try:
+        log_cache.clear()
+        print('[LOG] Cache cleared')
+        return JSONResponse({'status': 'ok', 'message': 'Log cache cleared'})
+    except Exception as e:
+        print(f'[LOG] Clear error: {e}')
+        return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
+
+@app.get('/trends/segments')
+def get_trend_segments(limit: int = 20):
+    """Get recent trend segments with start bar."""
+    limit = max(1, min(limit, 100))
+    segments = trend_segments[-limit:] if trend_segments else []
+    current = current_trend if current_trend.get('side') else None
+    return JSONResponse({'segments': segments, 'current': current, 'count': len(segments)})
+
 @app.get('/bars/around')
 def bars_around(center: int, window: int = 10):
     """Return bars around a center barIndex (inclusive range)."""
@@ -1202,6 +1305,45 @@ def bars_around(center: int, window: int = 10):
             except Exception as ex:
                 print('[BARS] classification join error:', ex)
     return JSONResponse({'center': center, 'window': window, 'bars': subset, 'count': len(subset)})
+
+@app.get('/bars/detail/{barIndex}')
+def get_bar_detail(barIndex: int):
+    """Get comprehensive bar details including metrics and entry decision diagnostics from logs."""
+    # Find bar in cache
+    bar_data = next((b for b in bar_cache if b.get('barIndex') == barIndex), None)
+    if not bar_data:
+        return JSONResponse({'status': 'error', 'message': f'Bar {barIndex} not found in cache'}, status_code=404)
+    
+    # Find related log entries (entry decisions, filter blocks, etc.)
+    related_logs = [log for log in log_cache if log.get('barIndex') == barIndex]
+    
+    # Build comprehensive response
+    result = {
+        'barIndex': barIndex,
+        'bar': bar_data,
+        'logs': related_logs,
+        'entryAttempt': None,
+        'filterBlocks': []
+    }
+    
+    # Extract entry decision details
+    for log in related_logs:
+        action = log.get('action', '')
+        if action in ['ENTRY_DECISION', 'ENTRY', 'ENTRY_FILTER_BLOCKED']:
+            result['entryAttempt'] = {
+                'action': action,
+                'direction': log.get('direction'),
+                'reason': log.get('reason', ''),
+                'data': log.get('data', {})
+            }
+            if action == 'ENTRY_FILTER_BLOCKED':
+                result['filterBlocks'].append({
+                    'direction': log.get('direction'),
+                    'reason': log.get('reason', ''),
+                    'filters': log.get('data', {})
+                })
+    
+    return JSONResponse(result)
 
 @app.post('/trade_completed')
 async def trade_completed(request: Request):
@@ -1532,30 +1674,78 @@ async def apply_override(request: Request):
     try:
         payload = await request.json()
     except Exception:
-        return JSONResponse({'error': 'invalid_json'}, status_code=400)
+        return JSONResponse({'error': 'invalid_json', 'message': 'Body must be valid JSON with keys property/value'}, status_code=400)
 
     prop = payload.get('property')
     val = payload.get('value') if 'value' in payload else payload.get('recommend')
     if not prop:
-        return JSONResponse({'error': 'missing_property'}, status_code=400)
+        return JSONResponse({'error': 'missing_property', 'message': 'Provide "property": canonical or alias name'}, status_code=400)
     if val is None:
-        return JSONResponse({'error': 'missing_value'}, status_code=400)
+        return JSONResponse({'error': 'missing_value', 'message': 'Provide numeric "value" or "recommend"'}, status_code=400)
+
+    # Normalize property aliases/casing for robustness
+    alias_map = {
+        'minadxforentry': 'MinAdxForEntry',
+        'minAdxForEntry': 'MinAdxForEntry',
+        'rsientryfloor': 'RsiEntryFloor',
+        'RsiEntryFloor': 'RsiEntryFloor',
+        'rsishortfloor': 'RsiEntryFloor',
+        'RsiShortFloor': 'RsiEntryFloor',
+        'rsilongfloor': 'RsiEntryFloor',
+        'RsiLongFloor': 'RsiEntryFloor',
+        'fastgrad': 'MinEntryFastGradientAbs',
+        'FastGrad': 'MinEntryFastGradientAbs',
+        'overextend': 'MaxBandwidthForEntry',
+        'Overextend': 'MaxBandwidthForEntry',
+        'maxbandwidthforentry': 'MaxBandwidthForEntry',
+        'MaxBandwidthForEntry': 'MaxBandwidthForEntry',
+        'minentryfastgradientabs': 'MinEntryFastGradientAbs',
+        'MinEntryFastGradientAbs': 'MinEntryFastGradientAbs',
+        'maxentryfastgradientabs': 'MaxEntryFastGradientAbs',
+        'MaxEntryFastGradientAbs': 'MaxEntryFastGradientAbs',
+        'validationminfastgradientabs': 'ValidationMinFastGradientAbs',
+        'ValidationMinFastGradientAbs': 'ValidationMinFastGradientAbs',
+        'minholdbars': 'MinHoldBars',
+        'MinHoldBars': 'MinHoldBars',
+        'maxgradientstabilityforentry': 'MaxGradientStabilityForEntry',
+        'MaxGradientStabilityForEntry': 'MaxGradientStabilityForEntry'
+    }
+    if prop:
+        prop = alias_map.get(prop, alias_map.get(str(prop).lower(), prop))
+
+    # Validate property is known
+    known_props = set(DEFAULT_PARAMS.keys())
+    if prop not in known_props:
+        return JSONResponse({'error': 'unknown_property', 'property': prop, 'known': sorted(list(known_props))}, status_code=400)
+
+    # Coerce value to float if possible
+    try:
+        val_f = float(val)
+    except Exception:
+        return JSONResponse({'error': 'invalid_value', 'message': f'Value for {prop} must be numeric', 'received': val}, status_code=400)
+
+    # Optional bounds check if defined
+    bounds = AUTO_APPLY_BOUNDS.get(prop)
+    if bounds:
+        lo, hi = bounds
+        if not (lo <= val_f <= hi):
+            return JSONResponse({'error': 'out_of_bounds', 'property': prop, 'value': val_f, 'bounds': {'min': lo, 'max': hi}}, status_code=400)
 
     # Store override
     prev = active_overrides.get(prop)
-    active_overrides[prop] = val
+    active_overrides[prop] = val_f
     print(f"[APPLY] Override set {prop}={val} (prev={prev})")
     try:
         if USE_SQLITE:
             db_exec(
                 "INSERT INTO overrides_history (ts, property, oldValue, newValue, source) VALUES (?,?,?,?,?)",
-                (time.time(), prop, float(prev) if prev is not None else None, float(val), 'manual')
+                (time.time(), prop, float(prev) if prev is not None else None, val_f, 'manual')
             )
     except Exception as db_ex:
         print('[DB] override history insert failed:', db_ex)
     save_overrides_to_disk()
     effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
-    return JSONResponse({'status': 'ok', 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS})
+    return JSONResponse({'status': 'ok', 'property': prop, 'value': val_f, 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS})
 
 @app.delete('/override/{prop}')
 def delete_override(prop: str):
@@ -1575,6 +1765,40 @@ def delete_override(prop: str):
         return JSONResponse({'status': 'ok', 'removed': prop, 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS})
     effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
     return JSONResponse({'status': 'not_found', 'overrides': active_overrides, 'effectiveParams': effective, 'defaultParams': DEFAULT_PARAMS}, status_code=404)
+
+@app.post('/reset_thresholds')
+async def reset_thresholds():
+    """Reset all threshold overrides to strategy defaults."""
+    try:
+        count = len(active_overrides)
+        print(f"[RESET] Clearing {count} active overrides")
+        
+        # Log reset event to history
+        if USE_SQLITE:
+            try:
+                db_exec(
+                    "INSERT INTO overrides_history (ts, property, oldValue, newValue, source) VALUES (?,?,?,?,?)",
+                    (time.time(), 'ALL_RESET', None, None, 'manual-reset')
+                )
+            except Exception as db_ex:
+                print('[DB] reset history insert failed:', db_ex)
+        
+        # Clear all overrides
+        active_overrides.clear()
+        save_overrides_to_disk()
+        
+        effective = { k: float(active_overrides.get(k, v)) for k, v in DEFAULT_PARAMS.items() }
+        return JSONResponse({
+            'status': 'ok',
+            'message': f'Reset {count} threshold overrides to defaults',
+            'count': count,
+            'overrides': active_overrides,
+            'effectiveParams': effective,
+            'defaultParams': DEFAULT_PARAMS
+        })
+    except Exception as ex:
+        print(f"[RESET] Error: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
 
 @app.get('/dbstats')
 def dbstats():
@@ -1876,8 +2100,8 @@ def dev_scan_bad(limit: int = 500):
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        # Fetch latest diags with needed fields
-        cur.execute("SELECT id, ts, barIndex, fastGrad, accel, fastEMA, close, trendSide FROM diags ORDER BY id DESC LIMIT ?", (min(limit,2000),))
+        # Fetch latest diags with needed fields including open/high/low
+        cur.execute("SELECT id, ts, barIndex, fastGrad, accel, fastEMA, open, high, low, close, trendSide FROM diags ORDER BY id DESC LIMIT ?", (min(limit,2000),))
         rows = cur.fetchall()
         recomputed = []
         mismatches = 0
@@ -1885,14 +2109,71 @@ def dev_scan_bad(limit: int = 500):
             fg = float(r['fastGrad'] or 0.0)
             accel = float(r['accel'] or 0.0)
             fastEMA = float(r['fastEMA'] or 0.0)
+            open_price = float(r['open'] or 0.0)
+            high_price = float(r['high'] or 0.0)
+            low_price = float(r['low'] or 0.0)
             close = float(r['close'] or 0.0)
             side = r['trendSide']
+            
+            # Candle color: red if close < open, green if close >= open
+            is_red_candle = close < open_price
+            is_green_candle = close >= open_price
+            
+            # Centralized bar classification logic (matches C# ClassifyBarType)
+            # BULL: positive gradient AND close above Fast EMA
+            # BEAR: negative gradient AND close below Fast EMA
+            # Otherwise: NEUTRAL (contradictory/flat)
+            if fg > 0 and close > fastEMA:
+                bar_type = "BULL"
+            elif fg < 0 and close < fastEMA:
+                bar_type = "BEAR"
+            else:
+                bar_type = "NEUTRAL"
+            
+            # A bar is "bad" if:
+            # 1. It contradicts the trend side (bar type doesn't match)
+            # 2. It has negative acceleration during a bull trend (deceleration/pullback)
+            # 3. RED candle in bull trend or GREEN candle in bear trend (contradictory candle color)
+            # 4. It's neutral (gradient and price position contradict each other)
             is_bad = False
+            reason = "good"
+            
             if side == 'BULL':
-                is_bad = (fg < 0) or (accel < -0.01 and fg < 0.02)
+                if is_red_candle:
+                    is_bad = True
+                    reason = f"red_candle_in_uptrend(open={open_price:.2f},close={close:.2f})"
+                elif bar_type != 'BULL':
+                    is_bad = True
+                    reason = f"not_bull_bar(fg={fg:.2f},close={close:.2f}vsEMA={fastEMA:.2f})"
+                elif accel < -0.3:  # Significant deceleration in uptrend
+                    is_bad = True
+                    reason = f"decel_in_uptrend(accel={accel:.2f})"
             elif side == 'BEAR':
-                is_bad = (fg > 0) or (accel > 0.01 and fg > -0.02)
-            recomputed.append({'barIndex': r['barIndex'], 'side': side, 'fastGrad': fg, 'accel': accel, 'fastEMA': fastEMA, 'close': close, 'isBad': int(is_bad)})
+                if is_green_candle:
+                    is_bad = True
+                    reason = f"green_candle_in_downtrend(open={open_price:.2f},close={close:.2f})"
+                elif bar_type != 'BEAR':
+                    is_bad = True
+                    reason = f"not_bear_bar(fg={fg:.2f},close={close:.2f}vsEMA={fastEMA:.2f})"
+                elif accel > 0.3:  # Deceleration in downtrend (less negative)
+                    is_bad = True
+                    reason = f"decel_in_downtrend(accel={accel:.2f})"
+            
+            recomputed.append({
+                'barIndex': r['barIndex'], 
+                'side': side, 
+                'barType': bar_type, 
+                'fastGrad': fg, 
+                'accel': accel, 
+                'fastEMA': fastEMA, 
+                'open': open_price,
+                'high': high_price,
+                'low': low_price,
+                'close': close, 
+                'candleColor': 'red' if is_red_candle else 'green',
+                'isBad': int(is_bad), 
+                'reason': reason
+            })
         # Compare with last classifications
         cur.execute("SELECT barIndex, isBad FROM dev_classifications ORDER BY id DESC LIMIT ?", (len(recomputed),))
         cls_rows = cur.fetchall()
