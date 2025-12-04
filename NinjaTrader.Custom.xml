@@ -42,6 +42,14 @@
             Core rule: Exit when fast EMA gradient is positive AND above threshold AND price is above fast EMA
             </summary>
         </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.GradientSlopeStrategy.ClassifyBarType(System.Int32)">
+            <summary>
+            Centralized bar classification: returns "BULL", "BEAR", or "NEUTRAL"
+            A bar is BULL if: gradient positive AND close above Fast EMA
+            A bar is BEAR if: gradient negative AND close below Fast EMA
+            Otherwise: NEUTRAL (contradictory or flat signals)
+            </summary>
+        </member>
         <member name="T:NinjaTrader.NinjaScript.Indicators.ADL">
             <summary>
             The Accumulation/Distribution (AD) study attempts to quantify the amount of volume flowing into or
