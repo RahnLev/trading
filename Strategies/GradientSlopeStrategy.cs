@@ -87,15 +87,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         private StreamWriter logWriter;
         private string logFilePath;
         
-        // Weak reversal tracking
-        private bool inWeakReversalDelay = false;
-        private int weakReversalDelayBars = 0;
-        
-        // Exit cooldown tracking - prevent consecutive trades
-        private DateTime lastExitTime = DateTime.MinValue;
-        private int exitCooldownSeconds = 0;  // Disabled cooldown
-        private bool inExitCooldown = false;  // Cooldown disabled
-        
         // Min-hold to avoid same-bar churn
         private int minHoldBars = 5; // Minimum bars to hold a position before allowing exits (0 = allow same-bar exits)
 
@@ -173,7 +164,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int weakReversalDelayPeriod = 3;  // Bars to wait after weak reversal
         private double minEntryFastGradientAbs = 0.05; // Minimum absolute fast gradient required for entry only (tunable)
         private double validationMinFastGradientAbs = 0.09; // Minimum absolute fast gradient required to stay in position
-        private double maxEntryFastGradientAbs = 0.60; // Upper cap: disallow entries when fast gradient magnitude is too large (overextension)
 
         // --- Adaptive Entry Gradient Thresholds ---
         private bool enableAdaptiveEntryGradient = true;      // adapt entry threshold based on context
@@ -208,6 +198,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double minRSIForEntry = 35.0; // Lowered to allow more entries
         private bool enableRSICeiling = true; // Enable max RSI filter
         private double maxRSIForEntry = 65.0; // New: block entries if RSI > 65
+        
+        // --- Trend tracking for dashboard ---
+        private int trendStartBar = 0;  // Bar number where current trend started
+        private string lastTrendSide = "";  // Track previous trend to detect changes
 
         // --- Runtime Overrides (fetched from dashboard) ---
         private DateTime lastOverridesFetch = DateTime.MinValue;
@@ -233,7 +227,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 bool foundMaxStab = ApplyOverride(effectiveJson, "MaxGradientStabilityForEntry", ref maxGradientStabilityForEntry);
                 bool foundMinFastGrad = ApplyOverride(effectiveJson, "MinEntryFastGradientAbs", ref minEntryFastGradientAbs);
                 bool foundMaxBandwidth = ApplyOverride(effectiveJson, "MaxBandwidthForEntry", ref maxBandwidthForEntry);
-                bool foundMaxFastGrad = ApplyOverride(effectiveJson, "MaxEntryFastGradientAbs", ref maxEntryFastGradientAbs);
+
                 bool foundRsiFloor = ApplyOverride(effectiveJson, "RsiEntryFloor", ref minRSIForEntry);
                 // Adaptive overrides
                 bool foundAdaptiveFloor = ApplyOverride(effectiveJson, "AdaptiveMinFloor", ref adaptiveMinFloor);
@@ -244,7 +238,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RevertIfMissing(foundMaxStab, 1.46, ref maxGradientStabilityForEntry, "MaxGradientStabilityForEntry");
                 RevertIfMissing(foundMinFastGrad, 0.50, ref minEntryFastGradientAbs, "MinEntryFastGradientAbs");
                 RevertIfMissing(foundMaxBandwidth, 0.100, ref maxBandwidthForEntry, "MaxBandwidthForEntry");
-                RevertIfMissing(foundMaxFastGrad, 0.60, ref maxEntryFastGradientAbs, "MaxEntryFastGradientAbs");
+
                 RevertIfMissing(foundRsiFloor, 50.0, ref minRSIForEntry, "RsiEntryFloor");
                 RevertIfMissing(foundAdaptiveFloor, 0.30, ref adaptiveMinFloor, "AdaptiveMinFloor");
                 RevertIfMissing(foundAdaptiveNearZero, 0.85, ref adaptiveNearZeroMultiplier, "AdaptiveNearZeroMultiplier");
@@ -373,25 +367,6 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Streaming diagnostics (dashboard auto-feed)
         private bool streamBarDiagnostics = true; // default ON: send compact diag each bar
-
-        // --- Early Reversal Entry (optional) ---
-        private bool enableReversalEarlyEntry = true; // master toggle
-        private int reversalLookbackBars = 12;          // bars to scan back for bear/bull context
-        private int minBearBarsForReversal = 3;         // consecutive bear bars required before bullish reversal entry
-        private int minBullBarsForReversal = 3;         // consecutive bull bars required before bearish reversal entry (future use)
-        private double minReversalDepthPoints = 8.0;    // minimum depth below fast EMA (or above for bearish) during prior trend
-        private double minAccelForReversal = 0.30;      // minimum acceleration on zero-cross bar
-        private double maxReversalStability = 2.20;     // allow slightly noisy turns but cap instability
-        private double minReversalAdx = 12.0;           // ADX floor for reversal early entry (can be lower than normal entry)
-        private int reversalHoldGuardBars = 2;          // minimum bars to hold before validation exit check
-        private double reversalStopBuffer = 6.0;        // not placed (logging only) distance beyond trough for hypothetical protective stop
-        
-        // --- Anti-Exit Logic ---
-        private bool enableAntiExit = true;             // master toggle for anti-exit logic
-        private double antiExitFastGradThreshold = 0.80; // if fastGrad magnitude >= this, block exits (strong continuation)
-        private double antiExitRsiFloor = 55.0;          // LONG: if RSI >= this during exit consideration, block exit
-        private double antiExitRsiCeiling = 45.0;        // SHORT: if RSI <= this during exit consideration, block exit
-        private double antiExitAdxFloor = 20.0;          // if ADX >= this during exit consideration, block exit (strong trend)
 
         // --- Exit Diagnostics Streaming ---
         private bool streamExitDiagnostics = true; // when true, emit EXIT_TRACE log each bar while in position
@@ -583,14 +558,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LogOutput($"Instrument: {Instrument.FullName}");
                 LogOutput($"Fast EMA: {fastEMAPeriod}, Slow EMA: {slowEMAPeriod}, Entry Delay: {entryBarDelay}");
                 LogOutput($"Weak Gradient Threshold: {weakGradientThreshold}, Delay Period: {weakReversalDelayPeriod}");
-                LogOutput($"Defaults -> MinEntryFastGrad:{minEntryFastGradientAbs:F2} ValidationMinFastGrad:{validationMinFastGradientAbs:F2} MaxEntryFastGrad:{maxEntryFastGradientAbs:F2}");
+                LogOutput($"Defaults -> MinEntryFastGrad:{minEntryFastGradientAbs:F2} ValidationMinFastGrad:{validationMinFastGradientAbs:F2}");
                 LogOutput($"AdaptiveEntry -> Enabled:{enableAdaptiveEntryGradient} NearZeroMult:{adaptiveNearZeroMultiplier:F2} DeepLegMult:{adaptiveDeepLegMultiplier:F2} DeepLegPts>={adaptiveDeepLegPoints:F1} Lookback:{adaptiveLookbackBars} Floor:{adaptiveMinFloor:F2}");
                 LogOutput($"Filters -> MinADX:{minAdxForEntry:F0} MaxGradStab:{maxGradientStabilityForEntry:F2} BW:[{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}] AccelAlign:{requireAccelAlignment}");
                 LogOutput($"Optional -> ATRCap:{(enableATRCap ? ("<= " + maxATRForEntry.ToString("F2")) : "Off")} RSIFloor:{(enableRSIFloor ? (">= " + minRSIForEntry.ToString("F1")) : "Off")} DisableEntryFilters:{disableEntryFilters}");
                 LogOutput($"Debug -> ShowBarIndexLabels:{showBarIndexLabels} ShowHud:{showHud} HudPos:{hudPosition} HudFont:{hudFontSize} AutoAddGradientPanel:{autoAddGradientPanel}");
                 LogOutput($"ExitGuard -> DualEMA:{enableDualEMAStrictExitGuard}");
                 LogOutput($"ExitMode -> SignFlip:{useSignFlipExit} Tol:{signFlipTolerance:F4}");
-                LogOutput($"Reversal -> Enable:{enableReversalEarlyEntry} Lookback:{reversalLookbackBars} MinBearBars:{minBearBarsForReversal} Depth>={minReversalDepthPoints:F1} Accel>={minAccelForReversal:F2} MaxStab<={maxReversalStability:F2} MinADX>={minReversalAdx:F1} HoldGuard:{reversalHoldGuardBars} StopBuf:{reversalStopBuffer:F1}");
                 LogOutput("=".PadRight(80, '='));
                 Print(string.Format("[GRAD] Log File: {0}", logFilePath));
 
@@ -906,7 +880,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             // CORE DEBUG SNAPSHOT AT TOP OF BAR
             if (enableLogging && IsFirstTickOfBar)
             {
-                LogOutput($"BAR SNAPSHOT -> Time:{Time[0]} Bar:{CurrentBar} Close:{currentClose:F2} FastEMA:{fastEMAValue:F2} SlowEMA:{slowEMAValue:F2} MyPos:{myPosition} NTPos:{Position.MarketPosition} CurrSignal:{currentSignal} InWeakDelay:{inWeakReversalDelay} LastTradeBar:{lastTradeBar}");
+                LogOutput($"BAR SNAPSHOT -> Time:{Time[0]} Bar:{CurrentBar} Close:{currentClose:F2} FastEMA:{fastEMAValue:F2} SlowEMA:{slowEMAValue:F2} MyPos:{myPosition} NTPos:{Position.MarketPosition} CurrSignal:{currentSignal} LastTradeBar:{lastTradeBar}");
             }
 
             // Keep internal myPosition aligned with actual NinjaTrader position
@@ -1002,8 +976,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 int barsSinceEntry = (entryBar >= 0) ? (CurrentBar - entryBar) : 0;
                 
                 // --- EXIT TRACE (LONG) - Always export regardless of hold time ---
+                if (streamExitDiagnostics)
                 {
                     bool mfeTrailingActive = enableMFETrailingStop && tradeMFE >= mfeTrailingMinMFE;
+                    bool gradientMeetsThreshold = fastGradient <= fastEMAGradientExitThreshold;
+                    bool priceBelowFast = currentClose < fastEMAValue;
+                    bool priceBelowSlow = currentClose < slowEMA[0];
+                    bool dualGuardOk = true; // Dual guard feature not implemented
+                    bool fastEMAExitTrigger = gradientMeetsThreshold && priceBelowFast && dualGuardOk;
+                    bool pendingExit = (exitPending && exitPendingSide == "LONG");
+                    
                     var traceData = new System.Collections.Generic.Dictionary<string,string>
                     {
                         {"fastGrad", fastGradient.ToString("F4")},
@@ -1011,12 +993,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {"close", currentClose.ToString("F2")},
                         {"fastEMA", fastEMAValue.ToString("F2")},
                         {"slowEMA", slowEMA[0].ToString("F2")},
+                        {"grad<=Thresh", gradientMeetsThreshold.ToString()},
+                        {"priceBelowFastEMA", priceBelowFast.ToString()},
+                        {"priceBelowSlowEMA", priceBelowSlow.ToString()},
+                        {"dualGuardOk", dualGuardOk.ToString()},
+                        {"fastEMAExit", fastEMAExitTrigger.ToString()},
+                        {"antiExitBlock", "False"},
+                        {"pending", pendingExit.ToString()},
                         {"barsSinceEntry", barsSinceEntry.ToString()},
                         {"minHoldBars", minHoldBars.ToString()},
                         {"mfeTrailingActive", mfeTrailingActive.ToString()},
                         {"tradeMFE", tradeMFE.ToString("F2")},
-                        {"holdCheckPassed", (barsSinceEntry >= minHoldBars).ToString()}
+                        {"shouldExitFinal", (fastEMAExitTrigger && barsSinceEntry >= minHoldBars).ToString()}
                     };
+                    
+                    if (pendingExit)
+                    {
+                        traceData["pendingAnchorFastEMA"] = exitPendingAnchorFastEMA.ToString("F2");
+                        traceData["pendingDeltaNeed"] = exitConfirmFastEMADelta.ToString("F2");
+                        traceData["pendingDeltaCurrent"] = Math.Abs(fastEMAValue - exitPendingAnchorFastEMA).ToString("F2");
+                    }
+                    
                     string traceSummary = $"LONG ExitTrace FastGrad={fastGradient:F3} Close={currentClose:F2} FastEMA={fastEMAValue:F2} BarsHeld={barsSinceEntry}/{minHoldBars}";
                     PostLogToDashboard(CurrentBar, "EXIT_TRACE", "LONG", traceSummary, traceData);
                 }
@@ -1135,36 +1132,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     PostLogToDashboard(CurrentBar, "EXIT_CONSIDER", "LONG", reason, exitData);
                 }
                 
-                // --- Anti-Exit Check ---
+                // Anti-exit feature removed
                 bool antiExitBlock = false;
-                string antiExitReason = "";
-                if (enableAntiExit && fastEMAExit)
-                {
-                    // Block exit if we have strong continuation signals
-                    bool strongGradient = fastGradient >= antiExitFastGradThreshold;
-                    bool strongRSI = (rsi != null && rsi[0] >= antiExitRsiFloor);
-                    bool strongADX = (adx != null && adx[0] >= antiExitAdxFloor);
-                    
-                    if (strongGradient || strongRSI || strongADX)
-                    {
-                        antiExitBlock = true;
-                        if (strongGradient) antiExitReason += $"FastGrad={fastGradient:F4}>={antiExitFastGradThreshold:F2};";
-                        if (strongRSI) antiExitReason += $"RSI={rsi[0]:F1}>={antiExitRsiFloor:F1};";
-                        if (strongADX) antiExitReason += $"ADX={adx[0]:F1}>={antiExitAdxFloor:F1};";
-                        
-                        LogOutput($"ANTI-EXIT BLOCK (LONG) -> {antiExitReason}");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
-                            currentSignal, currentSignal, myPosition, "ANTI_EXIT", $"LONG:{antiExitReason}");
-                        
-                        var antiExitData = new System.Collections.Generic.Dictionary<string, string>
-                        {
-                            { "fastGrad", fastGradient.ToString("F4") },
-                            { "rsi", (rsi != null ? rsi[0] : 0).ToString("F1") },
-                            { "adx", (adx != null ? adx[0] : 0).ToString("F1") }
-                        };
-                        PostLogToDashboard(CurrentBar, "EXIT_BLOCKED", "LONG", antiExitReason, antiExitData);
-                    }
-                }
                 
                 bool shouldExit = fastEMAExit && !antiExitBlock;
 
@@ -1250,8 +1219,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                             myPosition = "FLAT";
                             currentSignal = "FLAT";
                             signalStartBar = -1;
-                            inWeakReversalDelay = true;
-                            weakReversalDelayBars = CurrentBar + weakReversalDelayPeriod;
                             LogOutput($"<<< EXIT LONG CONFIRMED at {currentClose:F2} | FastEMA drop {emaDrop:F2}>= {exitConfirmFastEMADelta:F2}");
                             LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, newSignal, "LONG", "EXIT", $"CONFIRMED_{exitPendingReason}_Δ{emaDrop:F2}");
@@ -1267,16 +1234,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                             exitPending = false; exitPendingSide = ""; exitPendingStartBar = -1; exitPendingAnchorFastEMA = 0; exitPendingReason = "";
                             // Reset entry tracking
                             entryBar = -1; entryPrice = 0.0; entryTime = DateTime.MinValue; tradeMFE = 0; tradeMAE = 0;
-
-                            // Weak reversal delay if weak context
-                            double priceGradient3Bar = 0;
-                            if (CurrentBar >= 3) priceGradient3Bar = (Close[0] - Close[3]) / 3.0;
-                            if (Math.Abs(priceGradient3Bar) < weakGradientThreshold && Math.Abs(fastGradient) < weakGradientThreshold)
-                            {
-                                inWeakReversalDelay = true;
-                                weakReversalDelayBars = CurrentBar + weakReversalDelayPeriod;
-                                LogOutput($"    ⏸ Setting weak reversal delay");
-                            }
                         }
                         else
                         {
@@ -1303,8 +1260,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 int barsSinceEntry = (entryBar >= 0) ? (CurrentBar - entryBar) : 0;
                 
                 // --- EXIT TRACE (SHORT) - Always export regardless of hold time ---
+                if (streamExitDiagnostics)
                 {
                     bool mfeTrailingActive = enableMFETrailingStop && tradeMFE >= mfeTrailingMinMFE;
+                    bool gradientMeetsThreshold = fastGradient >= fastEMAGradientExitThresholdShort;
+                    bool priceAboveFast = currentClose > fastEMAValue;
+                    bool priceAboveSlow = currentClose > slowEMA[0];
+                    bool dualGuardOk = true; // Dual guard feature not implemented
+                    bool fastEMAExitTrigger = gradientMeetsThreshold && priceAboveFast && dualGuardOk;
+                    bool pendingExit = (exitPending && exitPendingSide == "SHORT");
+                    
                     var traceData = new System.Collections.Generic.Dictionary<string,string>
                     {
                         {"fastGrad", fastGradient.ToString("F4")},
@@ -1312,12 +1277,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {"close", currentClose.ToString("F2")},
                         {"fastEMA", fastEMAValue.ToString("F2")},
                         {"slowEMA", slowEMA[0].ToString("F2")},
+                        {"grad>=Thresh", gradientMeetsThreshold.ToString()},
+                        {"priceAboveFastEMA", priceAboveFast.ToString()},
+                        {"priceAboveSlowEMA", priceAboveSlow.ToString()},
+                        {"dualGuardOk", dualGuardOk.ToString()},
+                        {"fastEMAExit", fastEMAExitTrigger.ToString()},
+                        {"antiExitBlock", "False"},
+                        {"pending", pendingExit.ToString()},
                         {"barsSinceEntry", barsSinceEntry.ToString()},
                         {"minHoldBars", minHoldBars.ToString()},
                         {"mfeTrailingActive", mfeTrailingActive.ToString()},
                         {"tradeMFE", tradeMFE.ToString("F2")},
-                        {"holdCheckPassed", (barsSinceEntry >= minHoldBars).ToString()}
+                        {"shouldExitFinal", (fastEMAExitTrigger && barsSinceEntry >= minHoldBars).ToString()}
                     };
+                    
+                    if (pendingExit)
+                    {
+                        traceData["pendingAnchorFastEMA"] = exitPendingAnchorFastEMA.ToString("F2");
+                        traceData["pendingDeltaNeed"] = exitConfirmFastEMADelta.ToString("F2");
+                        traceData["pendingDeltaCurrent"] = Math.Abs(fastEMAValue - exitPendingAnchorFastEMA).ToString("F2");
+                    }
+                    
                     string traceSummary = $"SHORT ExitTrace FastGrad={fastGradient:F3} Close={currentClose:F2} FastEMA={fastEMAValue:F2} BarsHeld={barsSinceEntry}/{minHoldBars}";
                     PostLogToDashboard(CurrentBar, "EXIT_TRACE", "SHORT", traceSummary, traceData);
                 }
@@ -1436,36 +1416,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     PostLogToDashboard(CurrentBar, "EXIT_CONSIDER", "SHORT", reason, exitData);
                 }
                 
-                // --- Anti-Exit Check ---
+                // Anti-exit feature removed
                 bool antiExitBlock = false;
-                string antiExitReason = "";
-                if (enableAntiExit && fastEMAExit)
-                {
-                    // Block exit if we have strong continuation signals (opposite direction for SHORT)
-                    bool strongGradient = fastGradient <= -antiExitFastGradThreshold;
-                    bool strongRSI = (rsi != null && rsi[0] <= antiExitRsiCeiling);
-                    bool strongADX = (adx != null && adx[0] >= antiExitAdxFloor);
-                    
-                    if (strongGradient || strongRSI || strongADX)
-                    {
-                        antiExitBlock = true;
-                        if (strongGradient) antiExitReason += $"FastGrad={fastGradient:F4}<=-{antiExitFastGradThreshold:F2};";
-                        if (strongRSI) antiExitReason += $"RSI={rsi[0]:F1}<={antiExitRsiCeiling:F1};";
-                        if (strongADX) antiExitReason += $"ADX={adx[0]:F1}>={antiExitAdxFloor:F1};";
-                        
-                        LogOutput($"ANTI-EXIT BLOCK (SHORT) -> {antiExitReason}");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
-                            currentSignal, currentSignal, myPosition, "ANTI_EXIT", $"SHORT:{antiExitReason}");
-                        
-                        var antiExitData = new System.Collections.Generic.Dictionary<string, string>
-                        {
-                            { "fastGrad", fastGradient.ToString("F4") },
-                            { "rsi", (rsi != null ? rsi[0] : 0).ToString("F1") },
-                            { "adx", (adx != null ? adx[0] : 0).ToString("F1") }
-                        };
-                        PostLogToDashboard(CurrentBar, "EXIT_BLOCKED", "SHORT", antiExitReason, antiExitData);
-                    }
-                }
                 
                 bool shouldExit = fastEMAExit && !antiExitBlock;
 
@@ -1551,8 +1503,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                             myPosition = "FLAT";
                             currentSignal = "FLAT";
                             signalStartBar = -1;
-                            inWeakReversalDelay = true;
-                            weakReversalDelayBars = CurrentBar + weakReversalDelayPeriod;
                             LogOutput($"<<< EXIT SHORT CONFIRMED at {currentClose:F2} | FastEMA rise {emaRise:F2}>= {exitConfirmFastEMADelta:F2}");
                             LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, newSignal, "SHORT", "EXIT", $"CONFIRMED_{exitPendingReason}_Δ{emaRise:F2}");
@@ -1567,16 +1517,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                             exitPending = false; exitPendingSide = ""; exitPendingStartBar = -1; exitPendingAnchorFastEMA = 0; exitPendingReason = "";
                             // Reset entry tracking
                             entryBar = -1; entryPrice = 0.0; entryTime = DateTime.MinValue; tradeMFE = 0; tradeMAE = 0;
-
-                            // Weak reversal delay if weak context
-                            double priceGradient3Bar = 0;
-                            if (CurrentBar >= 3) priceGradient3Bar = (Close[0] - Close[3]) / 3.0;
-                            if (Math.Abs(priceGradient3Bar) < weakGradientThreshold && Math.Abs(fastGradient) < weakGradientThreshold)
-                            {
-                                inWeakReversalDelay = true;
-                                weakReversalDelayBars = CurrentBar + weakReversalDelayPeriod;
-                                LogOutput($"    ⏸ Setting weak reversal delay");
-                            }
                         }
                         else
                         {
@@ -1657,16 +1597,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                         LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "LONG", "EXIT", exitType);
                         myPosition = "FLAT";
-                        
-                        // Set delay if weak reversal
-                        if (isWeakReversal)
-                        {
-                            inWeakReversalDelay = true;
-                            weakReversalDelayBars = CurrentBar + weakReversalDelayPeriod;
-                            Print(string.Format("[GRAD] {0} | WEAK REVERSAL - Delaying entry until bar {1}", 
-                                Time[0], weakReversalDelayBars));
-                            LogOutput($"    ⏸ WEAK REVERSAL - Delaying entry for {weakReversalDelayPeriod} bars");
-                        }
                     }
                     else if (myPosition == "SHORT")
                     {
@@ -1679,16 +1609,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                         LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "SHORT", "EXIT", exitType);
                         myPosition = "FLAT";
-                        
-                        // Set delay if weak reversal
-                        if (isWeakReversal)
-                        {
-                            inWeakReversalDelay = true;
-                            weakReversalDelayBars = CurrentBar + weakReversalDelayPeriod;
-                            Print(string.Format("[GRAD] {0} | WEAK REVERSAL - Delaying entry until bar {1}", 
-                                Time[0], weakReversalDelayBars));
-                            LogOutput($"    ⏸ WEAK REVERSAL - Delaying entry for {weakReversalDelayPeriod} bars");
-                        }
                     }
                 }
                 else
@@ -1723,41 +1643,15 @@ namespace NinjaTrader.NinjaScript.Strategies
             // This allows entry on the NEXT bar after signal change, but ONLY while
             // the strategy has an active LONG/SHORT signal (never while FLAT)
             // CRITICAL: Don't set signalStartBar on same bar as a trade (exit or entry)
-            if (currentSignal != "FLAT" && signalStartBar == -1 && myPosition == "FLAT" && !inWeakReversalDelay && !tradeAlreadyPlacedThisBar)
+            if (currentSignal != "FLAT" && signalStartBar == -1 && myPosition == "FLAT" && !tradeAlreadyPlacedThisBar)
             {
                 signalStartBar = CurrentBar;
-                LogOutput($"SIGNAL START -> CurrSignal:{currentSignal} StartBar:{signalStartBar} MyPos:{myPosition} InWeakDelay:{inWeakReversalDelay} TradeAlreadyThisBar:{tradeAlreadyPlacedThisBar}");
+                LogOutput($"SIGNAL START -> CurrSignal:{currentSignal} StartBar:{signalStartBar} MyPos:{myPosition} TradeAlreadyThisBar:{tradeAlreadyPlacedThisBar}");
             }
             
-            // Check if weak reversal delay has expired
-            if (inWeakReversalDelay && CurrentBar >= weakReversalDelayBars)
-            {
-                inWeakReversalDelay = false;
-                Print(string.Format("[GRAD] {0} | WEAK REVERSAL DELAY EXPIRED - Ready to enter", Time[0]));
-                LogOutput("    ▶ WEAK REVERSAL DELAY EXPIRED - Ready to enter");
-            }
-            
-            // Attempt early reversal entries (LONG/SHORT) before standard signal-based entry
-            // Executes only when FLAT and no trade this bar.
-            if (enableReversalEarlyEntry && myPosition == "FLAT" && Position.MarketPosition == MarketPosition.Flat && !tradeAlreadyPlacedThisBar)
-            {
-                string revReason;
-                if (TryEarlyReversalLong(out revReason))
-                {
-                    tradeAlreadyPlacedThisBar = true; // prevent duplicate logic later in bar
-                    LogOutput($"EARLY_REVERSAL_LONG ENTRY -> {revReason}");
-                }
-                else if (TryEarlyReversalShort(out revReason))
-                {
-                    tradeAlreadyPlacedThisBar = true; // prevent duplicate logic later in bar
-                    LogOutput($"EARLY_REVERSAL_SHORT ENTRY -> {revReason}");
-                }
-            }
-
             // Check if we should enter based on entry delay (use our internal position tracking)
             // IMPORTANT: Never enter while strategy is FLAT (no LONG/SHORT signal).
-            // SKIP ENTRY if we're in weak reversal delay period.
-            if (currentSignal != "FLAT" && myPosition == "FLAT" && signalStartBar >= 0 && !inWeakReversalDelay && !tradeAlreadyPlacedThisBar)
+            if (currentSignal != "FLAT" && myPosition == "FLAT" && signalStartBar >= 0 && !tradeAlreadyPlacedThisBar)
             {
                 int barsInSignal = CurrentBar - signalStartBar + 1;
                 
@@ -1771,7 +1665,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Changed from == to >= to allow entries on any bar after delay is met
                 if (barsInSignal >= entryBarDelay)
                 {
-                    LogOutput($"ENTRY DECISION -> CurrSignal:{currentSignal} BarsInSignal:{barsInSignal} EntryDelay:{entryBarDelay} MyPos:{myPosition} InWeakDelay:{inWeakReversalDelay} TradeAlreadyThisBar:{tradeAlreadyPlacedThisBar} NTPos:{Position.MarketPosition} SignalStartBar:{signalStartBar}");
+                    LogOutput($"ENTRY DECISION -> CurrSignal:{currentSignal} BarsInSignal:{barsInSignal} EntryDelay:{entryBarDelay} MyPos:{myPosition} TradeAlreadyThisBar:{tradeAlreadyPlacedThisBar} NTPos:{Position.MarketPosition} SignalStartBar:{signalStartBar}");
                     
                     // VALIDATION: Re-check if conditions are still valid before entering
                     bool conditionsStillValid = false;
@@ -1779,9 +1673,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bool priceRising = false;
                     string invalidationReason = "";
                     
-                    if (CurrentBar >= 1)
+                    if (CurrentBar >= 0)
                     {
-                        priceRising = (Close[0] > Close[1]);
+                        // PriceRising: compare current bar's close vs its open (green/red bar indicator)
+                        priceRising = (Close[0] > Open[0]);
                     }
                     
                     if (currentSignal == "LONG")
@@ -1973,7 +1868,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             signalStartBar = CurrentBar; // Restart the delay from current bar
                         }
                     }
-                    else if (currentSignal == "LONG" && myPosition == "FLAT" && Position.MarketPosition == MarketPosition.Flat && !inExitCooldown)
+                    else if (currentSignal == "LONG" && myPosition == "FLAT" && Position.MarketPosition == MarketPosition.Flat)
                     {
                         // CRITICAL: Only enter on the FIRST tick of a NEW bar
                         // This ensures we have the previous bar's complete OHLC and can validate bar color
@@ -1986,6 +1881,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 pendingEntryBar = CurrentBar;
                                 LogOutput($"PENDING LONG ENTRY queued for bar {CurrentBar}");
                             }
+                        }
+                        else if (IsFirstTickOfBar && !pendingLongEntry && conditionsStillValid)
+                        {
+                            // Valid conditions detected on first tick - queue pending entry
+                            pendingLongEntry = true;
+                            pendingEntryBar = CurrentBar;
+                            LogOutput($"PENDING LONG ENTRY queued for bar {CurrentBar} (first tick validation)");
                         }
                         else if (IsFirstTickOfBar && pendingLongEntry && pendingEntryBar == CurrentBar - 1)
                         {
@@ -2070,7 +1972,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             }
                         }
                     }
-                    else if (currentSignal == "SHORT" && myPosition == "FLAT" && Position.MarketPosition == MarketPosition.Flat && !inExitCooldown)
+                    else if (currentSignal == "SHORT" && myPosition == "FLAT" && Position.MarketPosition == MarketPosition.Flat)
                     {
                         // Prevent SHORT entry on GREEN bars (Close > Open)
                         if (currentClose > currentOpen)
@@ -2084,57 +1986,44 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else
                         {
-                            double absFast = Math.Abs(fastGradient);
+                            // Reset any pending exit from prior state
+                            exitPending = false; exitPendingSide = ""; exitPendingStartBar = -1; exitPendingAnchorFastEMA = 0; exitPendingReason = "";
                             bool forcedShortEntry = forcedShortEligibility.Contains(CurrentBar);
-                            if (!forcedShortEntry && absFast > maxEntryFastGradientAbs)
+                            if (forcedShortEntry)
                             {
-                                string entryInvalidationReason = $"EntryFastGradTooHigh(|F|={absFast:F3}>Max{maxEntryFastGradientAbs:F2})";
-                                Print(string.Format("[GRAD] {0} | ENTRY CANCELLED: {1} - Restarting delay counter", Time[0], entryInvalidationReason));
-                                LogOutput($"    ⚠ ENTRY CANCELLED: {entryInvalidationReason} - Restarting delay counter");
-                                LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
-                                    currentSignal, currentSignal, myPosition, "ENTRY_CANCELLED", entryInvalidationReason);
-                                signalStartBar = CurrentBar; // Restart delay
+                                LogOutput($"FORCED SHORT ENTRY override applied at bar {CurrentBar}");
+                                Print($"[GRAD] FORCED SHORT ENTRY override applied (FastGrad {fastGradient:+0.000;-0.000})");
                             }
-                            else
+                            EnterShort(quantity, "EnterShort");
+                            lastTradeBar = CurrentBar;
+                            myPosition = "SHORT";
+                            entryBar = CurrentBar;
+                            entryPrice = currentClose; entryTime = Time[0]; tradeMFE = 0.0; tradeMAE = 0.0;
+                            Print(string.Format("[GRAD] {0} | ENTER SHORT at {1:F2} on bar #{2} of signal | FastGrad: {3:+0.000;-0.000} | SlowGrad: {4:+0.000;-0.000}",
+                                Time[0], currentClose, barsInSignal, fastGradient, slowGradient));
+                            LogOutput($">>> ENTER SHORT at {currentClose:F2} (Bar {barsInSignal}/{entryBarDelay}) | FastGrad: {fastGradient:+0.000;-0.000} | SlowGrad: {slowGradient:+0.000;-0.000}");
+                            string indicatorSnapshot = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
+                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                                currentSignal, currentSignal, "SHORT", "ENTRY", $"EnterShort_Bar{barsInSignal}|{indicatorSnapshot}");
+                            LogTrade(Time[0], CurrentBar, "ENTRY", "SHORT", currentClose, quantity, $"EnterShort_Bar{barsInSignal}|{indicatorSnapshot}");
+                            PostLogToDashboard(CurrentBar, "ENTRY", "SHORT", $"Entered at {currentClose:F2}");
+                            if (disableEntryFilters)
                             {
-                                // Reset any pending exit from prior state
-                                exitPending = false; exitPendingSide = ""; exitPendingStartBar = -1; exitPendingAnchorFastEMA = 0; exitPendingReason = "";
-                                if (forcedShortEntry)
-                                {
-                                    LogOutput($"FORCED SHORT ENTRY override applied at bar {CurrentBar}");
-                                    Print($"[GRAD] FORCED SHORT ENTRY override applied (FastGrad {fastGradient:+0.000;-0.000})");
-                                }
-                                EnterShort(quantity, "EnterShort");
-                                lastTradeBar = CurrentBar;
-                                myPosition = "SHORT";
-                                entryBar = CurrentBar;
-                                entryPrice = currentClose; entryTime = Time[0]; tradeMFE = 0.0; tradeMAE = 0.0;
-                                Print(string.Format("[GRAD] {0} | ENTER SHORT at {1:F2} on bar #{2} of signal | FastGrad: {3:+0.000;-0.000} | SlowGrad: {4:+0.000;-0.000}",
-                                    Time[0], currentClose, barsInSignal, fastGradient, slowGradient));
-                                LogOutput($">>> ENTER SHORT at {currentClose:F2} (Bar {barsInSignal}/{entryBarDelay}) | FastGrad: {fastGradient:+0.000;-0.000} | SlowGrad: {slowGradient:+0.000;-0.000}");
-                                string indicatorSnapshot = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
                                 LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
-                                    currentSignal, currentSignal, "SHORT", "ENTRY", $"EnterShort_Bar{barsInSignal}|{indicatorSnapshot}");
-                                LogTrade(Time[0], CurrentBar, "ENTRY", "SHORT", currentClose, quantity, $"EnterShort_Bar{barsInSignal}|{indicatorSnapshot}");
-                                PostLogToDashboard(CurrentBar, "ENTRY", "SHORT", $"Entered at {currentClose:F2}");
-                                if (disableEntryFilters)
-                                {
-                                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
-                                        currentSignal, currentSignal, "SHORT", "ENTRY_FILTERS_BYPASSED", $"Bypassed|ADX>={minAdxForEntry:F0}|GradStab<={maxGradientStabilityForEntry:F2}|BW[{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}] AccelAlign={requireAccelAlignment}");
-                                }
-                                // Optional: record entry filters snapshot to trades summary when exiting later
-                                if (showChartAnnotations)
-                                {
-                                    Draw.ArrowDown(this, $"EnterShort_{CurrentBar}", false, 0, High[0] + 2*TickSize, Brushes.IndianRed);
-                                    Draw.Text(this, $"EnterShort_T_{CurrentBar}", "SHORT", 0, High[0] + 6*TickSize, Brushes.IndianRed);
-                                }
+                                    currentSignal, currentSignal, "SHORT", "ENTRY_FILTERS_BYPASSED", $"Bypassed|ADX>={minAdxForEntry:F0}|GradStab<={maxGradientStabilityForEntry:F2}|BW[{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}] AccelAlign={requireAccelAlignment}");
+                            }
+                            // Optional: record entry filters snapshot to trades summary when exiting later
+                            if (showChartAnnotations)
+                            {
+                                Draw.ArrowDown(this, $"EnterShort_{CurrentBar}", false, 0, High[0] + 2*TickSize, Brushes.IndianRed);
+                                Draw.Text(this, $"EnterShort_T_{CurrentBar}", "SHORT", 0, High[0] + 6*TickSize, Brushes.IndianRed);
                             }
                         }
                     }
                     else if (conditionsStillValid)
                     {
                         // We had a valid setup but did not enter due to guards
-                        string skipReason = $"SKIP ENTRY: Guards -> MyPos:{myPosition} NTPos:{Position.MarketPosition} InCooldown:{inExitCooldown} TradeThisBar:{tradeAlreadyPlacedThisBar} SignalStartBar:{signalStartBar} LastTradeBar:{lastTradeBar}";
+                        string skipReason = $"SKIP ENTRY: Guards -> MyPos:{myPosition} NTPos:{Position.MarketPosition} TradeThisBar:{tradeAlreadyPlacedThisBar} SignalStartBar:{signalStartBar} LastTradeBar:{lastTradeBar}";
                         LogOutput(skipReason);
                         LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, currentSignal, myPosition, "ENTRY_SKIPPED", skipReason);
@@ -2177,10 +2066,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (showHud && (DateTime.Now - lastHeartbeatTime).TotalSeconds >= heartbeatIntervalSeconds)
             {
                 lastHeartbeatTime = DateTime.Now;
-                int secsLeft = 0;
-                if (inExitCooldown && lastExitTime != DateTime.MinValue)
-                    secsLeft = Math.Max(0, exitCooldownSeconds - (int)((Time[0] - lastExitTime).TotalSeconds));
-                string hud = $"Sig:{currentSignal}  Pos:{myPosition}/{Position.MarketPosition}  FastG:{fastGradient:+0.000;-0.000}  SlowG:{slowGradient:+0.000;-0.000}  Close:{currentClose:F2}  Cooldown:{(inExitCooldown?secsLeft:0)}s";
+                string hud = $"Sig:{currentSignal}  Pos:{myPosition}/{Position.MarketPosition}  FastG:{fastGradient:+0.000;-0.000}  SlowG:{slowGradient:+0.000;-0.000}  Close:{currentClose:F2}";
                 if (hudSimpleFont == null)
                 {
                     hudSimpleFont = new SimpleFont("Segoe UI", hudFontSize);
@@ -2247,139 +2133,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             thr = Math.Max(adaptiveMinFloor, thr);
             return thr;
         }
-        // Early reversal detection and entry (LONG side)
-        private bool TryEarlyReversalLong(out string reason)
-        {
-            reason = "";
-            if (!enableReversalEarlyEntry) return false;
-            if (CurrentBar < reversalLookbackBars) return false;
-            if (myPosition != "FLAT" || Position.MarketPosition != MarketPosition.Flat) return false;
 
-            double fastGrad = fastEMA[0] - fastEMA[1];
-            double slowGrad = slowEMA[0] - slowEMA[1];
-            double accel = fastGrad - prevFastGradient;
-            double closeVal = Close[0];
-            double fastVal = fastEMA[0];
-
-            // Require fast gradient positive + price above fast EMA
-            if (!(fastGrad > 0 && closeVal > fastVal)) return false;
-
-            // Acceleration requirement
-            if (accel < minAccelForReversal) return false;
-
-            // Bear context scan - use centralized classification
-            int bearCount = 0; double maxDepth = 0.0;
-            int limit = Math.Min(reversalLookbackBars, CurrentBar);
-            for (int b = 1; b <= limit; b++)
-            {
-                string barType = ClassifyBarType(b);
-                if (barType == "BEAR")
-                {
-                    bearCount++;
-                    double fe = fastEMA[b];
-                    double c = Close[b];
-                    double depth = fe - c;
-                    if (depth > maxDepth) maxDepth = depth;
-                }
-                else break; // Stop counting if bar is not BEAR
-            }
-            if (bearCount < minBearBarsForReversal) return false;
-            if (maxDepth < minReversalDepthPoints) return false;
-
-            // Filters
-            double adxVal = adx != null ? adx[0] : 0.0;
-            if (adxVal < minReversalAdx) return false;
-            if (currentGradientStability > maxReversalStability) return false;
-
-            // Reason string
-            reason = $"FastGrad:{fastGrad:+0.000;-0.000} Accel:{accel:+0.000;-0.000} BearBars:{bearCount} Depth:{maxDepth:F1} ADX:{adxVal:F1} GradStab:{currentGradientStability:F2}";
-
-            try
-            {
-                EnterLong(quantity, "EARLYREV_LONG");
-                myPosition = "LONG";
-                entryBar = CurrentBar;
-                lastTradeBar = CurrentBar;
-                entryPrice = closeVal;
-                entryTime = Time[0];
-                tradeMFE = 0.0; tradeMAE = 0.0;
-                LogOutput($">>> EARLY REVERSAL LONG ENTRY @ {closeVal:F2} | {reason}");
-                Print($"[GRAD] {Time[0]} | EARLY REVERSAL LONG ENTRY @ {closeVal:F2} | {reason}");
-            }
-            catch (Exception ex)
-            {
-                LogOutput($"EARLY REVERSAL LONG ENTRY FAILED: {ex.Message}");
-                return false;
-            }
-            return true;
-        }
-        // Early reversal detection and entry (SHORT side)
-        private bool TryEarlyReversalShort(out string reason)
-        {
-            reason = "";
-            if (!enableReversalEarlyEntry) return false;
-            if (CurrentBar < reversalLookbackBars) return false;
-            if (myPosition != "FLAT" || Position.MarketPosition != MarketPosition.Flat) return false;
-
-            double fastGrad = fastEMA[0] - fastEMA[1];
-            double slowGrad = slowEMA[0] - slowEMA[1];
-            double accel = fastGrad - prevFastGradient;
-            double closeVal = Close[0];
-            double fastVal = fastEMA[0];
-
-            // Require fast gradient negative + price below fast EMA
-            if (!(fastGrad < 0 && closeVal < fastVal)) return false;
-
-            // Acceleration requirement (accelerating down)
-            if (accel > -minAccelForReversal) return false;
-
-            // Bull context scan - use centralized classification
-            int bullCount = 0; double maxDepth = 0.0;
-            int limit = Math.Min(reversalLookbackBars, CurrentBar);
-            for (int b = 1; b <= limit; b++)
-            {
-                string barType = ClassifyBarType(b);
-                if (barType == "BULL")
-                {
-                    bullCount++;
-                    double c = Close[b];
-                    double fe = fastEMA[b];
-                    double depth = c - fe;
-                    if (depth > maxDepth) maxDepth = depth;
-                }
-                else break; // Stop counting if bar is not BULL
-            }
-            // Reuse minimum bars threshold symmetrically
-            if (bullCount < minBearBarsForReversal) return false;
-            if (maxDepth < minReversalDepthPoints) return false;
-
-            // Filters
-            double adxVal = adx != null ? adx[0] : 0.0;
-            if (adxVal < minReversalAdx) return false;
-            if (currentGradientStability > maxReversalStability) return false;
-
-            // Reason string
-            reason = $"FastGrad:{fastGrad:+0.000;-0.000} Accel:{accel:+0.000;-0.000} BullBars:{bullCount} Depth:{maxDepth:F1} ADX:{adxVal:F1} GradStab:{currentGradientStability:F2}";
-
-            try
-            {
-                EnterShort(quantity, "EARLYREV_SHORT");
-                myPosition = "SHORT";
-                entryBar = CurrentBar;
-                lastTradeBar = CurrentBar;
-                entryPrice = closeVal;
-                entryTime = Time[0];
-                tradeMFE = 0.0; tradeMAE = 0.0;
-                LogOutput($">>> EARLY REVERSAL SHORT ENTRY @ {closeVal:F2} | {reason}");
-                Print($"[GRAD] {Time[0]} | EARLY REVERSAL SHORT ENTRY @ {closeVal:F2} | {reason}");
-            }
-            catch (Exception ex)
-            {
-                LogOutput($"EARLY REVERSAL SHORT ENTRY FAILED: {ex.Message}");
-                return false;
-            }
-            return true;
-        }
         private string SaveStrategyProperties()
         {
             try
@@ -2549,9 +2303,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (CurrentBar >= 1)
                     priceGradient = close - Close[1];
                 int barsSinceEntry = (entryBar >= 0 && bar >= entryBar) ? (bar - entryBar) : -1;
-                int cooldownSecsLeft = 0;
-                if (inExitCooldown && lastExitTime != DateTime.MinValue)
-                    cooldownSecsLeft = Math.Max(0, exitCooldownSeconds - (int)((time - lastExitTime).TotalSeconds));
                 double exitPendingDelta = 0.0;
                 if (exitPending)
                 {
@@ -2571,11 +2322,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 // Write data row
                 double vpm = 0.0; if (CurrentBar >= 1) { double minutes = (Time[0] - Time[1]).TotalMinutes; if (minutes <= 0) minutes = 1.0; vpm = vol / minutes; } else { vpm = vol; }
-                csvWriter.WriteLine(string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2},{6:F4},{7:F4},{8},{9},{10},{11},{12},{13},{14},{15},{16},{17:F4},{18},{19},{20:F2},{21},{22},{23:F2},{24:F2},{25},{26},{27},{28:F2},{29:F2},{30:F2},{31:F0},{32:F2}",
+                csvWriter.WriteLine(string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2},{6:F4},{7:F4},{8},{9},{10},{11},{12},{13},{14},{15},{16:F4},{17},{18},{19:F2},{20},{21},{22:F2},{23:F2},{24},{25:F2},{26:F2},{27:F2},{28:F0},{29:F2}",
                     time, bar, openPrice, closePrice, fastEma, slowEma, fastGrad, slowGrad, prevSignal, newSignal, position, actualPos, action, notes,
-                    inWeakReversalDelay ? "1" : "0", signalStartBar, lastTradeBar,
+                    signalStartBar, lastTradeBar,
                     priceGradient, barsSinceEntry, entryBar, entryPrice, exitPending ? 1 : 0, exitPendingSide, exitPendingAnchorFastEMA, exitPendingDelta,
-                    minHoldBars, inExitCooldown ? 1 : 0, cooldownSecsLeft, tradeMFE, Math.Abs(tradeMAE), unrealizedPts, vol, vpm));
+                    minHoldBars, tradeMFE, Math.Abs(tradeMAE), unrealizedPts, vol, vpm));
                 csvWriter.Flush();
             }
             catch (Exception ex)
@@ -3119,6 +2870,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double bw = Math.Abs(fe - se) / (se != 0 ? se : 1.0);
                 string blockersLong = string.Join("|", diag.BlockersLong);
                 string blockersShort = string.Join("|", diag.BlockersShort);
+                string sig = currentSignal;
+                int barsInSignal = (signalStartBar >= 0) ? (CurrentBar - signalStartBar + 1) : 0;
                 // Build JSON manually
                 string json = "{" +
                     "\"barIndex\":" + idx + "," +
@@ -3130,6 +2883,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     "\"slowGrad\":" + sg.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"adx\":" + adxVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"bandwidth\":" + bw.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
+                    "\"signal\":\"" + sig + "\"," +
+                    "\"barsInSignal\":" + barsInSignal + "," +
                     "\"blockersLong\":\"" + blockersLong.Replace("\"","'") + "\"," +
                     "\"blockersShort\":\"" + blockersShort.Replace("\"","'") + "\"" +
                     "}";
@@ -3181,6 +2936,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double bw = Math.Abs(fe - se) / (se != 0 ? se : 1.0);
                 string sig = currentSignal;
                 string barType = ClassifyBarType(0); // Centralized bar classification
+                string trendSide = (fg >= 0.0) ? "BULL" : "BEAR";  // Simple trend: positive grad = BULL, negative = BEAR
+                
+                // Track trend start bar (detect when trend changes)
+                if (lastTrendSide != trendSide)
+                {
+                    trendStartBar = CurrentBar;
+                    lastTrendSide = trendSide;
+                }
                 
                 // Include blockers info
                 var blockersL = new System.Collections.Generic.List<string>();
@@ -3205,10 +2968,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 bool gradDirShortOk = (fg < 0 && sg < 0);
                 bool fastStrongForEntryLong = (System.Math.Abs(fg) >= thrLong && fg > 0);
                 bool fastStrongForEntryShort = (System.Math.Abs(fg) >= thrShort && fg < 0);
-                // Only block if moving against direction: LONG blocked if fg < -maxEntryFastGradientAbs, SHORT blocked if fg > maxEntryFastGradientAbs
-                bool notOverextendedLong = (fg >= -maxEntryFastGradientAbs);
-                bool notOverextendedShort = (fg <= maxEntryFastGradientAbs);
-                bool notOverextended = notOverextendedLong && notOverextendedShort;
                 bool adxOk = (adxVal >= minAdxForEntry);
                 bool gradStabOk = (gradStabVal <= maxGradientStabilityForEntry);
                 bool bandwidthOk = (bw >= minBandwidthForEntry && bw <= maxBandwidthForEntry);
@@ -3218,15 +2977,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 bool rsiOk = (!enableRSIFloor || (rsiVal >= minRSIForEntry)) && (!enableRSICeiling || (rsiVal <= maxRSIForEntry));
                 bool filtersOkLong = disableEntryFilters || (adxOk && gradStabOk && bandwidthOk && accelAlignOkLong && atrOk && rsiOk);
                 bool filtersOkShort = disableEntryFilters || (adxOk && gradStabOk && bandwidthOk && accelAlignOkShort && atrOk && rsiOk);
-                bool entryLongReady = signalEligibleLong && gradDirLongOk && priceAboveEMAs && fastStrongForEntryLong && notOverextendedLong && filtersOkLong;
-                bool entryShortReady = signalEligibleShort && gradDirShortOk && priceBelowEMAs && fastStrongForEntryShort && notOverextendedShort && filtersOkShort;
+                bool entryLongReady = signalEligibleLong && gradDirLongOk && priceAboveEMAs && fastStrongForEntryLong && filtersOkLong;
+                bool entryShortReady = signalEligibleShort && gradDirShortOk && priceBelowEMAs && fastStrongForEntryShort && filtersOkShort;
                 
                 // Calculate timing information
                 int barsInSignal = (signalStartBar >= 0) ? (CurrentBar - signalStartBar + 1) : 0;
                 bool entryDelayMet = (barsInSignal >= entryBarDelay);
                 // Note: canEnter doesn't include tradeAlreadyPlacedThisBar check (local variable in OnBarUpdate)
-                bool canEnterLong = entryLongReady && entryDelayMet && myPosition == "FLAT" && !inWeakReversalDelay;
-                bool canEnterShort = entryShortReady && entryDelayMet && myPosition == "FLAT" && !inWeakReversalDelay;
+                bool canEnterLong = entryLongReady && entryDelayMet && myPosition == "FLAT";
+                bool canEnterShort = entryShortReady && entryDelayMet && myPosition == "FLAT";
                 
                 string json = "{" +
                     "\"barIndex\":" + idx + "," +
@@ -3246,6 +3005,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     "\"rsi\":" + rsiVal.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"bandwidth\":" + bw.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"signal\":\"" + sig + "\"," +
+                    "\"trendSide\":\"" + trendSide + "\"," +
+                    "\"trendStartBar\":" + trendStartBar + "," +
                     "\"barType\":\"" + barType + "\"," +
                     // Entry readiness (flat fields for server normalization)
                     "\"signalEligibleLong\":" + (signalEligibleLong ? "true" : "false") + "," +
@@ -3258,7 +3019,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                     "\"gradDirShortOk\":" + (gradDirShortOk ? "true" : "false") + "," +
                     "\"fastStrongForEntryLong\":" + (fastStrongForEntryLong ? "true" : "false") + "," +
                     "\"fastStrongForEntryShort\":" + (fastStrongForEntryShort ? "true" : "false") + "," +
-                    "\"notOverextended\":" + (notOverextended ? "true" : "false") + "," +
                     "\"adxOk\":" + (adxOk ? "true" : "false") + "," +
                     "\"gradStabOk\":" + (gradStabOk ? "true" : "false") + "," +
                     "\"bandwidthOk\":" + (bandwidthOk ? "true" : "false") + "," +
@@ -3275,11 +3035,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     "\"canEnterLong\":" + (canEnterLong ? "true" : "false") + "," +
                     "\"canEnterShort\":" + (canEnterShort ? "true" : "false") + "," +
                     "\"myPosition\":\"" + myPosition + "\"," +
-                    "\"inWeakReversalDelay\":" + (inWeakReversalDelay ? "true" : "false") + "," +
                     // thresholds snapshot
                     "\"entryGradThrLong\":" + thrLong.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"entryGradThrShort\":" + thrShort.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
-                    "\"maxEntryFastGradAbs\":" + maxEntryFastGradientAbs.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"minAdxForEntry\":" + minAdxForEntry.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"maxGradientStabilityForEntry\":" + maxGradientStabilityForEntry.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
                     "\"minBandwidthForEntry\":" + minBandwidthForEntry.ToString(System.Globalization.CultureInfo.InvariantCulture) + "," +
@@ -3453,14 +3211,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             double diagThrShort = GetEntryFastGradientThreshold(false);
             bool fastStrongForEntryLong = Math.Abs(fastGrad) >= diagThrLong && fastGrad > 0;
             bool fastStrongForEntryShort = Math.Abs(fastGrad) >= diagThrShort && fastGrad < 0;
-            bool notOverextendedLong = (fastGrad >= -maxEntryFastGradientAbs);
-            bool notOverextendedShort = (fastGrad <= maxEntryFastGradientAbs);
 
             if (!res.SignalEligibleLong) res.BlockersLong.Add($"EntryBarDelay: streak={streakLong} < {entryBarDelay}");
             if (!(fastGrad > 0 && slowGrad > 0)) res.BlockersLong.Add("GradientDirection: fast>0 && slow>0 required");
             if (!priceAboveEMAs) res.BlockersLong.Add("Position: Price must be above both EMAs; cannot auto-fix via params");
             if (Math.Abs(res.FastGrad) < minEntryFastGradientAbs) res.BlockersLong.Add($"MinEntryFastGrad: |fastGrad|={Math.Abs(res.FastGrad):F4} < {minEntryFastGradientAbs:F4} (tighter)");
-            if (Math.Abs(res.FastGrad) > maxEntryFastGradientAbs) res.BlockersLong.Add($"MaxEntryFastGrad: |fastGrad|={Math.Abs(res.FastGrad):F4} > {maxEntryFastGradientAbs:F4}");
             if (adxVal < minAdxForEntry) res.BlockersLong.Add($"ADX: {adxVal:F2} < MinAdxForEntry={minAdxForEntry:F2}");
             if (gradStab > maxGradientStabilityForEntry) res.BlockersLong.Add($"GradStab: {gradStab:F4} > MaxGradientStabilityForEntry={maxGradientStabilityForEntry:F4}");
             if (bandwidth < minBandwidthForEntry || bandwidth > maxBandwidthForEntry) res.BlockersLong.Add($"Bandwidth: {bandwidth:F4} not in [{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}]");
@@ -3473,7 +3228,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!(fastGrad < 0 && slowGrad < 0)) res.BlockersShort.Add("GradientDirection: fast<0 && slow<0 required");
             if (!priceBelowEMAs) res.BlockersShort.Add("Position: Price must be below both EMAs; cannot auto-fix via params");
             if (Math.Abs(res.FastGrad) < minEntryFastGradientAbs) res.BlockersShort.Add($"MinEntryFastGrad: |fastGrad|={Math.Abs(res.FastGrad):F4} < {minEntryFastGradientAbs:F4} (tighter)");
-            if (Math.Abs(res.FastGrad) > maxEntryFastGradientAbs) res.BlockersShort.Add($"MaxEntryFastGrad: |fastGrad|={Math.Abs(res.FastGrad):F4} > {maxEntryFastGradientAbs:F4}");
             if (adxVal < minAdxForEntry) res.BlockersShort.Add($"ADX: {adxVal:F2} < MinAdxForEntry={minAdxForEntry:F2}");
             if (gradStab > maxGradientStabilityForEntry) res.BlockersShort.Add($"GradStab: {gradStab:F4} > MaxGradientStabilityForEntry={maxGradientStabilityForEntry:F4}");
             if (bandwidth < minBandwidthForEntry || bandwidth > maxBandwidthForEntry) res.BlockersShort.Add($"Bandwidth: {bandwidth:F4} not in [{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}]");
@@ -3544,8 +3298,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Math.Abs(res.FastGrad) < minEntryFastGradientAbs)
                     sugg.Add($"- Lower MinEntryFastGradientAbs {minEntryFastGradientAbs:F4} -> {(Math.Abs(res.FastGrad)+eps):F4}");
             }
-            if (Math.Abs(res.FastGrad) > maxEntryFastGradientAbs)
-                sugg.Add($"- Raise MaxEntryFastGradientAbs {maxEntryFastGradientAbs:F4} -> {(Math.Abs(res.FastGrad)+eps):F4}");
             if (!disableEntryFilters)
             {
                 if (res.ADX < minAdxForEntry) sugg.Add($"- Lower MinAdxForEntry {minAdxForEntry:F2} -> {(res.ADX+eps):F2} OR set DisableEntryFilters=true");
@@ -3610,8 +3362,6 @@ namespace NinjaTrader.NinjaScript.Strategies
             double fgAbs = Math.Abs(res.FastGrad);
             if (fgAbs < minEntryFastGradientAbs)
                 minEntryFastGradientAbs = Math.Max(0.0, fgAbs + eps);
-            if (fgAbs > maxEntryFastGradientAbs)
-                maxEntryFastGradientAbs = fgAbs + eps;
             if (adx != null && res.ADX < minAdxForEntry)
                 minAdxForEntry = res.ADX + eps;
             if (res.GradStab > maxGradientStabilityForEntry)
@@ -3796,14 +3546,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             set { validationMinFastGradientAbs = Math.Max(0.0, value); }
         }
 
-        [NinjaScriptProperty]
-        [Range(0.0, 100.0)]
-        [Display(Name = "Max Entry Fast Gradient Abs", Description = "Upper cap on absolute fast EMA gradient to allow at ENTRY (filters overextended moves). Default: 0.60", Order = 3, GroupName = "Entry")]
-        public double MaxEntryFastGradientAbs
-        {
-            get { return maxEntryFastGradientAbs; }
-            set { maxEntryFastGradientAbs = Math.Max(0.0, value); }
-        }
+
 
         [NinjaScriptProperty]
         [Display(Name = "Enable MFE Trailing Stop", Description = "Enable MFE-based trailing stop to protect profits. Default: true", Order = 10, GroupName = "Parameters")]
@@ -4070,87 +3813,6 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             get { return exitConfirmFastEMADelta; }
             set { exitConfirmFastEMADelta = Math.Max(0.0, value); }
-        }
-
-        // --- Reversal Early Entry Properties ---
-        [NinjaScriptProperty]
-        [Display(Name = "Enable Reversal Early Entry", Description = "Allow early LONG entries before slow EMA confirmation.", Order = 1, GroupName = "Reversal")]
-        public bool EnableReversalEarlyEntry
-        {
-            get { return enableReversalEarlyEntry; }
-            set { enableReversalEarlyEntry = value; }
-        }
-
-        [NinjaScriptProperty]
-        [Range(1, 200)]
-        [Display(Name = "Reversal Lookback Bars", Description = "Bars to scan for prior bear/bull context.", Order = 2, GroupName = "Reversal")]
-        public int ReversalLookbackBars
-        {
-            get { return reversalLookbackBars; }
-            set { reversalLookbackBars = Math.Max(1, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(1, 100)]
-        [Display(Name = "Min Bear Bars For Reversal", Description = "Consecutive bear bars required before early LONG.", Order = 3, GroupName = "Reversal")]
-        public int MinBearBarsForReversal
-        {
-            get { return minBearBarsForReversal; }
-            set { minBearBarsForReversal = Math.Max(1, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100000.0)]
-        [Display(Name = "Min Reversal Depth Points", Description = "Minimum depth below fast EMA during prior bear leg.", Order = 4, GroupName = "Reversal")]
-        public double MinReversalDepthPoints
-        {
-            get { return minReversalDepthPoints; }
-            set { minReversalDepthPoints = Math.Max(0.0, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 1000.0)]
-        [Display(Name = "Min Accel For Reversal", Description = "Minimum acceleration (fastGrad - prevFastGrad).", Order = 5, GroupName = "Reversal")]
-        public double MinAccelForReversal
-        {
-            get { return minAccelForReversal; }
-            set { minAccelForReversal = Math.Max(0.0, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 1000.0)]
-        [Display(Name = "Max Reversal Stability", Description = "Maximum gradient std dev for reversal entry.", Order = 6, GroupName = "Reversal")]
-        public double MaxReversalStability
-        {
-            get { return maxReversalStability; }
-            set { maxReversalStability = Math.Max(0.0, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 1000.0)]
-        [Display(Name = "Min Reversal ADX", Description = "Minimum ADX value for early reversal entry.", Order = 7, GroupName = "Reversal")]
-        public double MinReversalAdx
-        {
-            get { return minReversalAdx; }
-            set { minReversalAdx = Math.Max(0.0, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(0, 200)]
-        [Display(Name = "Reversal Hold Guard Bars", Description = "Minimum bars to hold reversal trade before validation exit.", Order = 8, GroupName = "Reversal")]
-        public int ReversalHoldGuardBars
-        {
-            get { return reversalHoldGuardBars; }
-            set { reversalHoldGuardBars = Math.Max(0, value); }
-        }
-
-        [NinjaScriptProperty]
-        [Range(0.0, 100000.0)]
-        [Display(Name = "Reversal Stop Buffer", Description = "Logged hypothetical protective stop distance beyond trough.", Order = 9, GroupName = "Reversal")]
-        public double ReversalStopBuffer
-        {
-            get { return reversalStopBuffer; }
-            set { reversalStopBuffer = Math.Max(0.0, value); }
         }
 
         // --- Entry Filter Properties ---
