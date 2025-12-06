@@ -19,6 +19,12 @@ User asked for a helper that evaluates real-time trading and recommends optimal 
 
 ## Key Components Created
 
+### Long/Short Conditions (Summary)
+- **Long (Bull) Conditions:** Price above fast and slow EMAs, fast gradient positive and sufficiently strong, slow gradient aligned or not opposing, candle confirms upward momentum, ADX/filters pass, and bar not overextended relative to ATR.
+- **Short (Bear) Conditions:** Price below fast and slow EMAs, fast gradient negative and sufficiently strong, slow gradient aligned or not opposing, candle confirms downward momentum, ADX/filters pass, and bar not overextended relative to ATR.
+
+Note: These align with the strategy’s entry readiness fields (`signalEligible`, `gradDirOk`, `priceAbove/BelowEMAs`, `fastStrongForEntry`, `notOverextended`, `filtersOk`). See `Strategies/GradientSlopeStrategy.cs` for exact thresholds.
+
 ### 1. TimeframeAdvisor.cs
 **Location:** `Strategies/TimeframeAdvisor.cs`
 

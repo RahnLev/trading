@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bar Report</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121b2e;
+      --accent: #4fd1c5;
+      --text: #e8edf7;
+      --muted: #9bb0c9;
+      --error: #ff6b6b;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    body {
+      margin: 0;
+      font-family: "Inter", "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(79,209,197,0.08), transparent 25%),
+                  radial-gradient(circle at 80% 0%, rgba(255,255,255,0.04), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card {
+      width: min(900px, 94vw);
+      background: var(--panel);
+      border-radius: 12px;
+      padding: 20px 24px;
+      box-shadow: 0 12px 45px rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    h1 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: 0.3px;
+    }
+    form {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    input[type="number"] {
+      background: #0f1726;
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      padding: 10px 12px;
+      width: 140px;
+      font-size: 14px;
+    }
+    button {
+      background: var(--accent);
+      color: #0a0f1a;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 6px 20px rgba(79,209,197,0.3);
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+    .row { margin-top: 12px; }
+    .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .value { margin-top: 4px; font-size: 14px; }
+    pre {
+      background: #0f1726;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.05);
+      overflow-x: auto;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.35;
+      color: #c5d2e8;
+      white-space: pre-wrap;
+    }
+    .section { margin-top: 16px; }
+    .error { color: var(--error); }
+    .small { font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Bar Report</h1>
+    <form id="barForm">
+      <label>
+        <span class="label">Bar Number</span><br />
+        <input type="number" id="barInput" required min="0" value="922" />
+      </label>
+      <button id="goBtn" type="submit">Fetch Report</button>
+      <span id="status" class="small"></span>
+    </form>
+
+    <div class="section">
+      <div class="label">Skip Reason (ENTRY)</div>
+      <div class="value" id="skipReason">—</div>
+      <div class="small" id="skipRaw" style="display:none;">&nbsp;</div>
+    </div>
+
+    <div class="section">
+      <div class="label">Skip Explanation</div>
+      <pre id="skipExplain">—</pre>
+    </div>
+
+    <div class="section">
+      <div class="label">CSV Rows</div>
+      <pre id="csvOut">—</pre>
+    </div>
+
+    <div class="section">
+      <div class="label">LOG Context</div>
+      <pre id="logOut">—</pre>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('barForm');
+    const barInput = document.getElementById('barInput');
+    const statusEl = document.getElementById('status');
+    const skipEl = document.getElementById('skipReason');
+    const csvEl = document.getElementById('csvOut');
+    const logEl = document.getElementById('logOut');
+    const btn = document.getElementById('goBtn');
+    const skipRaw = document.getElementById('skipRaw');
+    const skipExplain = document.getElementById('skipExplain');
+
+    function formatSkipReason(reason) {
+      if (!reason) return '—';
+      const raw = reason.trim();
+      const lower = raw.toLowerCase();
+
+      // Normalize underscores to spaces for readability.
+      const normalized = raw.replace(/_/g, ' ');
+
+      if (lower.includes('entry_cancelled')) {
+        const parts = normalized.split(':');
+        const detail = parts.slice(1).join(':').trim();
+        return detail ? `Entry cancelled: ${detail}` : 'Entry cancelled.';
+      }
+
+      if (lower.includes('exit_suppressed')) {
+        const match = raw.match(/min_hold:?\s*(\d+\/\d+)/i);
+        const progress = match ? match[1] : null;
+        return progress ? `Exit suppressed: must hold position (${progress} bars).` : 'Exit suppressed: minimum hold not met.';
+      }
+
+      const minHold = raw.match(/min_hold:?\s*(\d+\/\d+)/i);
+      if (minHold) {
+        return `Must hold position: ${minHold[1]} bars elapsed.`;
+      }
+
+      const mfeStop = raw.match(/mfe_trailing_stop:?\s*(.+)/i);
+      if (mfeStop) {
+        return `Exit due to trailing stop: ${mfeStop[1].trim()}`;
+      }
+
+      return normalized;
+    }
+
+    function explainSkip(reason, sourceBar) {
+      if (!reason) return 'No skip reason available.';
+      const raw = reason.trim();
+      const lower = raw.toLowerCase();
+
+      // Entry decision detail: translate terse diagnostics
+      if (lower.startsWith('entry_decision')) {
+        const detail = raw.split(':').slice(1).join(':').trim();
+        const fields = {};
+        detail.split(/\s+/).forEach(token => {
+          const [k, v] = token.split('=');
+          if (k && v !== undefined) fields[k.toLowerCase()] = v;
+        });
+
+        const signal = fields.signal || 'UNKNOWN';
+        let barsInfo = '';
+        if (fields.bar) {
+          const parts = fields.bar.split('/');
+          if (parts.length === 2) {
+            const barsInSignal = parts[0];
+            const delayNeeded = parts[1];
+            barsInfo = `Bars in signal: ${barsInSignal} (delay requirement: ${delayNeeded} bar${delayNeeded === '1' ? '' : 's'}).`;
+          }
+        }
+
+        const valid = fields.valid ? `Valid: ${fields.valid} (entry checks passed).` : '';
+        const reverse = fields.shouldreverse ? `Should reverse: ${fields.shouldreverse} (staying with ${signal}).` : '';
+        const priceRising = fields.pricerising ? `Price rising flag: ${fields.pricerising} (snapshot at entry decision time; final bar may close differently).` : '';
+
+        const fg = fields.fastgrad || '';
+        const sg = fields.slowgrad || '';
+        const thr = fields.thr || '';
+        const fgVal = parseFloat(fg);
+        let fgLine = '';
+        if (!Number.isNaN(fgVal)) {
+          const thrVal = parseFloat(thr);
+          const cmp = !Number.isNaN(thrVal) ? ` vs entry threshold ${thrVal} (adaptive)` : '';
+          fgLine = `Fast gradient: ${fgVal.toFixed(4)}${cmp}.`;
+        }
+        const sgVal = parseFloat(sg);
+        const sgLine = !Number.isNaN(sgVal) ? `Slow gradient: ${sgVal.toFixed(4)}.` : '';
+
+        const fastEma = fields.fastema ? fields.fastema.replace('(ABOVE)', '').replace('(BELOW)', '') : '';
+        const slowEma = fields.slowema ? fields.slowema.replace('(ABOVE)', '').replace('(BELOW)', '') : '';
+        const emaLine = fastEma && slowEma ? `Price vs EMAs: above FastEMA (${fastEma}) and above SlowEMA (${slowEma}).` : '';
+
+        const rsi = fields.rsi ? `RSI: ${fields.rsi} (neutral/acceptable).` : '';
+        const close = fields.close ? `Close: ${fields.close}.` : '';
+
+        return [
+          `Entry decision for ${signal}:`,
+          barsInfo,
+          valid,
+          reverse,
+          priceRising,
+          fgLine,
+          sgLine,
+          emaLine,
+          rsi,
+          close,
+          sourceBar ? `(Triggered from bar ${sourceBar})` : ''
+        ].filter(Boolean).join('\n');
+      }
+
+      // Entry cancelled because fast gradient too weak
+      const gradMatch = raw.match(/fast\s*gradient\s+too\s+weak\s*\(([-+0-9\.]+)\s*[<>]=?\s*[-+]?\s*thr\s*([0-9\.]+)/i);
+      if (gradMatch) {
+        const actual = parseFloat(gradMatch[1]);
+        const thr = parseFloat(gradMatch[2]);
+        const direction = actual >= 0 ? 'LONG' : 'SHORT';
+        return [
+          `Entry blocked: fast gradient magnitude was too weak for ${direction}.`,
+          `Actual fast gradient: ${actual.toFixed(4)}; required strength: ±${thr.toFixed(2)} (adaptive).`,
+          'Action: entry not taken; delay counter reset to wait for a stronger move.',
+          sourceBar ? `(Triggered from bar ${sourceBar})` : ''
+        ].filter(Boolean).join('\n');
+      }
+
+      // Exit suppressed due to min hold
+      const holdMatch = raw.match(/min_hold:?\s*(\d+\/\d+)/i);
+      if (holdMatch) {
+        return [
+          'Exit suppressed by minimum-hold rule.',
+          `Progress: ${holdMatch[1]} bars elapsed; must satisfy hold requirement before exiting.`,
+          sourceBar ? `(Triggered from bar ${sourceBar})` : ''
+        ].filter(Boolean).join('\n');
+      }
+
+      // Trailing stop
+      const mfeMatch = raw.match(/mfe_trailing_stop:?\s*(.*)/i);
+      if (mfeMatch && mfeMatch[1]) {
+        return [
+          'Exit triggered by MFE-based trailing stop.',
+          mfeMatch[1].trim(),
+          sourceBar ? `(Triggered from bar ${sourceBar})` : ''
+        ].filter(Boolean).join('\n');
+      }
+
+      // Validation failed gradient threshold
+      const valFail = raw.match(/validation_failed[:\s]+fastgrad[<>]=?([-+0-9\.]+)\s*\(need\s*<\s*([-+0-9\.]+)\)/i);
+      if (valFail) {
+        return [
+          'Validation failed: fast gradient reversed too much after entry.',
+          `Current fast gradient: ${parseFloat(valFail[1]).toFixed(4)}; required to stay below ${parseFloat(valFail[2]).toFixed(2)} to remain in trade.`,
+          sourceBar ? `(Triggered from bar ${sourceBar})` : ''
+        ].filter(Boolean).join('\n');
+      }
+
+      // Generic cancel/suppress wording
+      if (lower.includes('entry_cancelled')) {
+        return 'Entry was cancelled because one or more entry filters were not satisfied for this bar.';
+      }
+      if (lower.includes('exit_suppressed')) {
+        return 'Exit was suppressed by rules (likely minimum hold) on this bar.';
+      }
+
+      return raw.replace(/_/g, ' ');
+    }
+
+    function explainWithFallback(reason, sourceBar) {
+      const base = explainSkip(reason, sourceBar);
+      if (sourceBar && reason) {
+        return `${base}\nSource bar: ${sourceBar}`;
+      }
+      return base;
+    }
+
+    async function fetchReport(bar) {
+      statusEl.textContent = 'Loading…';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/bar-report?bar=${encodeURIComponent(bar)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const prettySkip = formatSkipReason(data.skipReason);
+        skipEl.textContent = prettySkip;
+        skipExplain.textContent = explainWithFallback(data.skipReason, data.skipReasonSourceBar);
+        if (data.skipReason) {
+          skipRaw.style.display = 'block';
+          skipRaw.textContent = `(Raw: ${data.skipReason}${data.skipReasonSourceBar ? `, from bar ${data.skipReasonSourceBar}` : ''})`;
+        } else {
+          skipRaw.style.display = 'none';
+          skipRaw.textContent = '';
+          skipExplain.textContent = 'No skip reason available.';
+        }
+
+        if (data.csvRows && data.csvRows.length) {
+          const lines = data.csvRows.map(r =>
+            `${r.Timestamp || ''} | Action=${r.Action} | Prev=${r.PrevSignal} -> ${r.NewSignal} | MyPos=${r.MyPosition} | Notes=${r.Notes || ''}`
+          );
+          csvEl.textContent = lines.join('\n');
+        } else {
+          // Show context from prior bars if present
+          const prior = (data.csvRowsPrev1 || []).concat(data.csvRowsPrev2 || []);
+          if (prior.length) {
+            const lines = prior.map(r =>
+              `Bar ${r.Bar} | ${r.Timestamp || ''} | Action=${r.Action} | Prev=${r.PrevSignal} -> ${r.NewSignal} | MyPos=${r.MyPosition} | Notes=${r.Notes || ''}`
+            );
+            csvEl.textContent = `No CSV rows for bar ${bar}. Showing recent context:\n` + lines.join('\n');
+          } else {
+            csvEl.textContent = 'No CSV rows for this bar.';
+          }
+        }
+
+        if (data.logHits && data.logHits.length) {
+          const blocks = data.logHits.map(hit => `# line ${hit.line}\n${hit.context.join('\n')}`);
+          logEl.textContent = blocks.join('\n\n');
+        } else {
+          logEl.textContent = 'No LOG context for this bar.';
+        }
+
+        statusEl.textContent = `CSV: ${data.csvFile || 'none'} | LOG: ${data.logFile || 'none'}`;
+      } catch (err) {
+        statusEl.textContent = '';
+        skipEl.textContent = '—';
+        skipRaw.style.display = 'none';
+        skipRaw.textContent = '';
+        skipExplain.textContent = 'No skip reason available.';
+        csvEl.textContent = 'Error loading report.';
+        logEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const bar = parseInt(barInput.value, 10);
+      if (Number.isNaN(bar)) return;
+      fetchReport(bar);
+    });
+
+    // Auto-load initial bar
+    fetchReport(parseInt(barInput.value, 10));
+  </script>
+</body>
+</html>

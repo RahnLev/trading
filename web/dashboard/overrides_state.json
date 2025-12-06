@@ -1,6 +1,7 @@
 {
-  "MinEntryFastGradientAbs": 0.008,
-  "AdaptiveMinFloor": 0.008,
-  "RsiEntryFloor": 44,
-  "MinAdxForEntry": 16.0
+  "MinAdxForEntry": 13.0,
+  "RsiEntryFloor": 36.0,
+  "MinEntryFastGradientAbs": 0.01,
+  "MaxGradientStabilityForEntry": 2.0,
+  "MaxBandwidthForEntry": 0.12
 }

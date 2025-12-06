@@ -433,10 +433,7 @@
                 <label title="Minimum forward profit (in points) required to classify a bar as a 'good trade' for missed opportunity analysis.">Min Profit Threshold (pts)</label>
                 <input type="number" id="profit-threshold" value="4.0" step="0.5" min="0" title="Minimum forward profit (in points) required to classify a bar as a 'good trade' for missed opportunity analysis.">
             </div>
-            <div class="control-group" style="display: none;">
-                <label>Max Entry Fast Gradient Abs</label>
-                <input type="number" id="maxgrad-threshold" value="0.8" step="0.1" min="0">
-            </div>
+
             <div class="control-group" style="align-self: end;">
                 <button onclick="recalculate()">🔄 Recalculate</button>
             </div>
@@ -725,7 +722,6 @@
                 chip(`Direction (fg>0 && sg>0)`, !!bar.gradDirLongOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
                 chip(`Position (Close>EMAs)`, !!bar.priceAboveEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
                 stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG>=${fmt(bar.entryGradThrLong,3)}`, !!bar.fastStrongForEntryLong, true, 'minEntryFastGradientAbs', bar.entryGradThrLong),
-                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
                 stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
                 stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
                 stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
@@ -739,7 +735,6 @@
                 chip(`Direction (fg<0 && sg<0)`, !!bar.gradDirShortOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
                 chip(`Position (Close&lt;EMAs)`, !!bar.priceBelowEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
                 stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG<=${fmt(-bar.entryGradThrShort,3)}`, !!bar.fastStrongForEntryShort, true, 'minEntryFastGradientAbs', bar.entryGradThrShort),
-                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
                 stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
                 stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
                 stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
@@ -836,7 +831,6 @@
                 chip(`Direction (fg>0 && sg>0)`, !!bar.gradDirLongOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
                 chip(`Position (Close>EMAs)`, !!bar.priceAboveEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA=${fmt(bar.slowEMA)}`),
                 stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG>=${fmt(bar.entryGradThrLong,3)}`, !!bar.fastStrongForEntryLong, true, 'minEntryFastGradientAbs', bar.entryGradThrLong),
-                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
                 stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
                 stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
                 stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
@@ -850,7 +844,6 @@
                 chip(`Direction (fg<0 && sg<0)`, !!bar.gradDirShortOk, `fastGrad=${fmt(bar.fastGrad,3)}, slowGrad=${fmt(bar.slowGrad,3)}`),
                 chip(`Position (Close&lt;EMAs)`, !!bar.priceBelowEMAs, `close=${fmt(bar.close)} fastEMA=${fmt(bar.fastEMA)} slowEMA ${fmt(bar.slowEMA)}`),
                 stackedChip(`FG=${fmt(bar.fastGrad,3)}`, `FG<=${fmt(-bar.entryGradThrShort,3)}`, !!bar.fastStrongForEntryShort, true, 'minEntryFastGradientAbs', bar.entryGradThrShort),
-                stackedChip(`|FG|=${fmt(Math.abs(bar.fastGrad),3)}`, `|FG|<=${fmt(bar.maxEntryFastGradAbs,2)}`, !!bar.notOverextended, true, 'maxEntryFastGradientAbs', bar.maxEntryFastGradAbs),
                 stackedChip(`ADX=${fmt(bar.adx,1)}`, `ADX>=${fmt(bar.minAdxForEntry,1)}`, !!bar.adxOk, true, 'minAdxForEntry', bar.minAdxForEntry),
                 stackedChip(`GS=${fmt(bar.gradStab,3)}`, `GS<=${fmt(bar.maxGradientStabilityForEntry,2)}`, !!bar.gradStabOk, true, 'maxGradientStabilityForEntry', bar.maxGradientStabilityForEntry),
                 stackedChip(`BW=${fmt(bar.bandwidth,5)}`, `BW∈[${fmt(bar.minBandwidthForEntry,3)},${fmt(bar.maxBandwidthForEntry,3)}]`, !!bar.bandwidthOk, true, 'maxBandwidthForEntry', bar.maxBandwidthForEntry),
@@ -1044,6 +1037,21 @@
                         // Update data-value attribute immediately
                         chipElement.setAttribute('data-value', value);
                         
+                        // Update corresponding input field so "Apply to Strategy" uses the new value
+                        const inputFieldMap = {
+                            'minAdxForEntry': 'adx-threshold',
+                            'minRSIForEntry': 'rsi-long-threshold',
+                            'entryGradThrLong': 'fastgrad-threshold',
+                            'maxGradientStabilityForEntry': 'gradstab-threshold',
+                            'maxBandwidthForEntry': 'bandwidth-threshold',
+                            'maxATRForEntry': 'atr-threshold'
+                        };
+                        const inputId = inputFieldMap[param];
+                        if (inputId) {
+                            const inputEl = document.getElementById(inputId);
+                            if (inputEl) inputEl.value = value;
+                        }
+                        
                         // Update all matching chips in the current view immediately
                         document.querySelectorAll(`[data-param="${param}"]`).forEach(chip => {
                             chip.setAttribute('data-value', value);
@@ -1110,13 +1118,27 @@
             // Apply any user-edited threshold overrides (highest priority)
             let overridesApplied = 0;
             for (const [param, value] of Object.entries(userThresholdOverrides)) {
-                const before = bar[param];
-                if (bar[param] !== value) {
-                    console.debug(`[THRESHOLD] 🔧 Override: ${param} ${bar[param]} → ${value}`);
-                    bar[param] = value;
-                    overridesApplied++;
+                // Handle special case: minEntryFastGradientAbs applies to both Long and Short thresholds
+                if (param === 'minEntryFastGradientAbs') {
+                    if (bar.entryGradThrLong !== value) {
+                        console.debug(`[THRESHOLD] 🔧 Override: entryGradThrLong ${bar.entryGradThrLong} → ${value}`);
+                        bar.entryGradThrLong = value;
+                        overridesApplied++;
+                    }
+                    if (bar.entryGradThrShort !== value) {
+                        console.debug(`[THRESHOLD] 🔧 Override: entryGradThrShort ${bar.entryGradThrShort} → ${value}`);
+                        bar.entryGradThrShort = value;
+                        overridesApplied++;
+                    }
                 } else {
-                    console.debug(`[THRESHOLD] ✓ Override already matches: ${param} = ${value}`);
+                    const before = bar[param];
+                    if (bar[param] !== value) {
+                        console.debug(`[THRESHOLD] 🔧 Override: ${param} ${bar[param]} → ${value}`);
+                        bar[param] = value;
+                        overridesApplied++;
+                    } else {
+                        console.debug(`[THRESHOLD] ✓ Override already matches: ${param} = ${value}`);
+                    }
                 }
             }
             
@@ -1206,15 +1228,19 @@
         }
 
         function getThresholds() {
+            const safeGetValue = (id, defaultValue = 0) => {
+                const el = document.getElementById(id);
+                return el ? parseFloat(el.value) : defaultValue;
+            };
+            
             return {
-                adx: parseFloat(document.getElementById('adx-threshold').value),
-                rsiLong: parseFloat(document.getElementById('rsi-long-threshold').value),
-                rsiShort: parseFloat(document.getElementById('rsi-short-threshold').value),
-                fastGrad: parseFloat(document.getElementById('fastgrad-threshold').value),
-                gradStab: parseFloat(document.getElementById('gradstab-threshold').value),
-                bandwidth: parseFloat(document.getElementById('bandwidth-threshold').value),
-                maxGrad: parseFloat(document.getElementById('maxgrad-threshold').value),
-                minProfit: parseFloat(document.getElementById('profit-threshold').value)
+                adx: safeGetValue('adx-threshold'),
+                rsiLong: safeGetValue('rsi-long-threshold'),
+                rsiShort: safeGetValue('rsi-short-threshold'),
+                fastGrad: safeGetValue('fastgrad-threshold'),
+                gradStab: safeGetValue('gradstab-threshold'),
+                bandwidth: safeGetValue('bandwidth-threshold'),
+                minProfit: safeGetValue('profit-threshold')
             };
         }
 
@@ -1372,19 +1398,9 @@
                 // Format time properly - use localTime from API
                 const timeStr = bar.localTime || '-';
                 
-                // Find trend start bar for this bar's trend
-                let trendStartBar = null;
-                for (let seg of trendSegments) {
-                    if (seg.side === bar.trendSide && 
-                        seg.startBarIndex <= bar.barIndex && 
-                        (!seg.endBarIndex || seg.endBarIndex >= bar.barIndex)) {
-                        trendStartBar = seg.startBarIndex;
-                        break;
-                    }
-                }
-                
+                // Trend info: use trendStartBar from strategy directly
                 const trendInfo = bar.trendSide ? 
-                    `${bar.trendSide}${trendStartBar ? ` (from ${trendStartBar})` : ''}` : 
+                    `${bar.trendSide}${bar.trendStartBar ? ` (from ${bar.trendStartBar})` : ''}` : 
                     '-';
                 
                 // Determine status display
@@ -1453,12 +1469,24 @@
             
             // Update exit status
             const exitStatusElem = document.getElementById('stat-exit-status');
-            if (!currentPosition) {
+            
+            // Check for EXIT_TRACE logs even if no ENTRY log is found (e.g., after server restart)
+            const allExitTraceLogs = logData.filter(l => l.action === 'EXIT_TRACE');
+            const hasExitTrace = allExitTraceLogs.length > 0;
+            
+            if (!currentPosition && !hasExitTrace) {
                 exitStatusElem.textContent = 'FLAT';
                 exitStatusElem.style.color = '#9ca3af';
                 document.getElementById('exit-breakdown').style.display = 'none';
             } else {
-                let status = `${currentPosition.direction} from ${currentPositionBar}`;
+                // Infer position from EXIT_TRACE if no ENTRY log found
+                if (!currentPosition && hasExitTrace) {
+                    const latestTrace = allExitTraceLogs.sort((a,b)=> (b.barIndex||0)-(a.barIndex||0))[0];
+                    currentPosition = { direction: latestTrace.direction, entryBar: null, reason: 'Inferred from EXIT_TRACE' };
+                    currentPositionBar = latestTrace.barIndex;
+                }
+                
+                let status = currentPositionBar ? `${currentPosition.direction} from ${currentPositionBar}` : `${currentPosition.direction} (entry unknown)`;
                 if (exitPending) {
                     status = `⏳ EXIT PENDING\n${exitPendingReason}`;
                     exitStatusElem.style.color = '#f59e0b';
@@ -1563,13 +1591,12 @@
             const overrides = [];
             
             // Map webpage fields to strategy property names
-            if (thresholds.adx) overrides.push({ property: 'minAdxForEntry', value: thresholds.adx });
-            if (thresholds.rsiLong) overrides.push({ property: 'rsiLongFloor', value: thresholds.rsiLong });
-            if (thresholds.rsiShort) overrides.push({ property: 'rsiShortFloor', value: thresholds.rsiShort });
-            if (thresholds.fastGrad) overrides.push({ property: 'minEntryFastGradientAbs', value: thresholds.fastGrad });
-            if (thresholds.gradStab) overrides.push({ property: 'maxGradientStabilityForEntry', value: thresholds.gradStab });
+            if (thresholds.adx) overrides.push({ property: 'MinAdxForEntry', value: thresholds.adx });
+            if (thresholds.rsiLong) overrides.push({ property: 'RsiEntryFloor', value: thresholds.rsiLong });
+            if (thresholds.rsiShort) overrides.push({ property: 'RsiEntryFloor', value: thresholds.rsiShort });
+            if (thresholds.fastGrad) overrides.push({ property: 'MinEntryFastGradientAbs', value: thresholds.fastGrad });
+            if (thresholds.gradStab) overrides.push({ property: 'MaxGradientStabilityForEntry', value: thresholds.gradStab });
             if (thresholds.bandwidth) overrides.push({ property: 'MaxBandwidthForEntry', value: thresholds.bandwidth });
-            if (thresholds.maxGrad) overrides.push({ property: 'MaxEntryFastGradientAbs', value: thresholds.maxGrad });
             
             try {
                 for (const override of overrides) {

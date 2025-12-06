@@ -47,6 +47,55 @@
       </div>
     </div>
 
+    <!-- Entry Readiness Section -->
+    <div class="box has-background-grey-dark">
+      <h2 class="title is-5 has-text-light" id="entryReadinessTitle">Entry Readiness — Bar ?</h2>
+      <p class="subtitle is-6 has-text-grey-light" id="entryReadinessSubtitle">Close ? • FastEMA ? • SlowEMA ? • FastGrad ? • Signal: ? • Position: ? • Bars in Signal: ?/?</p>
+      
+      <div class="columns">
+        <div class="column">
+          <h3 class="title is-6 has-text-light">Long Conditions</h3>
+          <div id="longConditions" class="tags"></div>
+          <div style="margin-top: 1rem;">
+            <strong class="has-text-light">Long:</strong>
+            <span class="tag is-success" id="longReadyBadge" style="cursor: pointer; margin-left: 0.5rem;">Ready</span>
+            <span class="tag is-danger" id="longNotReadyBadge" style="cursor: pointer; margin-left: 0.5rem; display: none;">Not Ready</span>
+          </div>
+        </div>
+        <div class="column">
+          <h3 class="title is-6 has-text-light">Short Conditions</h3>
+          <div id="shortConditions" class="tags"></div>
+          <div style="margin-top: 1rem;">
+            <strong class="has-text-light">Short:</strong>
+            <span class="tag is-success" id="shortReadyBadge" style="cursor: pointer; margin-left: 0.5rem;">Ready</span>
+            <span class="tag is-danger" id="shortNotReadyBadge" style="cursor: pointer; margin-left: 0.5rem; display: none;">Not Ready</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 1rem; text-align: right;">
+        <button class="button is-small is-info" id="recalculateBtn">🔄 Recalculate</button>
+        <button class="button is-small is-primary" id="applyToStrategyBtn" style="display: none;">✓ Apply to Strategy</button>
+      </div>
+    </div>
+
+    <!-- Analysis Modal -->
+    <div class="modal" id="analysisModal">
+      <div class="modal-background"></div>
+      <div class="modal-card" style="max-width: 800px;">
+        <header class="modal-card-head has-background-grey-dark">
+          <p class="modal-card-title has-text-light" id="modalTitle">Why Not Ready?</p>
+          <button class="delete" aria-label="close" id="modalCloseBtn"></button>
+        </header>
+        <section class="modal-card-body has-background-grey-darker has-text-light" id="modalBody">
+          <div id="analysisContent"></div>
+        </section>
+        <footer class="modal-card-foot has-background-grey-dark">
+          <div id="modalActions" class="buttons"></div>
+        </footer>
+      </div>
+    </div>
+
     <div class="box has-background-grey-dark">
       <div class="field has-addons">
         <div class="control is-expanded">

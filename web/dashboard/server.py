@@ -1,8 +1,10 @@
 import os
 import time
 import json
+import csv
 import sqlite3
 import hashlib
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 from collections import deque
@@ -562,6 +564,9 @@ bar_cache: deque[Dict[str, Any]] = deque(maxlen=BAR_CACHE_MAX)
 LOG_CACHE_MAX = 1000  # Keep last 1000 log entries (entry/exit/filter decisions)
 log_cache: deque[Dict[str, Any]] = deque(maxlen=LOG_CACHE_MAX)
 
+# Strategy log folder (CSV + .log) used by the bar report endpoint
+LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'strategy_logs'))
+
 def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
     """Extract a normalized minimal bar record from a raw diag payload."""
     try:
@@ -788,6 +793,16 @@ def filter_analysis():
             return f.read()
     except Exception as e:
         return HTMLResponse(f'<h1>Filter Analysis Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
+@app.get('/bar_report.html', response_class=HTMLResponse)
+@app.get('/bar_report', response_class=HTMLResponse)
+def bar_report_page():
+    page_path = os.path.join(os.path.dirname(static_dir), 'bar_report.html')
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return HTMLResponse(f'<h1>Bar Report Page Not Found</h1><p>Error: {e}</p>', status_code=404)
 
 @app.get('/ping')
 def ping():
@@ -1268,6 +1283,136 @@ async def clear_logs():
     except Exception as e:
         print(f'[LOG] Clear error: {e}')
         return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
+
+def _pick_latest_file(ext: str, exclude_substrings: List[str] | None = None) -> str | None:
+    if not os.path.isdir(LOG_DIR):
+        return None
+    exclude_substrings = exclude_substrings or []
+    newest_path = None
+    newest_mtime = -1.0
+    for name in os.listdir(LOG_DIR):
+        lower = name.lower()
+        if not lower.endswith(ext.lower()):
+            continue
+        if any(sub.lower() in lower for sub in exclude_substrings):
+            continue
+        path = os.path.join(LOG_DIR, name)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime > newest_mtime:
+            newest_mtime = mtime
+            newest_path = path
+    return newest_path
+
+def _pick_recent_csv() -> str | None:
+    # Prefer bar-level CSVs (skip trade summaries)
+    return _pick_latest_file('.csv', exclude_substrings=['trades'])
+
+def _pick_recent_log() -> str | None:
+    return _pick_latest_file('.log')
+
+def _load_csv_rows_for_bars(csv_path: str, bars: List[int]) -> Dict[int, List[Dict[str, Any]]]:
+    rows_by_bar: Dict[int, List[Dict[str, Any]]] = {b: [] for b in bars}
+    keep_keys = ['Timestamp', 'Bar', 'PrevSignal', 'NewSignal', 'MyPosition', 'Action', 'Notes', 'ActualPosition', 'EntryBar', 'EntryPrice']
+    targets = set(bars)
+    try:
+        with open(csv_path, newline='', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                try:
+                    bar_val = r.get('Bar')
+                    if bar_val is None:
+                        continue
+                    bar_int = int(float(bar_val))
+                except Exception:
+                    continue
+                if bar_int not in targets:
+                    continue
+                filtered = {k: r.get(k) for k in keep_keys if k in r}
+                filtered['Bar'] = bar_int
+                rows_by_bar.setdefault(bar_int, []).append(filtered)
+    except Exception as ex:
+        print('[BAR-REPORT] CSV read error:', ex)
+    return rows_by_bar
+
+def _extract_skip_reason(rows: List[Dict[str, Any]]) -> tuple[str | None, int | None]:
+    for r in rows:
+        action = (r.get('Action') or '').upper()
+        notes = r.get('Notes') or ''
+        bar_idx = r.get('Bar') if isinstance(r.get('Bar'), int) else None
+        if 'CANCEL' in action or 'SUPPRESS' in action or 'BLOCK' in action:
+            return notes or action, bar_idx
+    if rows:
+        first_notes = rows[0].get('Notes')
+        bar_idx = rows[0].get('Bar') if isinstance(rows[0].get('Bar'), int) else None
+        return (first_notes if first_notes else None, bar_idx)
+    return (None, None)
+
+def _log_context_for_bar(log_path: str, bar: int, window: int = 3, max_hits: int = 3) -> List[Dict[str, Any]]:
+    if not log_path or not os.path.isfile(log_path):
+        return []
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.read().splitlines()
+    except Exception as ex:
+        print('[BAR-REPORT] Log read error:', ex)
+        return []
+    hits: List[Dict[str, Any]] = []
+    pattern = re.compile(rf'\bBar[:= ]{bar}\b')
+    for idx, line in enumerate(lines, start=1):
+        if not pattern.search(line):
+            continue
+        start = max(0, idx - 1 - window)
+        end = min(len(lines), idx + window)
+        hits.append({'line': idx, 'context': lines[start:end]})
+        if len(hits) >= max_hits:
+            break
+    return hits
+
+@app.get('/bar-report')
+def bar_report_api(bar: int, csvFile: str | None = None, logFile: str | None = None):
+    result: Dict[str, Any] = {'bar': bar}
+
+    def _resolve(path_val: str | None) -> str | None:
+        if not path_val:
+            return None
+        return path_val if os.path.isabs(path_val) else os.path.join(LOG_DIR, path_val)
+
+    csv_path = _resolve(csvFile) if csvFile else _pick_recent_csv()
+    if csv_path and os.path.isfile(csv_path):
+        bars_to_fetch = [bar, bar - 1, bar - 2]
+        rows_map = _load_csv_rows_for_bars(csv_path, bars_to_fetch)
+        result['csvRows'] = rows_map.get(bar, [])
+        result['csvRowsPrev1'] = rows_map.get(bar - 1, [])
+        result['csvRowsPrev2'] = rows_map.get(bar - 2, [])
+
+        reason, src_bar = _extract_skip_reason(result['csvRows'])
+        if not reason:
+            reason, src_bar = _extract_skip_reason(result['csvRowsPrev1'])
+        if not reason:
+            reason, src_bar = _extract_skip_reason(result['csvRowsPrev2'])
+        result['skipReason'] = reason
+        result['skipReasonSourceBar'] = src_bar
+        result['csvFile'] = os.path.basename(csv_path)
+    else:
+        result['csvRows'] = []
+        result['csvRowsPrev1'] = []
+        result['csvRowsPrev2'] = []
+        if csvFile:
+            result['csvError'] = 'csv_not_found'
+
+    log_path = _resolve(logFile) if logFile else _pick_recent_log()
+    if log_path and os.path.isfile(log_path):
+        result['logHits'] = _log_context_for_bar(log_path, bar)
+        result['logFile'] = os.path.basename(log_path)
+    else:
+        result['logHits'] = []
+        if logFile:
+            result['logError'] = 'log_not_found'
+
+    return JSONResponse(result)
 
 @app.get('/trends/segments')
 def get_trend_segments(limit: int = 20):
@@ -2385,5 +2530,6 @@ def get_ai_footprints(limit: int = 50, action: str = None):
 
 if __name__ == '__main__':
     import uvicorn
-    port = int(os.environ.get('PORT', '5001'))
+    # Default to dashboard port used by server_manager (can override via PORT env)
+    port = int(os.environ.get('PORT', '51888'))
     uvicorn.run(app, host='127.0.0.1', port=port)

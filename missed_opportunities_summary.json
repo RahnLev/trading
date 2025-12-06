@@ -1,0 +1,17 @@
+{
+  "total_bars_analyzed": 221,
+  "missed_opportunities": 100,
+  "total_missed_profit": 797.75,
+  "avg_missed_profit_per_opportunity": 7.9775,
+  "blocker_frequency": {
+    "FastGrad too weak": 79,
+    "Close above fastEMA": 39,
+    "Close below fastEMA": 38,
+    "ADX too low": 17,
+    "RSI below short floor": 9,
+    "RSI below floor": 7,
+    "AccelMisaligned": 2
+  },
+  "long_misses": 46,
+  "short_misses": 54
+}

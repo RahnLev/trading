@@ -39,6 +39,7 @@ async function pollDiags() {
       if (dcEl) { dcEl.textContent = `Diags: ${diagsTotal}`; dcEl.className = 'tag is-success'; }
       lastSince = items[items.length - 1].receivedAt;
       lastItem = items[items.length - 1];
+      updateEntryReadiness(lastItem); // Update entry readiness badges
       const out = document.getElementById('diagsOut');
       if (!out) { console.warn('[DIAGS] diagsOut element not found'); return; }
       const lines = items.map(d => {
@@ -482,6 +483,335 @@ function main() {
             tag.className = 'tag is-danger';
           }
         });
+  
+  // Setup badge click listeners
+  setupBadgeListeners();
+}
+
+// Entry Readiness Functions
+function updateEntryReadiness(data) {
+  if (!data) {
+    console.log('[ENTRY_READINESS] No data provided');
+    return;
+  }
+  
+  console.log('[ENTRY_READINESS] Updating with data:', {
+    bar: data.barIndex,
+    longReady: data.entryLongReady,
+    shortReady: data.entryShortReady,
+    longBlockers: (data.blockersLong || []).length,
+    shortBlockers: (data.blockersShort || []).length
+  });
+  
+  // Update title and subtitle
+  const bar = data.barIndex || '?';
+  const close = data.close != null ? data.close.toFixed(2) : '?';
+  const fastEMA = data.fastEMA != null ? data.fastEMA.toFixed(2) : '?';
+  const slowEMA = data.slowEMA != null ? data.slowEMA.toFixed(2) : '?';
+  const fastGrad = data.fastGrad != null ? data.fastGrad.toFixed(4) : '?';
+  const signal = data.signal || 'UNKNOWN';
+  const position = data.myPosition || 'UNKNOWN';
+  const barsInSignal = data.barsInSignal || '?';
+  const signalStartBar = data.signalStartBar || '?';
+  
+  const titleEl = document.getElementById('entryReadinessTitle');
+  const subtitleEl = document.getElementById('entryReadinessSubtitle');
+  
+  if (titleEl) {
+    titleEl.textContent = `Entry Readiness — Bar ${bar}`;
+  }
+  if (subtitleEl) {
+    subtitleEl.textContent = `Close ${close} • FastEMA ${fastEMA} • SlowEMA ${slowEMA} • FastGrad ${fastGrad} • Signal: ${signal} • Position: ${position} • Bars in Signal: ${barsInSignal}/${signalStartBar}`;
+  }
+  
+  // Update Long conditions
+  const longConditions = document.getElementById('longConditions');
+  const longBlockers = data.blockersLong || [];
+  const longReady = data.entryLongReady || false;
+  const canEnterLong = data.canEnterLong || false;
+  
+  if (longConditions) {
+    longConditions.innerHTML = renderConditionTags(data, 'LONG', longBlockers);
+  }
+  
+  // Show/hide Long badges
+  const longReadyBadge = document.getElementById('longReadyBadge');
+  const longNotReadyBadge = document.getElementById('longNotReadyBadge');
+  
+  if (longReadyBadge) {
+    longReadyBadge.style.display = longReady ? 'inline-block' : 'none';
+  }
+  if (longNotReadyBadge) {
+    longNotReadyBadge.style.display = longReady ? 'none' : 'inline-block';
+  }
+  
+  console.log('[ENTRY_READINESS] Long badges visibility:', {
+    ready: longReady,
+    readyDisplay: longReadyBadge?.style.display,
+    notReadyDisplay: longNotReadyBadge?.style.display
+  });
+  
+  // Update Short conditions
+  const shortConditions = document.getElementById('shortConditions');
+  const shortBlockers = data.blockersShort || [];
+  const shortReady = data.entryShortReady || false;
+  const canEnterShort = data.canEnterShort || false;
+  
+  if (shortConditions) {
+    shortConditions.innerHTML = renderConditionTags(data, 'SHORT', shortBlockers);
+  }
+  
+  // Show/hide Short badges
+  const shortReadyBadge = document.getElementById('shortReadyBadge');
+  const shortNotReadyBadge = document.getElementById('shortNotReadyBadge');
+  
+  if (shortReadyBadge) {
+    shortReadyBadge.style.display = shortReady ? 'inline-block' : 'none';
+  }
+  if (shortNotReadyBadge) {
+    shortNotReadyBadge.style.display = shortReady ? 'none' : 'inline-block';
+  }
+  
+  console.log('[ENTRY_READINESS] Short badges visibility:', {
+    ready: shortReady,
+    readyDisplay: shortReadyBadge?.style.display,
+    notReadyDisplay: shortNotReadyBadge?.style.display
+  });
+}
+
+function renderConditionTags(data, direction, blockers) {
+  const isLong = direction === 'LONG';
+  const conditions = [];
+  
+  // Signal eligibility
+  const signalEligible = isLong ? data.signalEligibleLong : data.signalEligibleShort;
+  conditions.push(createTag(`Signal (streak ${isLong ? data.streakLong : data.streakShort}/1)`, signalEligible));
+  
+  // Direction (fg>0 & sg>0)
+  const dirOk = isLong ? data.gradDirLongOk : data.gradDirShortOk;
+  conditions.push(createTag(`Direction (fg${isLong ? '>' : '<'}0 && sg${isLong ? '>' : '<'}0)`, dirOk));
+  
+  // Position
+  const posOk = isLong ? data.priceAboveEMAs : data.priceBelowEMAs;
+  conditions.push(createTag(`Position (Close${isLong ? '>' : '<'}EMAs)`, posOk));
+  
+  // Fast gradient strength
+  const fg = data.fastGrad || 0;
+  const thrLong = data.entryGradThrLong || 0.008;
+  const thrShort = data.entryGradThrShort || -0.008;
+  const fgStr = isLong ? `FG=${fg.toFixed(3)}` : `FG=${fg.toFixed(3)}`;
+  const fgPass = isLong ? data.fastStrongForEntryLong : data.fastStrongForEntryShort;
+  const fgThr = isLong ? `|FG|>${thrLong.toFixed(3)}` : `|FG|>${Math.abs(thrShort).toFixed(3)}`;
+  conditions.push(createTag(`${fgStr}\n${fgThr}`, fgPass));
+  
+  // ADX
+  const adx = data.adx || 0;
+  const minAdx = data.minAdxForEntry || 16;
+  conditions.push(createTag(`ADX=${adx.toFixed(1)}\nADX>=${minAdx}`, data.adxOk));
+  
+  // Gradient Stability
+  const gs = data.gradStab || 0;
+  const maxGS = data.maxGradientStabilityForEntry || 2.00;
+  conditions.push(createTag(`GS=${gs.toFixed(3)}\nGS<=${maxGS.toFixed(2)}`, data.gradStabOk));
+  
+  // Bandwidth
+  const bw = data.bandwidth || 0;
+  const minBW = data.minBandwidthForEntry || 0;
+  const maxBW = data.maxBandwidthForEntry || 0.12;
+  conditions.push(createTag(`BW=${bw.toFixed(5)}\nBW∈[${minBW.toFixed(3)},${maxBW.toFixed(3)}]`, data.bandwidthOk));
+  
+  // Accel align
+  const accel = data.accel || 0;
+  const accelOk = isLong ? data.accelAlignOkLong : data.accelAlignOkShort;
+  conditions.push(createTag(`Accel align\nAccel=${accel.toFixed(3)}`, accelOk));
+  
+  // ATR
+  const atr = data.atr || 0;
+  const maxATR = data.maxATRForEntry || 13.57;
+  conditions.push(createTag(`ATR=${atr.toFixed(2)}\nATR<=${maxATR.toFixed(2)}`, data.atrOk));
+  
+  // RSI
+  const rsi = data.rsi || 0;
+  const minRSI = isLong ? 45 : 0;
+  const maxRSI = isLong ? 100 : 65;
+  conditions.push(createTag(`RSI=${rsi.toFixed(1)}\nRSI∈[${minRSI},${maxRSI}]`, data.rsiOk));
+  
+  return conditions.join(' ');
+}
+
+function createTag(text, passed) {
+  const tagClass = passed ? 'is-success' : 'is-danger';
+  return `<span class="tag ${tagClass}" style="white-space: pre-line; margin: 2px;">${text}</span>`;
+}
+
+async function analyzeBarEntry(barIndex, direction, isCurrent) {
+  const modal = document.getElementById('analysisModal');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalBody = document.getElementById('analysisContent');
+  const modalActions = document.getElementById('modalActions');
+  
+  modalTitle.textContent = `Analyzing Bar ${barIndex} - ${direction} Entry`;
+  modalBody.innerHTML = '<p>Loading analysis...</p>';
+  modalActions.innerHTML = '';
+  modal.classList.add('is-active');
+  
+  try {
+    const res = await fetch(`/analyze_entry?bar=${barIndex}&direction=${direction}&current=${isCurrent}`);
+    const analysis = await res.json();
+    
+    // Render analysis
+    let html = '<div class="content">';
+    html += `<h4>Why ${direction} Entry Blocked:</h4>`;
+    html += '<ul>';
+    (analysis.blockers || []).forEach(blocker => {
+      html += `<li><strong>${blocker.filter}:</strong> ${blocker.reason} (Current: ${blocker.current}, Required: ${blocker.required})</li>`;
+    });
+    html += '</ul>';
+    
+    if (analysis.suggestions && analysis.suggestions.length > 0) {
+      html += '<h4 style="margin-top: 1rem;">Suggested Filter Changes:</h4>';
+      html += '<div class="box has-background-grey-dark">';
+      analysis.suggestions.forEach(sug => {
+        html += `<div style="margin-bottom: 0.5rem;">`;
+        html += `<span class="tag is-info">${sug.property}</span>`;
+        html += `<span class="tag is-link">From ${sug.current} → ${sug.recommend}</span>`;
+        html += `<span class="tag is-dark">${sug.reason}</span>`;
+        html += `</div>`;
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    
+    modalBody.innerHTML = html;
+    
+    // Render action buttons
+    if (isCurrent) {
+      modalActions.innerHTML = `
+        <button class="button is-danger" id="forceEntryBtn">⚡ Force Entry Now</button>
+        <button class="button is-warning" id="applyFiltersBtn">🔧 Apply Filter Changes</button>
+        <button class="button is-light" id="cancelBtn">Cancel</button>
+      `;
+      
+      document.getElementById('forceEntryBtn').onclick = async () => {
+        if (confirm(`Force ${direction} entry immediately on current bar?`)) {
+          await fetch('/force_entry', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ direction, barIndex })
+          });
+          modal.classList.remove('is-active');
+        }
+      };
+      
+      document.getElementById('applyFiltersBtn').onclick = async () => {
+        if (confirm('Apply these filter changes to allow similar trades in the future?')) {
+          await applyFilterChanges(analysis.suggestions);
+          modal.classList.remove('is-active');
+        }
+      };
+    } else {
+      modalActions.innerHTML = `
+        <button class="button is-warning" id="applyFiltersBtn">🔧 Apply Filter Changes</button>
+        <button class="button is-light" id="cancelBtn">Cancel</button>
+      `;
+      
+      document.getElementById('applyFiltersBtn').onclick = async () => {
+        if (confirm('Apply these filter changes to allow similar trades in the future?')) {
+          await applyFilterChanges(analysis.suggestions);
+          modal.classList.remove('is-active');
+        }
+      };
+    }
+    
+    document.getElementById('cancelBtn').onclick = () => {
+      modal.classList.remove('is-active');
+    };
+    
+  } catch (e) {
+    modalBody.innerHTML = `<p class="has-text-danger">Error: ${e.message}</p>`;
+  }
+}
+
+async function applyFilterChanges(suggestions) {
+  if (!suggestions || suggestions.length === 0) return;
+  
+  for (const sug of suggestions) {
+    if (sug.canApply) {
+      await applySuggestion(sug);
+    }
+  }
+}
+
+// Setup event listeners for badges
+function setupBadgeListeners() {
+  const longBadge = document.getElementById('longNotReadyBadge');
+  const shortBadge = document.getElementById('shortNotReadyBadge');
+  const longReadyBadge = document.getElementById('longReadyBadge');
+  const shortReadyBadge = document.getElementById('shortReadyBadge');
+  
+  console.log('[BADGES] Setting up listeners:', {
+    longBadge: !!longBadge,
+    shortBadge: !!shortBadge,
+    longReadyBadge: !!longReadyBadge,
+    shortReadyBadge: !!shortReadyBadge
+  });
+  
+  if (longBadge) {
+    longBadge.onclick = () => {
+      console.log('[BADGE CLICK] Long Not Ready clicked, lastItem:', lastItem);
+      if (lastItem) {
+        analyzeBarEntry(lastItem.barIndex, 'LONG', true);
+      } else {
+        alert('No bar data available yet. Wait for strategy to send data.');
+      }
+    };
+  }
+  
+  if (shortBadge) {
+    shortBadge.onclick = () => {
+      console.log('[BADGE CLICK] Short Not Ready clicked, lastItem:', lastItem);
+      if (lastItem) {
+        analyzeBarEntry(lastItem.barIndex, 'SHORT', true);
+      } else {
+        alert('No bar data available yet. Wait for strategy to send data.');
+      }
+    };
+  }
+  
+  // Also make Ready badges clickable to show current status
+  if (longReadyBadge) {
+    longReadyBadge.onclick = () => {
+      if (lastItem) {
+        alert(`Long entry is READY on bar ${lastItem.barIndex}!\nAll conditions are satisfied.`);
+      }
+    };
+  }
+  
+  if (shortReadyBadge) {
+    shortReadyBadge.onclick = () => {
+      if (lastItem) {
+        alert(`Short entry is READY on bar ${lastItem.barIndex}!\nAll conditions are satisfied.`);
+      }
+    };
+  }
+  
+  const modalClose = document.getElementById('modalCloseBtn');
+  if (modalClose) {
+    modalClose.onclick = () => {
+      document.getElementById('analysisModal').classList.remove('is-active');
+    };
+  }
+  
+  const modalBg = document.querySelector('.modal-background');
+  if (modalBg) {
+    modalBg.onclick = () => {
+      document.getElementById('analysisModal').classList.remove('is-active');
+    };
+  }
+  
+  console.log('[BADGES] Listeners attached');
 }
 
 main();
+
+
