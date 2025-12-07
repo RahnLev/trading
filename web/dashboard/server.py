@@ -10,7 +10,7 @@ from typing import List, Dict, Any
 from collections import deque
 from fastapi import FastAPI, Request
 from fastapi import WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -804,6 +804,21 @@ def bar_report_page():
     except Exception as e:
         return HTMLResponse(f'<h1>Bar Report Page Not Found</h1><p>Error: {e}</p>', status_code=404)
 
+@app.get('/candles.html', response_class=HTMLResponse)
+@app.get('/candles', response_class=HTMLResponse)
+def candles_page():
+    page_path = os.path.join(os.path.dirname(static_dir), 'candles.html')
+    print(f"[CANDLES] Attempting to load from: {page_path}")
+    print(f"[CANDLES] File exists: {os.path.exists(page_path)}")
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            print(f"[CANDLES] Successfully loaded {len(content)} bytes")
+            return content
+    except Exception as e:
+        print(f"[CANDLES] Error loading file: {e}")
+        return HTMLResponse(f'<h1>Candles Page Not Found</h1><p>Error: {e}</p><p>Tried path: {page_path}</p>', status_code=404)
+
 @app.get('/ping')
 def ping():
     return JSONResponse({'status': 'ok', 'time': time.time()})
@@ -1283,6 +1298,22 @@ async def clear_logs():
     except Exception as e:
         print(f'[LOG] Clear error: {e}')
         return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
+
+@app.get('/logs/latest-csv')
+def get_latest_csv():
+    """Serve the most recent strategy CSV from disk for the candles viewer."""
+    csv_path = _pick_recent_csv()
+    if not csv_path or not os.path.isfile(csv_path):
+        return JSONResponse({'status': 'error', 'message': 'No CSV files found in strategy_logs'}, status_code=404)
+
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        headers = {'X-Log-Filename': os.path.basename(csv_path)}
+        return PlainTextResponse(content, media_type='text/csv', headers=headers)
+    except Exception as ex:
+        print(f'[LOG] latest-csv read error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
 
 def _pick_latest_file(ext: str, exclude_substrings: List[str] | None = None) -> str | None:
     if not os.path.isdir(LOG_DIR):

@@ -421,6 +421,7 @@
     <Compile Include="Strategies\GradientSlopeStrategy.cs" />
     <Compile Include="Indicators\EMAGradientPair.cs" />
     <Compile Include="Strategies\TimeframeAdvisor.cs" />
+    <Compile Include="Strategies\BareOhlcLogger.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

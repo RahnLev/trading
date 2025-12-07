@@ -2291,7 +2291,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Write header if first time
                 if (!csvHeaderWritten)
                 {
-                    csvWriter.WriteLine("Timestamp,Bar,Open,Close,FastEMA,SlowEMA,FastGradient,SlowGradient,PrevSignal,NewSignal,MyPosition,ActualPosition,Action,Notes,InWeakDelay,SignalStartBar,LastTradeBar,PriceGradient,BarsSinceEntry,EntryBar,EntryPrice,ExitPending,ExitPendingSide,ExitPendingAnchorFastEMA,ExitPendingEMADelta,MinHoldBars,InExitCooldown,CooldownSecsLeft,TradeMFE,TradeMAE,UnrealizedPoints,Volume,VolumePerMinute");
+                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close,FastEMA,SlowEMA,FastGradient,SlowGradient,PrevSignal,NewSignal,MyPosition,ActualPosition,Action,Notes,InWeakDelay,SignalStartBar,LastTradeBar,PriceGradient,BarsSinceEntry,EntryBar,EntryPrice,ExitPending,ExitPendingSide,ExitPendingAnchorFastEMA,ExitPendingEMADelta,MinHoldBars,InExitCooldown,CooldownSecsLeft,TradeMFE,TradeMAE,UnrealizedPoints,Volume,VolumePerMinute");
                     csvHeaderWritten = true;
                 }
                 
@@ -2311,9 +2311,33 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else if (exitPendingSide == "SHORT")
                         exitPendingDelta = fastEma - exitPendingAnchorFastEMA;
                 }
-                // Use passed OHLC values for logging
+                // Use passed OHLC values for logging - but verify bar structure
+                // In continuous bars, current Open should equal previous Close
                 double openPrice = open;
+                double highPrice = High[0];
+                double lowPrice = Low[0];
                 double closePrice = close;
+                
+                // Verify bar continuity: Open[0] should equal Close[1] in most cases
+                if (CurrentBar > 0 && Math.Abs(Open[0] - Close[1]) > 0.01)
+                {
+                    // Gap detected - this is normal for new sessions or halts
+                    // But if Open != Close on same bar with no gap, that's suspicious
+                }
+                
+                // Ensure High/Low boundaries are correct
+                if (highPrice < lowPrice)
+                {
+                    Print($"[GRAD] WARNING: Bar {bar} has High ({highPrice:F2}) < Low ({lowPrice:F2})");
+                    double temp = highPrice;
+                    highPrice = lowPrice;
+                    lowPrice = temp;
+                }
+                if (openPrice < lowPrice) lowPrice = openPrice;
+                if (openPrice > highPrice) highPrice = openPrice;
+                if (closePrice < lowPrice) lowPrice = closePrice;
+                if (closePrice > highPrice) highPrice = closePrice;
+                
                 double vol = Volume[0];
                 
                 double unrealizedPts = 0.0;
@@ -2322,8 +2346,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 // Write data row
                 double vpm = 0.0; if (CurrentBar >= 1) { double minutes = (Time[0] - Time[1]).TotalMinutes; if (minutes <= 0) minutes = 1.0; vpm = vol / minutes; } else { vpm = vol; }
-                csvWriter.WriteLine(string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2},{6:F4},{7:F4},{8},{9},{10},{11},{12},{13},{14},{15},{16:F4},{17},{18},{19:F2},{20},{21},{22:F2},{23:F2},{24},{25:F2},{26:F2},{27:F2},{28:F0},{29:F2}",
-                    time, bar, openPrice, closePrice, fastEma, slowEma, fastGrad, slowGrad, prevSignal, newSignal, position, actualPos, action, notes,
+                csvWriter.WriteLine(string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2},{6:F2},{7:F2},{8:F4},{9:F4},{10},{11},{12},{13},{14},{15},{16},{17},{18:F4},{19},{20},{21:F2},{22},{23},{24:F2},{25:F2},{26},{27:F2},{28:F2},{29:F2},{30:F0},{31:F2}",
+                    time, bar, openPrice, highPrice, lowPrice, closePrice, fastEma, slowEma, fastGrad, slowGrad, prevSignal, newSignal, position, actualPos, action, notes,
                     signalStartBar, lastTradeBar,
                     priceGradient, barsSinceEntry, entryBar, entryPrice, exitPending ? 1 : 0, exitPendingSide, exitPendingAnchorFastEMA, exitPendingDelta,
                     minHoldBars, tradeMFE, Math.Abs(tradeMAE), unrealizedPts, vol, vpm));
