@@ -50,6 +50,15 @@
             Otherwise: NEUTRAL (contradictory or flat signals)
             </summary>
         </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BareOhlcLogger.ClassifyCandle(System.Double,System.Double)">
+            <summary>
+            Helper method to classify a candle based on its open/close relationship
+            Called on first tick of bar to analyze the previously completed bar
+            </summary>
+            <param name="open">Open price of the completed bar</param>
+            <param name="close">Close price of the completed bar</param>
+            <returns>"good" for green/bullish, "bad" for red/bearish, "good and bad" for doji/neutral</returns>
+        </member>
         <member name="T:NinjaTrader.NinjaScript.Indicators.ADL">
             <summary>
             The Accumulation/Distribution (AD) study attempts to quantify the amount of volume flowing into or

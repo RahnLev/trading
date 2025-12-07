@@ -347,6 +347,8 @@
             const highCol = header.findIndex(h => h.toLowerCase().includes('high'));
             const lowCol = header.findIndex(h => h.toLowerCase().includes('low'));
             const closeCol = header.findIndex(h => h.toLowerCase().includes('close'));
+            const pnlCol = header.indexOf('PNL');
+            const candleTypeCol = header.indexOf('CandleType');
 
             candles = [];
             entries = [];
@@ -368,15 +370,17 @@
                 const high = parseFloat(cols[highCol]) || null;
                 const low = parseFloat(cols[lowCol]) || null;
                 const close = parseFloat(cols[closeCol]) || null;
+                const pnl = pnlCol >= 0 ? parseFloat(cols[pnlCol]) || 0 : null;
+                const candleType = candleTypeCol >= 0 ? cols[candleTypeCol] || '' : '';
 
                 // Store candle data if we have price info
                 if (open !== null && high !== null && low !== null && close !== null) {
-                    candleByBar.set(bar, { bar, timestamp, open, high, low, close });
+                    candleByBar.set(bar, { bar, timestamp, open, high, low, close, pnl, candleType });
                 }
             }
 
             rawCandles = Array.from(candleByBar.values())
-                .map(c => ({ bar: c.bar, timestamp: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close }))
+                .map(c => ({ bar: c.bar, timestamp: c.timestamp, open: c.open, high: c.high, low: c.low, close: c.close, pnl: c.pnl, candleType: c.candleType }))
                 .sort((a, b) => a.bar - b.bar);
 
             if (rawCandles.length === 0) {
@@ -427,7 +431,9 @@
                         high: candle.high,
                         low: candle.low,
                         close: candle.close,
-                        bars: [candle.bar]
+                        bars: [candle.bar],
+                        pnlSum: candle.pnl || 0,
+                        candleTypes: [candle.candleType || '']
                     });
                 } else {
                     const agg = candleMap.get(key);
@@ -435,6 +441,8 @@
                     agg.low = Math.min(agg.low, candle.low);
                     agg.close = candle.close; // Last close in period
                     agg.bars.push(candle.bar);
+                    agg.pnlSum += (candle.pnl || 0);
+                    agg.candleTypes.push(candle.candleType || '');
                 }
             });
 
@@ -443,6 +451,14 @@
             const sortedKeys = Array.from(candleMap.keys()).sort((a, b) => parseInt(a) - parseInt(b));
             sortedKeys.forEach(key => {
                 const agg = candleMap.get(key);
+                // Calculate aggregated PNL and determine dominant candle type
+                const aggPnl = agg.close - agg.open; // Aggregated candle's PNL
+                const typeCount = agg.candleTypes.reduce((count, type) => {
+                    count[type] = (count[type] || 0) + 1;
+                    return count;
+                }, {});
+                const dominantType = Object.keys(typeCount).reduce((a, b) => typeCount[a] > typeCount[b] ? a : b) || '';
+                
                 candles.push({
                     bar: barNum++,
                     timestamp: agg.timestamp,
@@ -450,7 +466,10 @@
                     high: agg.high,
                     low: agg.low,
                     close: agg.close,
-                    originalBars: agg.bars
+                    pnl: aggPnl,
+                    candleType: dominantType,
+                    originalBars: agg.bars,
+                    originalPnlSum: agg.pnlSum
                 });
             });
 
@@ -1017,6 +1036,14 @@
                 <div class="tooltip-row">
                     <span class="tooltip-label">Close:</span>
                     <span class="tooltip-value">${candle.close.toFixed(2)}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">PNL:</span>
+                    <span class="tooltip-value" style="color: ${(candle.pnl || 0) >= 0 ? '#10b981' : '#ef4444'};">${(candle.pnl || 0).toFixed(2)}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Candle:</span>
+                    <span class="tooltip-value" style="color: ${candle.candleType === 'good' ? '#10b981' : candle.candleType === 'bad' ? '#ef4444' : '#9ca3af'};">${candle.candleType || 'N/A'}</span>
                 </div>
             `;
 

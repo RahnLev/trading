@@ -1,5 +1,6 @@
 #region Using declarations
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.ComponentModel.DataAnnotations;
 using System.Windows.Media;
@@ -17,16 +18,47 @@ namespace NinjaTrader.NinjaScript.Strategies
         private StreamWriter csvWriter;
         private string csvFilePath;
         private bool csvHeaderWritten = false;
+        private HashSet<int> loggedBars = new HashSet<int>(); // Track which bars have been logged
 
         // Log writer for detailed output (like GradientSlope)
         private StreamWriter logWriter;
         private string logFilePath;
         private bool writerInitialized = false;  // Prevent multiple initializations
 
-        // #region Bar Index Labels (copied from GradientSlopeStrategy)
+        #region Bar Index Labels (copied from GradientSlopeStrategy)
         // Toggle to draw bar index labels above each bar on the chart.
         private bool showBarIndexLabels = true;
-        // #endregion
+        #endregion
+
+        #region Helper Methods
+        
+        /// <summary>
+        /// Helper method to classify a candle based on its open/close relationship
+        /// Called on first tick of bar to analyze the previously completed bar
+        /// </summary>
+        /// <param name="open">Open price of the completed bar</param>
+        /// <param name="close">Close price of the completed bar</param>
+        /// <returns>"good" for green/bullish, "bad" for red/bearish, "good and bad" for doji/neutral</returns>
+        private string ClassifyCandle(double open, double close)
+        {
+            const double dojiThreshold = 0.0001; // Very small threshold for doji detection
+            double difference = Math.Abs(close - open);
+            
+            if (difference <= dojiThreshold)
+            {
+                return "good and bad"; // Doji or very small body
+            }
+            else if (close > open)
+            {
+                return "good"; // Green/Bullish candle
+            }
+            else
+            {
+                return "bad"; // Red/Bearish candle
+            }
+        }
+        
+        #endregion
 
         protected override void OnStateChange()
         {
@@ -156,24 +188,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
             }
 
-            // Log every tick for now to diagnose the issue
+            // Only log each completed bar once
             try
             {
                 // Write header on first bar
                 if (!csvHeaderWritten)
                 {
-                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close");
+                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close,PNL,CandleType");
                     csvHeaderWritten = true;
                     Print($"[BareOhlcLogger] Header written");
                 }
 
                 var barIndex = CurrentBar - 1; // index of the completed bar
+                
+                // Check if this bar has already been logged
+                if (loggedBars.Contains(barIndex))
+                {
+                    return; // Skip logging - already processed this bar
+                }
+                
+                // Mark this bar as logged
+                loggedBars.Add(barIndex);
+                
                 var ts = Times[0][1];
-                var line = string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2}",
-                    ts, barIndex, Open[1], High[1], Low[1], Close[1]);
+                
+                // Calculate PNL (Close - Open) and classify candle
+                var pnl = Close[1] - Open[1];
+                var candleType = ClassifyCandle(Open[1], Close[1]);
+                
+                var line = string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2},{6:F2},{7}",
+                    ts, barIndex, Open[1], High[1], Low[1], Close[1], pnl, candleType);
 
                 csvWriter.WriteLine(line);
-                LogOutput($"Bar {barIndex}: O={Open[1]:F2} H={High[1]:F2} L={Low[1]:F2} C={Close[1]:F2}");
+                LogOutput($"Bar {barIndex}: O={Open[1]:F2} H={High[1]:F2} L={Low[1]:F2} C={Close[1]:F2} PNL={pnl:F2} Type={candleType} [LOGGED ONCE]");
             }
             catch (Exception ex)
             {
