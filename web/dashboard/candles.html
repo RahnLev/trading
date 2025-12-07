@@ -875,7 +875,7 @@
                 }
             });
 
-            // Draw bar numbers on x-axis
+            // Draw timestamps on x-axis
             ctx.fillStyle = '#9ca3af';
             ctx.font = '10px monospace';
             ctx.textAlign = 'center';
@@ -883,8 +883,20 @@
             candles.forEach((candle, index) => {
                 if (index % labelEvery === 0 || index === candles.length - 1) {
                     const x = chartPadding.left + index * candleSpacing + candleSpacing / 2;
-                    if (isFinite(x) && isFinite(candle.bar)) {
-                        ctx.fillText(candle.bar, x, canvas.height - chartPadding.bottom + 20);
+                    if (isFinite(x) && candle.timestamp) {
+                        // Parse timestamp and format as local time
+                        try {
+                            const date = new Date(candle.timestamp);
+                            const timeString = date.toLocaleTimeString('en-US', { 
+                                hour12: false, 
+                                hour: '2-digit', 
+                                minute: '2-digit' 
+                            });
+                            ctx.fillText(timeString, x, canvas.height - chartPadding.bottom + 20);
+                        } catch (e) {
+                            // Fallback to bar number if timestamp parsing fails
+                            ctx.fillText(candle.bar || index, x, canvas.height - chartPadding.bottom + 20);
+                        }
                     }
                 }
             });
@@ -930,10 +942,10 @@
                     
                     // Only apply vertical pan if significant vertical movement
                     if (Math.abs(deltaY) > Math.abs(deltaX)) {
-                        // Vertical panning (up/down) - VERY LESS sensitive and INVERTED
+                        // Vertical panning (up/down) - EXTREMELY LESS sensitive and INVERTED
                         const chartHeight = canvas.height - chartPadding.top - chartPadding.bottom;
                         const zoomedRange = (maxPriceRaw / priceZoom);
-                        const priceShift = (deltaY / chartHeight) * zoomedRange * 0.02; // Inverted sign, much less sensitive
+                        const priceShift = (deltaY / chartHeight) * zoomedRange * 0.005; // Much less sensitive (reduced from 0.02 to 0.005)
                         priceOffset += priceShift;
                         dragStartY = e.clientY;
                     } else {
