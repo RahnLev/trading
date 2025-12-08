@@ -676,7 +676,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 var msg = advisor.Explain(ctx, rec);
                                 if (enableLogging)
                                     LogOutput($"TIMEFRAME_ADVICE: {rec} -> {msg}");
-                                LogToCSV(Time[0], CurrentBar, Open[0], Close[0], fastEMA[0], slowEMA[0], ctx.FastGradient, ctx.SlowGradient,
+                                LogToCSV(Time[0], CurrentBar, Open[0], High[0], Low[0], Close[0], fastEMA[0], slowEMA[0], ctx.FastGradient, ctx.SlowGradient,
                                     currentSignal, currentSignal, myPosition, "TIMEFRAME_ADVICE", $"{rec}:{msg}|ADX={ctx.ADX:F1}|ATR={ctx.ATR:F2}|Whipsaws={ctx.RecentWhipsawCount}");
 
                                 // Post to dashboard for UI display
@@ -739,8 +739,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 int completedBar = CurrentBar - 1;
                 string barAction = myPosition == "FLAT" ? "BAR_CLOSE" : $"BAR_CLOSE_IN_{myPosition}";
                 
-                // Use bar[1] (previous bar) values
-                LogToCSV(Time[1], completedBar, Open[1], Close[1], fastEMA[1], slowEMA[1], 
+                // Use bar[1] (previous bar) values - all OHLC from the same completed bar
+                LogToCSV(Time[1], completedBar, Open[1], High[1], Low[1], Close[1], fastEMA[1], slowEMA[1], 
                     (fastEMA[1] - fastEMA[2]), (slowEMA[1] - slowEMA[2]),
                     currentSignal, currentSignal, myPosition, barAction, "Completed_Bar");
                 
@@ -1022,7 +1022,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (barsSinceEntry < minHoldBars)
                     {
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, currentSignal, "LONG", "EXIT_SUPPRESSED", $"MIN_HOLD:{barsSinceEntry}/{minHoldBars}");
                         // Skip exit logic for this bar
                         goto AfterLongExitChecks;
@@ -1037,7 +1037,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (currentProfit < mfeThreshold)
                     {
                         LogOutput($"EXIT LONG (MFE TRAILING STOP) -> CurrentProfit:{currentProfit:F2} < Threshold:{mfeThreshold:F2} (MFE:{tradeMFE:F2}*{mfeTrailingStopPercent:F2})");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "LONG", "EXIT", $"MFE_TRAILING_STOP:Profit={currentProfit:F2}<{mfeThreshold:F2}(MFE={tradeMFE:F2})");
                         
                         ExitLong("EnterLong");
@@ -1076,7 +1076,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (validationFailed)
                 {
                     LogOutput($"EXIT LONG (VALIDATION FAILED IN POSITION) -> {validationReason}");
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, "LONG", "EXIT", $"VALIDATION_FAILED: {validationReason}");
                     
                     ExitLong("EnterLong");
@@ -1118,7 +1118,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         reason = $"BOTH conditions met: Gradient<={fastEMAGradientExitThreshold} AND Price<FastEMA";
                     
                     string exitAnalysis = $"LONG_EXIT_CHECK: FastEMAExit={fastEMAExit} Reason={reason} FastGrad={fastGradient:F4} Close={currentClose:F4} FastEMA={fastEMAValue:F4}";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, currentSignal, myPosition, "EXIT_ANALYSIS", exitAnalysis);
                     
                     // Post exit consideration to dashboard
@@ -1183,7 +1183,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (shouldExit)
                 {
                     string decisionDetails = $"EXIT_DECISION: FastEMAExit={fastEMAExit} Threshold={fastEMAGradientExitThreshold} FastGrad={fastGradient:F4} SlowGrad={slowGradient:F4} Close={currentClose:F2} FastEMA={fastEMAValue:F2} SlowEMA={slowEMAValue:F2}";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, "LONG", "EXIT_DECISION", decisionDetails);
 
                     if (!exitPending || exitPendingSide != "LONG")
@@ -1194,7 +1194,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         exitPendingAnchorFastEMA = fastEMAValue;
                         exitPendingReason = exitReason;
                         LogOutput($"EXIT PENDING (LONG) -> Anchor FastEMA:{exitPendingAnchorFastEMA:F2} Reason:{exitReason}");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "LONG", "EXIT_PENDING", $"INIT:{exitReason}");
                         
                         var pendingData = new System.Collections.Generic.Dictionary<string, string>
@@ -1220,7 +1220,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             currentSignal = "FLAT";
                             signalStartBar = -1;
                             LogOutput($"<<< EXIT LONG CONFIRMED at {currentClose:F2} | FastEMA drop {emaDrop:F2}>= {exitConfirmFastEMADelta:F2}");
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, newSignal, "LONG", "EXIT", $"CONFIRMED_{exitPendingReason}_Δ{emaDrop:F2}");
                             
                             PostLogToDashboard(CurrentBar, "EXIT", "LONG", $"Exited at {currentClose:F2}");
@@ -1237,7 +1237,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else
                         {
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, newSignal, "LONG", "EXIT_PENDING", $"WAIT:FastEMAΔ={emaDrop:F2}<{exitConfirmFastEMADelta:F2}");
                         }
                     }
@@ -1246,7 +1246,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     // Cancel pending if exit conditions are no longer present
                     exitPending = false; exitPendingSide = ""; exitPendingStartBar = -1; exitPendingAnchorFastEMA = 0; exitPendingReason = "";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, "LONG", "EXIT_PENDING_CANCELLED", "Conditions improved");
                     LogOutput("EXIT PENDING CANCELLED (LONG) -> Conditions improved");
                 }
@@ -1306,7 +1306,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (barsSinceEntry < minHoldBars)
                     {
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, currentSignal, "SHORT", "EXIT_SUPPRESSED", $"MIN_HOLD:{barsSinceEntry}/{minHoldBars}");
                         // Skip exit logic for this bar
                         goto AfterShortExitChecks;
@@ -1321,7 +1321,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     if (currentProfit < mfeThreshold)
                     {
                         LogOutput($"EXIT SHORT (MFE TRAILING STOP) -> CurrentProfit:{currentProfit:F2} < Threshold:{mfeThreshold:F2} (MFE:{tradeMFE:F2}*{mfeTrailingStopPercent:F2})");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "SHORT", "EXIT", $"MFE_TRAILING_STOP:Profit={currentProfit:F2}<{mfeThreshold:F2}(MFE={tradeMFE:F2})");
                         
                         ExitShort("EnterShort");
@@ -1360,7 +1360,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (validationFailed)
                 {
                     LogOutput($"EXIT SHORT (VALIDATION FAILED IN POSITION) -> {validationReason}");
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, "SHORT", "EXIT", $"VALIDATION_FAILED: {validationReason}");
                     
                     ExitShort("EnterShort");
@@ -1402,7 +1402,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         reason = $"BOTH conditions met: Gradient>={fastEMAGradientExitThresholdShort} AND Price>FastEMA";
                     
                     string exitAnalysis = $"SHORT_EXIT_CHECK: FastEMAExit={fastEMAExit} Reason={reason} FastGrad={fastGradient:F4} Close={currentClose:F4} FastEMA={fastEMAValue:F4}";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, currentSignal, myPosition, "EXIT_ANALYSIS", exitAnalysis);
                     
                     // Post exit consideration to dashboard
@@ -1467,7 +1467,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (shouldExit)
                 {
                     string decisionDetails = $"EXIT_DECISION: FastEMAExit={fastEMAExit} Threshold={fastEMAGradientExitThresholdShort} FastGrad={fastGradient:F4} SlowGrad={slowGradient:F4} Close={currentClose:F2} FastEMA={fastEMAValue:F2} SlowEMA={slowEMAValue:F2}";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, "SHORT", "EXIT_DECISION", decisionDetails);
 
                     if (!exitPending || exitPendingSide != "SHORT")
@@ -1478,7 +1478,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         exitPendingAnchorFastEMA = fastEMAValue;
                         exitPendingReason = exitReason;
                         LogOutput($"EXIT PENDING (SHORT) -> Anchor FastEMA:{exitPendingAnchorFastEMA:F2} Reason:{exitReason}");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "SHORT", "EXIT_PENDING", $"INIT:{exitReason}");
                         
                         var pendingData = new System.Collections.Generic.Dictionary<string, string>
@@ -1504,7 +1504,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             currentSignal = "FLAT";
                             signalStartBar = -1;
                             LogOutput($"<<< EXIT SHORT CONFIRMED at {currentClose:F2} | FastEMA rise {emaRise:F2}>= {exitConfirmFastEMADelta:F2}");
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, newSignal, "SHORT", "EXIT", $"CONFIRMED_{exitPendingReason}_Δ{emaRise:F2}");
                             
                             PostLogToDashboard(CurrentBar, "EXIT", "SHORT", $"Exited at {currentClose:F2}");
@@ -1520,7 +1520,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else
                         {
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, newSignal, "SHORT", "EXIT_PENDING", $"WAIT:FastEMAΔ={emaRise:F2}<{exitConfirmFastEMADelta:F2}");
                         }
                     }
@@ -1529,7 +1529,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     // Cancel pending if exit conditions are no longer present
                     exitPending = false; exitPendingSide = ""; exitPendingStartBar = -1; exitPendingAnchorFastEMA = 0; exitPendingReason = "";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, "SHORT", "EXIT_PENDING_CANCELLED", "Conditions improved");
                     LogOutput("EXIT PENDING CANCELLED (SHORT) -> Conditions improved");
                 }
@@ -1562,7 +1562,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 LogOutput($"SIGNAL CHANGE: {currentSignal} -> {newSignal} | Position: {myPosition}");
                 
                 // Log to CSV
-                LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMA[0], slowEMA[0], fastGradient, slowGradient,
+                LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMA[0], slowEMA[0], fastGradient, slowGradient,
                     currentSignal, newSignal, myPosition, "SIGNAL_CHANGE", $"PriceGrad:{priceGradient:F2}");
                 
                 // Check if this is a WEAK reversal when we have a position
@@ -1583,7 +1583,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     
                     // Log decision details to CSV before exit
                     string decisionDetails = $"SIGNAL_EXIT_DECISION: OldSignal={currentSignal} NewSignal={newSignal} WeakReversal={isWeakReversal} PriceGrad={priceGradient:F4} FastGrad={fastGradient:F4}";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, newSignal, myPosition, "EXIT_DECISION", decisionDetails);
                     
                     if (myPosition == "LONG")
@@ -1594,7 +1594,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(string.Format("[GRAD] {0} | EXIT LONG at {1:F2} ({2}) | PriceGrad: {3:F2} | FastGrad: {4:F2}", 
                             Time[0], currentClose, exitType, priceGradient, fastGradient));
                         LogOutput($"<<< EXIT LONG at {currentClose:F2} ({exitType}) | PriceGrad: {priceGradient:F2} | FastGrad: {fastGradient:F2}");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "LONG", "EXIT", exitType);
                         myPosition = "FLAT";
                     }
@@ -1606,7 +1606,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print(string.Format("[GRAD] {0} | EXIT SHORT at {1:F2} ({2}) | PriceGrad: {3:F2} | FastGrad: {4:F2}", 
                             Time[0], currentClose, exitType, priceGradient, fastGradient));
                         LogOutput($"<<< EXIT SHORT at {currentClose:F2} ({exitType}) | PriceGrad: {priceGradient:F2} | FastGrad: {fastGradient:F2}");
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, newSignal, "SHORT", "EXIT", exitType);
                         myPosition = "FLAT";
                     }
@@ -1805,7 +1805,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bool closeAboveFastEMA = currentClose > fastEMAValue;
                     bool closeAboveSlowEMA = currentClose > slowEMAValue;
                     string entryConditions = $"ENTRY_DECISION: Signal={currentSignal} Bar={barsInSignal}/{entryBarDelay} Valid={conditionsStillValid} ShouldReverse={shouldReverse} PriceRising={priceRising} FastGrad={fastGradient:F4}({(fastGradPositive?"POS":"NEG")}) SlowGrad={slowGradient:F4}({(slowGradPositive?"POS":"NEG")}) RSI={(rsi!=null?rsi[0]:0):F1} Close={currentClose:F2} FastEMA={fastEMAValue:F2}({(closeAboveFastEMA?"ABOVE":"BELOW")}) SlowEMA={slowEMAValue:F2}({(closeAboveSlowEMA?"ABOVE":"BELOW")}) Thr={(currentSignal=="LONG"?GetEntryFastGradientThreshold(true):GetEntryFastGradientThreshold(false)):F2}{(enableAdaptiveEntryGradient?"(adaptive)":"")}";
-                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                         currentSignal, currentSignal, myPosition, "ENTRY_DECISION", entryConditions);
                     
                     // DISABLED REVERSAL LOGIC - Just exit and go flat, don't reverse
@@ -1824,7 +1824,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             ExitLong("EnterLong");
                             Print(string.Format("[GRAD] {0} | EXIT LONG (VALIDATION FAILED) at {1:F2} - {2}", Time[0], currentClose, invalidationReason));
                             LogOutput($"<<< EXIT LONG (VALIDATION FAILED) at {currentClose:F2} - {invalidationReason}");
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, currentSignal, "LONG", "EXIT", $"VALIDATION_FAILED_{invalidationReason}");
                             string exitSnapshot_entryPhaseLong = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
                             LogTrade(Time[0], CurrentBar, "EXIT", "LONG", currentClose, quantity, $"ENTRY_PHASE_VALIDATION_FAILED:{invalidationReason}|{exitSnapshot_entryPhaseLong}");
@@ -1843,7 +1843,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             ExitShort("EnterShort");
                             Print(string.Format("[GRAD] {0} | EXIT SHORT (VALIDATION FAILED) at {1:F2} - {2}", Time[0], currentClose, invalidationReason));
                             LogOutput($"<<< EXIT SHORT (VALIDATION FAILED) at {currentClose:F2} - {invalidationReason}");
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, currentSignal, "SHORT", "EXIT", $"VALIDATION_FAILED_{invalidationReason}");
                             string exitSnapshot_entryPhaseShort = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
                             LogTrade(Time[0], CurrentBar, "EXIT", "SHORT", currentClose, quantity, $"ENTRY_PHASE_VALIDATION_FAILED:{invalidationReason}|{exitSnapshot_entryPhaseShort}");
@@ -1863,7 +1863,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             string cancelAction = invalidationReason.StartsWith("FILTERS:") ? "ENTRY_FILTER_BLOCKED" : "ENTRY_CANCELLED";
                             Print(string.Format("[GRAD] {0} | {1}: {2} - Restarting delay counter", Time[0], cancelAction, invalidationReason));
                             LogOutput($"    ⚠ {cancelAction}: {invalidationReason} - Restarting delay counter");
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, currentSignal, myPosition, cancelAction, invalidationReason);
                             signalStartBar = CurrentBar; // Restart the delay from current bar
                         }
@@ -1898,7 +1898,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 // Previous bar was RED - cancel entry
                                 string redBarReason = $"RED_BAR_FILTER_AT_CLOSE(Close:{Close[1]:F2}<Open:{Open[1]:F2})";
                                 LogOutput($"⚠ PENDING LONG ENTRY CANCELLED: {redBarReason}");
-                                LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                                LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                     currentSignal, currentSignal, myPosition, "ENTRY_FILTER_BLOCKED", redBarReason);
                                 pendingLongEntry = false;
                                 pendingEntryBar = -1;
@@ -1934,7 +1934,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                     // Filters invalidated - cancel entry
                                     string filterReason = "FILTERS:" + string.Join("|", filterFailures);
                                     LogOutput($"⚠ PENDING LONG ENTRY CANCELLED: {filterReason}");
-                                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                         currentSignal, currentSignal, myPosition, "ENTRY_FILTER_BLOCKED", filterReason);
                                     pendingLongEntry = false;
                                     pendingEntryBar = -1;
@@ -1956,7 +1956,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                         Time[0], Close[1], pendingEntryBar));
                                     LogOutput($">>> EXECUTED PENDING LONG ENTRY at {Close[1]:F2} on bar {pendingEntryBar} (green/doji bar confirmed)");
                                     string indicatorSnapshot = BuildIndicatorSnapshot(fastEMA[1], slowEMA[1], (fastEMA[1] - fastEMA[2]));
-                                    LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                                    LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                         currentSignal, currentSignal, "LONG", "ENTRY_DEFERRED_EXECUTED", $"DeferredEntry_Bar{pendingEntryBar}|{indicatorSnapshot}");
                                     LogTrade(Time[0], CurrentBar, "ENTRY", "LONG", Close[1], quantity, $"DeferredEntry_Bar{pendingEntryBar}|{indicatorSnapshot}");
                                     PostLogToDashboard(CurrentBar, "ENTRY", "LONG", $"Deferred entry executed at {Close[1]:F2}");
@@ -1980,7 +1980,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             string greenBarReason = $"GREEN_BAR_FILTER(Close:{currentClose:F2}>Open:{currentOpen:F2})";
                             Print(string.Format("[GRAD] {0} | ENTRY CANCELLED: {1}", Time[0], greenBarReason));
                             LogOutput($"    ⚠ ENTRY CANCELLED: {greenBarReason}");
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, currentSignal, myPosition, "ENTRY_FILTER_BLOCKED", greenBarReason);
                             signalStartBar = CurrentBar; // Restart delay
                         }
@@ -2003,13 +2003,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 Time[0], currentClose, barsInSignal, fastGradient, slowGradient));
                             LogOutput($">>> ENTER SHORT at {currentClose:F2} (Bar {barsInSignal}/{entryBarDelay}) | FastGrad: {fastGradient:+0.000;-0.000} | SlowGrad: {slowGradient:+0.000;-0.000}");
                             string indicatorSnapshot = BuildIndicatorSnapshot(fastEMAValue, slowEMAValue, fastGradient);
-                            LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                            LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                 currentSignal, currentSignal, "SHORT", "ENTRY", $"EnterShort_Bar{barsInSignal}|{indicatorSnapshot}");
                             LogTrade(Time[0], CurrentBar, "ENTRY", "SHORT", currentClose, quantity, $"EnterShort_Bar{barsInSignal}|{indicatorSnapshot}");
                             PostLogToDashboard(CurrentBar, "ENTRY", "SHORT", $"Entered at {currentClose:F2}");
                             if (disableEntryFilters)
                             {
-                                LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                                LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                                     currentSignal, currentSignal, "SHORT", "ENTRY_FILTERS_BYPASSED", $"Bypassed|ADX>={minAdxForEntry:F0}|GradStab<={maxGradientStabilityForEntry:F2}|BW[{minBandwidthForEntry:F3},{maxBandwidthForEntry:F3}] AccelAlign={requireAccelAlignment}");
                             }
                             // Optional: record entry filters snapshot to trades summary when exiting later
@@ -2025,7 +2025,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         // We had a valid setup but did not enter due to guards
                         string skipReason = $"SKIP ENTRY: Guards -> MyPos:{myPosition} NTPos:{Position.MarketPosition} TradeThisBar:{tradeAlreadyPlacedThisBar} SignalStartBar:{signalStartBar} LastTradeBar:{lastTradeBar}";
                         LogOutput(skipReason);
-                        LogToCSV(Time[0], CurrentBar, currentOpen, currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
+                        LogToCSV(Time[0], CurrentBar, currentOpen, High[0], Low[0], currentClose, fastEMAValue, slowEMAValue, fastGradient, slowGradient,
                             currentSignal, currentSignal, myPosition, "ENTRY_SKIPPED", skipReason);
                     }
                 }
@@ -2280,7 +2280,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
         }
         
-        private void LogToCSV(DateTime time, int bar, double open, double close, double fastEma, double slowEma,
+        private void LogToCSV(DateTime time, int bar, double open, double high, double low, double close, double fastEma, double slowEma,
             double fastGrad, double slowGrad, string prevSignal, string newSignal, 
             string position, string action, string notes)
         {
@@ -2311,11 +2311,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else if (exitPendingSide == "SHORT")
                         exitPendingDelta = fastEma - exitPendingAnchorFastEMA;
                 }
-                // Use passed OHLC values for logging - but verify bar structure
-                // In continuous bars, current Open should equal previous Close
+                // Use passed OHLC values for logging - all from the same completed bar
                 double openPrice = open;
-                double highPrice = High[0];
-                double lowPrice = Low[0];
+                double highPrice = high;
+                double lowPrice = low;
                 double closePrice = close;
                 
                 // Verify bar continuity: Open[0] should equal Close[1] in most cases
@@ -3954,4 +3953,5 @@ namespace NinjaTrader.NinjaScript.Strategies
 #region NinjaScript generated code. Neither change nor remove.
 
 #endregion
+
 

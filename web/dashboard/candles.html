@@ -180,6 +180,54 @@
         .long-entry { background: #10b981; }
         .short-entry { background: #ef4444; }
         .exit { background: #f59e0b; }
+
+        /* Pattern Analysis Styles */
+        .analysis-controls input[type="checkbox"] {
+            margin-right: 5px;
+            transform: scale(1.2);
+        }
+
+        .analysis-controls label {
+            color: #e0e0e0;
+            font-size: 12px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .analysis-controls label:hover {
+            color: #60a5fa;
+        }
+
+        .analysis-group {
+            padding: 10px;
+            background: rgba(31, 41, 55, 0.6);
+            border-radius: 6px;
+        }
+
+        .pattern-marker {
+            position: absolute;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .trend-line {
+            stroke: #60a5fa;
+            stroke-width: 2;
+            stroke-dasharray: 5,5;
+            opacity: 0.8;
+        }
+
+        .support-line {
+            stroke: #10b981;
+            stroke-width: 2;
+            opacity: 0.7;
+        }
+
+        .resistance-line {
+            stroke: #ef4444;
+            stroke-width: 2;
+            opacity: 0.7;
+        }
     </style>
 </head>
 <body>
@@ -213,6 +261,48 @@
             <div class="legend-item">
                 <div class="legend-box exit"></div>
                 <span>Exit</span>
+            </div>
+        </div>
+
+        <!-- Pattern Analysis Controls -->
+        <div class="analysis-controls" style="margin-top: 15px; padding: 15px; background: rgba(26, 31, 58, 0.8); border-radius: 8px;">
+            <h3 style="color: #60a5fa; margin-bottom: 10px;">📈 Pattern Analysis</h3>
+            <div style="margin-bottom: 15px; text-align: center;">
+                <button id="selectAll" style="margin-right: 10px; padding: 6px 12px; font-size: 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer;">Select All</button>
+                <button id="selectNone" style="padding: 6px 12px; font-size: 12px; background: #ef4444; color: white; border: none; border-radius: 4px; cursor: pointer;">Select None</button>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 10px;">
+                <!-- Trend Detection -->
+                <div class="analysis-group">
+                    <label style="color: #10b981; font-weight: bold;">🔍 Trend Detection</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableTrendDetection" checked> Enable Trend Lines</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableSupportResistance" checked> Support/Resistance</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableBreakouts"> Breakout Detection</label>
+                </div>
+
+                <!-- Candlestick Patterns -->
+                <div class="analysis-group">
+                    <label style="color: #f59e0b; font-weight: bold;">🕯️ Candlestick Patterns</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableEngulfing"> Engulfing Patterns</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableDoji"> Doji Patterns</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableHammer"> Hammer/Shooting Star</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableThreeSoldiers"> Three Soldiers/Crows</label>
+                </div>
+
+                <!-- Volume & Momentum -->
+                <div class="analysis-group">
+                    <label style="color: #8b5cf6; font-weight: bold;">📊 Volume & Momentum</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableVolumeSpikes"> Volume Spikes</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableMomentumDivergence"> Price Divergence</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableMovingAverages"> Moving Averages</label>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button onclick="runPatternAnalysis()" style="background: #10b981;">🔍 Analyze Patterns</button>
+                <button onclick="clearPatternOverlays()" style="background: #6b7280;">Clear Overlays</button>
+                <span id="patternStats" style="color: #9ca3af; font-size: 12px; margin-left: 10px;"></span>
             </div>
         </div>
     </div>
@@ -261,6 +351,22 @@
             <div class="stat-label">SHORT Trends</div>
             <div class="stat-value" style="color: #ef4444;" id="stat-short-trends">0</div>
         </div>
+        <div class="stat-card" style="border-left-color: #8b5cf6;">
+            <div class="stat-label">Total Patterns</div>
+            <div class="stat-value" style="color: #8b5cf6;" id="stat-total-patterns">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #10b981;">
+            <div class="stat-label">LONG Patterns</div>
+            <div class="stat-value" style="color: #10b981;" id="stat-long-patterns">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #ef4444;">
+            <div class="stat-label">SHORT Patterns</div>
+            <div class="stat-value" style="color: #ef4444;" id="stat-short-patterns">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #f59e0b;">
+            <div class="stat-label">FLAT Patterns</div>
+            <div class="stat-value" style="color: #f59e0b;" id="stat-flat-patterns">0</div>
+        </div>
     </div>
 
     <div class="chart-container">
@@ -285,11 +391,82 @@
         let candleOffset = 0; // Horizontal scroll offset (in candles)
         let chartPadding = { top: 40, right: 80, bottom: 40, left: 80 };
 
+        // Pattern Analysis Variables
+        let detectedPatterns = [];
+        let trendLines = [];
+        let supportResistanceLevels = [];
+        let patternDirections = { LONG: 0, SHORT: 0, FLAT: 0 };
+        let patternOverlaysEnabled = false;
+
+        // Trend Analysis Functions
+        function analyzeTrendDirection(currentIndex, lookback) {
+            if (currentIndex < lookback) return 'FLAT';
+            
+            const startIdx = currentIndex - lookback;
+            const endIdx = currentIndex;
+            
+            // Calculate price momentum
+            const startPrice = (candles[startIdx].high + candles[startIdx].low + candles[startIdx].close) / 3;
+            const endPrice = (candles[endIdx].high + candles[endIdx].low + candles[endIdx].close) / 3;
+            const priceChange = (endPrice - startPrice) / startPrice;
+            
+            // Calculate moving average slope
+            const prices = candles.slice(startIdx, endIdx + 1).map(c => c.close);
+            const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+            const slope = calculateLinearRegression(prices).slope;
+            
+            // Analyze volume confirmation (if available)
+            let volumeConfirmation = 0;
+            if (candles[endIdx].volume && candles[startIdx].volume) {
+                const recentVolume = candles.slice(Math.max(0, endIdx - 3), endIdx + 1)
+                    .reduce((sum, c) => sum + (c.volume || 0), 0) / 4;
+                const earlierVolume = candles.slice(Math.max(0, startIdx - 3), startIdx + 1)
+                    .reduce((sum, c) => sum + (c.volume || 0), 0) / 4;
+                volumeConfirmation = recentVolume > earlierVolume ? 1 : -0.5;
+            }
+            
+            // Decision logic
+            const trendThreshold = 0.002; // 0.2% price change threshold
+            const slopeThreshold = 0.1;
+            
+            if (priceChange > trendThreshold && slope > slopeThreshold) {
+                return 'LONG';
+            } else if (priceChange < -trendThreshold && slope < -slopeThreshold) {
+                return 'SHORT';
+            } else {
+                return 'FLAT';
+            }
+        }
+        
+        function calculateLinearRegression(values) {
+            const n = values.length;
+            const x = Array.from({length: n}, (_, i) => i);
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = values.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((sum, xi, i) => sum + xi * values[i], 0);
+            const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+            
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+            
+            return { slope, intercept };
+        }
+        
+        function calculateTrendStrength(startIdx, endIdx) {
+            const length = endIdx - startIdx + 1;
+            const priceStart = candles[startIdx].close;
+            const priceEnd = candles[endIdx].close;
+            const priceChange = Math.abs(priceEnd - priceStart) / priceStart;
+            
+            // Strength based on price change magnitude and trend length
+            return Math.min(priceChange * 100 + length / 10, 10);
+        }
+
         document.getElementById('fileInput').addEventListener('change', handleFileSelect);
         document.getElementById('timeframe').addEventListener('change', function() {
             if (rawCandles.length > 0) {
                 aggregateCandles();
-                detectTrends();
+                generateRealTrends();
                 updateStats();
                 drawChart();
             }
@@ -390,8 +567,8 @@
             // Initial aggregation
             aggregateCandles();
 
-            // Generate simple test trends: LONG, FLAT, SHORT every 10 bars
-            generateTestTrends();
+            // Generate real trends based on market analysis
+            generateRealTrends();
 
             updateStats();
             drawChart();
@@ -484,47 +661,106 @@
                 return aggregatedCandle ? { ...exit, bar: aggregatedCandle.bar } : null;
             }).filter(e => e !== null);
         }
-        function generateTestTrends() {
-            // Simple test trend generation: LONG, SHORT, FLAT every 10 bars
+        function generateRealTrends() {
+            // Real trend analysis based on market data
             trends = [];
-            const trendCycle = ['LONG', 'SHORT', 'FLAT'];
-            let currentTrendIdx = 0;
+            if (candles.length < 20) return; // Need minimum data for trend analysis
+            
+            let currentTrend = null;
             let trendStartIdx = 0;
-
-            for (let i = 0; i < candles.length; i++) {
-                const barsInCurrentTrend = i - trendStartIdx;
+            const lookbackPeriod = 10; // Number of bars to analyze for trend direction
+            const minTrendLength = 5;  // Minimum bars to confirm a trend
+            
+            for (let i = lookbackPeriod; i < candles.length; i++) {
+                const trendDirection = analyzeTrendDirection(i, lookbackPeriod);
                 
-                if (barsInCurrentTrend >= 10) {
-                    // Save current trend
-                    trends.push({
-                        type: trendCycle[currentTrendIdx % 3],
-                        startBar: candles[trendStartIdx].bar,
-                        endBar: candles[i - 1].bar,
-                        startIdx: trendStartIdx,
-                        endIdx: i - 1
-                    });
+                // If trend changes or we're starting
+                if (currentTrend === null || currentTrend !== trendDirection) {
+                    // Save previous trend if it was long enough
+                    if (currentTrend !== null && (i - trendStartIdx) >= minTrendLength) {
+                        trends.push({
+                            type: currentTrend,
+                            startBar: candles[trendStartIdx].bar,
+                            endBar: candles[i - 1].bar,
+                            startIdx: trendStartIdx,
+                            endIdx: i - 1,
+                            strength: calculateTrendStrength(trendStartIdx, i - 1)
+                        });
+                    }
                     
-                    // Move to next trend cycle
-                    currentTrendIdx++;
+                    // Start new trend
+                    currentTrend = trendDirection;
                     trendStartIdx = i;
                 }
             }
-
-            // Save final trend
-            if (trendStartIdx < candles.length) {
+            
+            // Add final trend
+            if (currentTrend !== null && (candles.length - trendStartIdx) >= minTrendLength) {
                 trends.push({
-                    type: trendCycle[currentTrendIdx % 3],
+                    type: currentTrend,
                     startBar: candles[trendStartIdx].bar,
                     endBar: candles[candles.length - 1].bar,
                     startIdx: trendStartIdx,
-                    endIdx: candles.length - 1
+                    endIdx: candles.length - 1,
+                    strength: calculateTrendStrength(trendStartIdx, candles.length - 1)
                 });
             }
-
-            console.log(`Generated ${trends.length} test trends:`, trends);
+            
+            console.log(`Generated ${trends.length} real trends based on market analysis:`, trends);
         }
 
-        function calculateEMA(prices, period) {
+        // Trend Analysis Functions
+        function analyzeTrendDirection(currentIndex, lookback) {
+            if (currentIndex < lookback) return 'FLAT';
+            
+            const startIdx = currentIndex - lookback;
+            const endIdx = currentIndex;
+            
+            // Calculate price momentum
+            const startPrice = (candles[startIdx].high + candles[startIdx].low + candles[startIdx].close) / 3;
+            const endPrice = (candles[endIdx].high + candles[endIdx].low + candles[endIdx].close) / 3;
+            const priceChange = (endPrice - startPrice) / startPrice;
+            
+            // Calculate moving average slope
+            const prices = candles.slice(startIdx, endIdx + 1).map(c => c.close);
+            const slope = calculateLinearRegression(prices).slope;
+            
+            // Decision logic
+            const trendThreshold = 0.001; // 0.1% price change threshold
+            const slopeThreshold = 0.05;
+            
+            if (priceChange > trendThreshold && slope > slopeThreshold) {
+                return 'LONG';
+            } else if (priceChange < -trendThreshold && slope < -slopeThreshold) {
+                return 'SHORT';
+            } else {
+                return 'FLAT';
+            }
+        }
+        
+        function calculateLinearRegression(values) {
+            const n = values.length;
+            const x = Array.from({length: n}, (_, i) => i);
+            const sumX = x.reduce((a, b) => a + b, 0);
+            const sumY = values.reduce((a, b) => a + b, 0);
+            const sumXY = x.reduce((sum, xi, i) => sum + xi * values[i], 0);
+            const sumXX = x.reduce((sum, xi) => sum + xi * xi, 0);
+            
+            const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+            const intercept = (sumY - slope * sumX) / n;
+            
+            return { slope, intercept };
+        }
+        
+        function calculateTrendStrength(startIdx, endIdx) {
+            const length = endIdx - startIdx + 1;
+            const priceStart = candles[startIdx].close;
+            const priceEnd = candles[endIdx].close;
+            const priceChange = Math.abs(priceEnd - priceStart) / priceStart;
+            
+            // Strength based on price change magnitude and trend length
+            return Math.min(priceChange * 100 + length / 10, 10);
+        }        function calculateEMA(prices, period) {
             const ema = [];
             const multiplier = 2 / (period + 1);
             
@@ -556,9 +792,18 @@
             if (shortStats) shortStats.parentElement.style.display = 'none';
             if (exitStats) exitStats.parentElement.style.display = 'none';
             
-            // Show trend stats
-            document.getElementById('stat-long-trends').textContent = trends.filter(t => t.type === 'LONG').length;
-            document.getElementById('stat-short-trends').textContent = trends.filter(t => t.type === 'SHORT').length;
+            // Show trend stats with strength analysis
+            const longTrends = trends.filter(t => t.type === 'LONG');
+            const shortTrends = trends.filter(t => t.type === 'SHORT');
+            const flatTrends = trends.filter(t => t.type === 'FLAT');
+            
+            const avgLongStrength = longTrends.length > 0 ? 
+                (longTrends.reduce((sum, t) => sum + (t.strength || 0), 0) / longTrends.length).toFixed(1) : '0.0';
+            const avgShortStrength = shortTrends.length > 0 ? 
+                (shortTrends.reduce((sum, t) => sum + (t.strength || 0), 0) / shortTrends.length).toFixed(1) : '0.0';
+            
+            document.getElementById('stat-long-trends').textContent = `${longTrends.length} (${avgLongStrength})`;
+            document.getElementById('stat-short-trends').textContent = `${shortTrends.length} (${avgShortStrength})`;
 
             if (candles.length > 0) {
                 const allPrices = candles.flatMap(c => [c.high, c.low]);
@@ -566,6 +811,587 @@
                 const max = Math.max(...allPrices);
                 document.getElementById('stat-range').textContent = `${min.toFixed(2)} - ${max.toFixed(2)}`;
             }
+        }
+
+        // =============================================
+        // PATTERN ANALYSIS FUNCTIONS
+        // =============================================
+
+        function getPatternDirection(patternType) {
+            // Bullish patterns suggest LONG positions
+            const bullishPatterns = ['BULLISH_ENGULFING', 'HAMMER', 'DOJI_DRAGONFLY', 
+                                   'THREE_WHITE_SOLDIERS', 'GOLDEN_CROSS', 'UPTREND', 
+                                   'BULLISH_MOMENTUM_DIVERGENCE', 'VOLUME_BREAKOUT_UP'];
+            
+            // Bearish patterns suggest SHORT positions
+            const bearishPatterns = ['BEARISH_ENGULFING', 'SHOOTING_STAR', 'DOJI_GRAVESTONE',
+                                   'THREE_BLACK_CROWS', 'DEATH_CROSS', 'DOWNTREND',
+                                   'BEARISH_MOMENTUM_DIVERGENCE', 'VOLUME_BREAKOUT_DOWN'];
+            
+            // Neutral patterns suggest FLAT (no position)
+            const neutralPatterns = ['DOJI', 'VOLUME_SPIKE', 'SUPPORT', 'RESISTANCE', 'SIDEWAYS'];
+            
+            if (bullishPatterns.includes(patternType)) return 'LONG';
+            if (bearishPatterns.includes(patternType)) return 'SHORT';
+            return 'FLAT';
+        }
+
+        function runPatternAnalysis() {
+            if (!candles || candles.length === 0) {
+                alert('Please load candle data first');
+                return;
+            }
+
+            console.log('🔍 Starting pattern analysis...');
+            detectedPatterns = [];
+            trendLines = [];
+            supportResistanceLevels = [];
+            patternDirections = { LONG: 0, SHORT: 0, FLAT: 0 };
+
+            // Run enabled analyses
+            if (document.getElementById('enableTrendDetection')?.checked) {
+                try {
+                    analyzetrends();
+                } catch (error) {
+                    console.error('Error in trend analysis:', error);
+                }
+            }
+            
+            if (document.getElementById('enableSupportResistance')?.checked) {
+                try {
+                    analyzeSupportResistance();
+                } catch (error) {
+                    console.error('Error in support/resistance analysis:', error);
+                }
+            }
+            
+            if (document.getElementById('enableBreakouts')?.checked) {
+                try {
+                    analyzeBreakouts();
+                } catch (error) {
+                    console.error('Error in breakout detection:', error);
+                }
+            }
+            
+            if (document.getElementById('enableEngulfing').checked) {
+                detectEngulfingPatterns();
+            }
+            
+            if (document.getElementById('enableDoji').checked) {
+                detectDojiPatterns();
+            }
+            
+            if (document.getElementById('enableHammer').checked) {
+                detectHammerPatterns();
+            }
+            
+            if (document.getElementById('enableThreeSoldiers').checked) {
+                detectThreeSoldiersPatterns();
+            }
+            
+            if (document.getElementById('enableVolumeSpikes').checked) {
+                analyzeVolumeSpikes();
+            }
+            
+            if (document.getElementById('enableMomentumDivergence').checked) {
+                analyzeMomentumDivergence();
+            }
+            
+            if (document.getElementById('enableMovingAverages').checked) {
+                analyzeMovingAverages();
+            }
+
+            patternOverlaysEnabled = true;
+            updatePatternStats();
+            drawChart(); // Redraw with patterns
+            console.log(`✅ Analysis complete: ${detectedPatterns.length} patterns detected`);
+        }
+
+        function clearPatternOverlays() {
+            detectedPatterns = [];
+            trendLines = [];
+            supportResistanceLevels = [];
+            patternOverlaysEnabled = false;
+            updatePatternStats();
+            drawChart(); // Redraw without patterns
+        }
+
+        function updatePatternStats() {
+            const stats = document.getElementById('patternStats');
+            if (detectedPatterns.length === 0) {
+                stats.textContent = 'No patterns detected';
+                return;
+            }
+
+            const patternCounts = {};
+            detectedPatterns.forEach(p => {
+                patternCounts[p.type] = (patternCounts[p.type] || 0) + 1;
+            });
+
+            const summaryText = Object.entries(patternCounts)
+                .map(([type, count]) => `${type}: ${count}`)
+                .join(' | ');
+            stats.textContent = `Detected: ${summaryText}`;
+        }
+
+        // =============================================
+        // TREND ANALYSIS
+        // =============================================
+
+        function analyzetrends() {
+            if (!candles || candles.length < 30) {
+                console.log('Not enough candle data for trend analysis');
+                return;
+            }
+            const lookback = 20;
+            for (let i = lookback; i < candles.length - 5; i++) {
+                const segment = candles.slice(i - lookback, i + 5);
+                
+                // Detect uptrends (higher lows and higher highs)
+                if (detectHigherLowsAndHighs(segment)) {
+                    trendLines.push({
+                        type: 'UPTREND',
+                        startIdx: i - lookback,
+                        endIdx: i + 5,
+                        strength: calculateTrendStrength(segment, 'up')
+                    });
+                }
+                
+                // Detect downtrends (lower highs and lower lows)
+                if (detectLowerHighsAndLows(segment)) {
+                    trendLines.push({
+                        type: 'DOWNTREND',
+                        startIdx: i - lookback,
+                        endIdx: i + 5,
+                        strength: calculateTrendStrength(segment, 'down')
+                    });
+                }
+            }
+        }
+
+        function detectHigherLowsAndHighs(segment) {
+            if (!segment || !Array.isArray(segment) || segment.length < 4) {
+                return false;
+            }
+            const highs = segment.map(c => c.high);
+            const lows = segment.map(c => c.low);
+            const midPoint = Math.floor(segment.length / 2);
+            
+            const firstHalfHighs = highs.slice(0, midPoint);
+            const secondHalfHighs = highs.slice(midPoint);
+            const firstHalfLows = lows.slice(0, midPoint);
+            const secondHalfLows = lows.slice(midPoint);
+            
+            const avgFirstHigh = firstHalfHighs.reduce((a, b) => a + b, 0) / firstHalfHighs.length;
+            const avgSecondHigh = secondHalfHighs.reduce((a, b) => a + b, 0) / secondHalfHighs.length;
+            const avgFirstLow = firstHalfLows.reduce((a, b) => a + b, 0) / firstHalfLows.length;
+            const avgSecondLow = secondHalfLows.reduce((a, b) => a + b, 0) / secondHalfLows.length;
+            
+            return avgSecondHigh > avgFirstHigh && avgSecondLow > avgFirstLow;
+        }
+
+        function detectLowerHighsAndLows(segment) {
+            if (!segment || !Array.isArray(segment) || segment.length < 4) {
+                return false;
+            }
+            const highs = segment.map(c => c.high);
+            const lows = segment.map(c => c.low);
+            const midPoint = Math.floor(segment.length / 2);
+            
+            const firstHalfHighs = highs.slice(0, midPoint);
+            const secondHalfHighs = highs.slice(midPoint);
+            const firstHalfLows = lows.slice(0, midPoint);
+            const secondHalfLows = lows.slice(midPoint);
+            
+            const avgFirstHigh = firstHalfHighs.reduce((a, b) => a + b, 0) / firstHalfHighs.length;
+            const avgSecondHigh = secondHalfHighs.reduce((a, b) => a + b, 0) / secondHalfHighs.length;
+            const avgFirstLow = firstHalfLows.reduce((a, b) => a + b, 0) / firstHalfLows.length;
+            const avgSecondLow = secondHalfLows.reduce((a, b) => a + b, 0) / secondHalfLows.length;
+            
+            return avgSecondHigh < avgFirstHigh && avgSecondLow < avgFirstLow;
+        }
+
+        function calculateTrendStrength(segment, direction) {
+            if (!segment || !Array.isArray(segment) || segment.length < 2) {
+                return 0;
+            }
+            const prices = segment.map(c => c.close);
+            let strength = 0;
+            
+            for (let i = 1; i < prices.length; i++) {
+                if (direction === 'up' && prices[i] > prices[i-1]) strength++;
+                if (direction === 'down' && prices[i] < prices[i-1]) strength++;
+            }
+            
+            return strength / (prices.length - 1);
+        }
+
+        // =============================================
+        // SUPPORT/RESISTANCE ANALYSIS
+        // =============================================
+
+        function analyzeSupportResistance() {
+            const allPrices = candles.flatMap(c => [c.high, c.low]);
+            const minPrice = Math.min(...allPrices);
+            const maxPrice = Math.max(...allPrices);
+            const priceStep = (maxPrice - minPrice) / 50; // 50 levels
+
+            for (let level = minPrice; level <= maxPrice; level += priceStep) {
+                const touches = countPriceTouches(level, priceStep / 2);
+                
+                if (touches >= 3) { // Minimum 3 touches for valid level
+                    const isSupport = isLevelSupport(level);
+                    supportResistanceLevels.push({
+                        price: level,
+                        type: isSupport ? 'SUPPORT' : 'RESISTANCE',
+                        strength: touches,
+                        tested: touches
+                    });
+                }
+            }
+        }
+
+        function countPriceTouches(level, tolerance) {
+            let touches = 0;
+            candles.forEach(candle => {
+                if (Math.abs(candle.low - level) <= tolerance || 
+                    Math.abs(candle.high - level) <= tolerance) {
+                    touches++;
+                }
+            });
+            return touches;
+        }
+
+        function isLevelSupport(level) {
+            let bounces = 0;
+            let breaks = 0;
+            
+            candles.forEach((candle, i) => {
+                if (i === 0) return;
+                
+                const prevCandle = candles[i-1];
+                if (candle.low <= level && candle.close > level && prevCandle.close > level) {
+                    bounces++;
+                }
+                if (candle.close < level && prevCandle.close >= level) {
+                    breaks++;
+                }
+            });
+            
+            return bounces > breaks;
+        }
+
+        // =============================================
+        // CANDLESTICK PATTERN DETECTION
+        // =============================================
+
+        function detectEngulfingPatterns() {
+            for (let i = 1; i < candles.length; i++) {
+                const current = candles[i];
+                const previous = candles[i-1];
+                
+                // Bullish Engulfing
+                if (isBearish(previous) && isBullish(current) &&
+                    current.open < previous.close && current.close > previous.open) {
+                    const pattern = {
+                        type: 'BULLISH_ENGULFING',
+                        barIndex: i,
+                        confidence: calculateEngulfingConfidence(current, previous),
+                        candle: current,
+                        direction: 'LONG'
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections.LONG++;
+                }
+                
+                // Bearish Engulfing
+                if (isBullish(previous) && isBearish(current) &&
+                    current.open > previous.close && current.close < previous.open) {
+                    const pattern = {
+                        type: 'BEARISH_ENGULFING',
+                        barIndex: i,
+                        confidence: calculateEngulfingConfidence(current, previous),
+                        candle: current,
+                        direction: 'SHORT'
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections.SHORT++;
+                }
+            }
+        }
+
+        function detectDojiPatterns() {
+            candles.forEach((candle, i) => {
+                if (isDoji(candle)) {
+                    const context = getMarketContext(i);
+                    const patternType = 'DOJI';
+                    const direction = getPatternDirection(patternType);
+                    const pattern = {
+                        type: patternType,
+                        barIndex: i,
+                        confidence: calculateDojiConfidence(candle, context),
+                        context: context,
+                        candle: candle,
+                        direction: direction
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections[direction]++;
+                }
+            });
+        }
+
+        function detectHammerPatterns() {
+            candles.forEach((candle, i) => {
+                const bodySize = Math.abs(candle.close - candle.open);
+                const totalRange = candle.high - candle.low;
+                const upperShadow = candle.high - Math.max(candle.open, candle.close);
+                const lowerShadow = Math.min(candle.open, candle.close) - candle.low;
+                
+                // Hammer: small body, long lower shadow, short upper shadow
+                if (bodySize < totalRange * 0.3 && lowerShadow > bodySize * 2 && upperShadow < bodySize * 0.5) {
+                    const patternType = 'HAMMER';
+                    const direction = getPatternDirection(patternType);
+                    const pattern = {
+                        type: patternType,
+                        barIndex: i,
+                        confidence: calculateHammerConfidence(candle),
+                        candle: candle,
+                        direction: direction
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections[direction]++;
+                }
+                
+                // Shooting Star: small body, long upper shadow, short lower shadow
+                if (bodySize < totalRange * 0.3 && upperShadow > bodySize * 2 && lowerShadow < bodySize * 0.5) {
+                    const patternType = 'SHOOTING_STAR';
+                    const direction = getPatternDirection(patternType);
+                    const pattern = {
+                        type: patternType,
+                        barIndex: i,
+                        confidence: calculateHammerConfidence(candle),
+                        candle: candle,
+                        direction: direction
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections[direction]++;
+                }
+            });
+        }
+
+        function detectThreeSoldiersPatterns() {
+            for (let i = 2; i < candles.length; i++) {
+                const c1 = candles[i-2];
+                const c2 = candles[i-1];
+                const c3 = candles[i];
+                
+                // Three White Soldiers
+                if (isBullish(c1) && isBullish(c2) && isBullish(c3) &&
+                    c2.close > c1.close && c3.close > c2.close &&
+                    c2.open > c1.open && c2.open < c1.close &&
+                    c3.open > c2.open && c3.open < c2.close) {
+                    const patternType = 'THREE_WHITE_SOLDIERS';
+                    const direction = getPatternDirection(patternType);
+                    const pattern = {
+                        type: patternType,
+                        barIndex: i,
+                        confidence: 0.8,
+                        candle: c3,
+                        direction: direction
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections[direction]++;
+                }
+                
+                // Three Black Crows
+                if (isBearish(c1) && isBearish(c2) && isBearish(c3) &&
+                    c2.close < c1.close && c3.close < c2.close &&
+                    c2.open < c1.open && c2.open > c1.close &&
+                    c3.open < c2.open && c3.open > c2.close) {
+                    const patternType = 'THREE_BLACK_CROWS';
+                    const direction = getPatternDirection(patternType);
+                    const pattern = {
+                        type: patternType,
+                        barIndex: i,
+                        confidence: 0.8,
+                        candle: c3,
+                        direction: direction
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections[direction]++;
+                }
+            }
+        }
+
+        // =============================================
+        // VOLUME & MOMENTUM ANALYSIS
+        // =============================================
+
+        function analyzeVolumeSpikes() {
+            // Check if any candles have volume data
+            const hasVolumeData = candles.some(c => c.volume && c.volume > 0);
+            if (!hasVolumeData) {
+                console.log('No volume data found in candles');
+                return;
+            }
+            
+            const volumes = candles.map(c => c.volume || 0);
+            const avgVolume = volumes.reduce((a, b) => a + b, 0) / volumes.length;
+            console.log(`Volume analysis: avg=${avgVolume.toFixed(0)}, threshold=${(avgVolume * 2).toFixed(0)}`);
+            
+            let spikesFound = 0;
+            candles.forEach((candle, i) => {
+                if (candle.volume && candle.volume > avgVolume * 1.5) { // Lower threshold for more sensitivity
+                    const patternType = 'VOLUME_SPIKE';
+                    const direction = getPatternDirection(patternType);
+                    const pattern = {
+                        type: patternType,
+                        barIndex: i,
+                        confidence: Math.min(candle.volume / avgVolume / 3, 1.0),
+                        volumeRatio: candle.volume / avgVolume,
+                        candle: candle,
+                        direction: direction
+                    };
+                    detectedPatterns.push(pattern);
+                    patternDirections[direction]++;
+                    spikesFound++;
+                }
+            });
+            console.log(`Volume spikes found: ${spikesFound}`);
+        }
+
+        function analyzeMomentumDivergence() {
+            // Price vs momentum divergence detection
+            const lookback = 14;
+            for (let i = lookback; i < candles.length - lookback; i++) {
+                const priceChange = candles[i].close - candles[i - lookback].close;
+                const futureChange = candles[i + lookback].close - candles[i].close;
+                
+                // Bullish divergence: price making lower lows but momentum improving
+                if (priceChange < 0 && futureChange > Math.abs(priceChange) * 0.5) {
+                    detectedPatterns.push({
+                        type: 'BULLISH_DIVERGENCE',
+                        barIndex: i,
+                        confidence: Math.min(Math.abs(futureChange / priceChange), 1.0),
+                        candle: candles[i]
+                    });
+                }
+            }
+        }
+
+        function analyzeMovingAverages() {
+            const shortMA = calculateSMA(9);
+            const longMA = calculateSMA(21);
+            
+            for (let i = 21; i < candles.length; i++) {
+                const shortCurrent = shortMA[i];
+                const shortPrevious = shortMA[i-1];
+                const longCurrent = longMA[i];
+                const longPrevious = longMA[i-1];
+                
+                // Golden Cross (bullish)
+                if (shortPrevious <= longPrevious && shortCurrent > longCurrent) {
+                    detectedPatterns.push({
+                        type: 'GOLDEN_CROSS',
+                        barIndex: i,
+                        confidence: 0.7,
+                        candle: candles[i]
+                    });
+                }
+                
+                // Death Cross (bearish)
+                if (shortPrevious >= longPrevious && shortCurrent < longCurrent) {
+                    detectedPatterns.push({
+                        type: 'DEATH_CROSS',
+                        barIndex: i,
+                        confidence: 0.7,
+                        candle: candles[i]
+                    });
+                }
+            }
+        }
+
+        // =============================================
+        // BREAKOUT ANALYSIS
+        // =============================================
+
+        function analyzeBreakouts() {
+            supportResistanceLevels.forEach(level => {
+                candles.forEach((candle, i) => {
+                    if (level.type === 'RESISTANCE' && candle.close > level.price && candles[i-1]?.close <= level.price) {
+                        detectedPatterns.push({
+                            type: 'RESISTANCE_BREAKOUT',
+                            barIndex: i,
+                            confidence: Math.min(level.strength / 10, 1.0),
+                            level: level.price,
+                            candle: candle
+                        });
+                    }
+                    
+                    if (level.type === 'SUPPORT' && candle.close < level.price && candles[i-1]?.close >= level.price) {
+                        detectedPatterns.push({
+                            type: 'SUPPORT_BREAKDOWN',
+                            barIndex: i,
+                            confidence: Math.min(level.strength / 10, 1.0),
+                            level: level.price,
+                            candle: candle
+                        });
+                    }
+                });
+            });
+        }
+
+        // =============================================
+        // UTILITY FUNCTIONS
+        // =============================================
+
+        function isBullish(candle) { return candle.close > candle.open; }
+        function isBearish(candle) { return candle.close < candle.open; }
+        function isDoji(candle) {
+            const bodySize = Math.abs(candle.close - candle.open);
+            const totalRange = candle.high - candle.low;
+            return bodySize < totalRange * 0.1;
+        }
+
+        function calculateSMA(period) {
+            const sma = [];
+            for (let i = 0; i < candles.length; i++) {
+                if (i < period - 1) {
+                    sma.push(null);
+                } else {
+                    let sum = 0;
+                    for (let j = i - period + 1; j <= i; j++) {
+                        sum += candles[j].close;
+                    }
+                    sma.push(sum / period);
+                }
+            }
+            return sma;
+        }
+
+        function calculateEngulfingConfidence(current, previous) {
+            const currentBody = Math.abs(current.close - current.open);
+            const previousBody = Math.abs(previous.close - previous.open);
+            return Math.min(currentBody / previousBody / 2, 1.0);
+        }
+
+        function calculateDojiConfidence(candle, context) {
+            const bodySize = Math.abs(candle.close - candle.open);
+            const totalRange = candle.high - candle.low;
+            return 1 - (bodySize / totalRange);
+        }
+
+        function calculateHammerConfidence(candle) {
+            const bodySize = Math.abs(candle.close - candle.open);
+            const totalRange = candle.high - candle.low;
+            return 1 - (bodySize / totalRange);
+        }
+
+        function getMarketContext(index) {
+            if (index < 5) return 'INSUFFICIENT_DATA';
+            const recent = candles.slice(index - 5, index);
+            const avgClose = recent.reduce((sum, c) => sum + c.close, 0) / recent.length;
+            return candles[index].close > avgClose ? 'UPTREND_CONTEXT' : 'DOWNTREND_CONTEXT';
         }
 
         function drawChart() {
@@ -677,15 +1503,38 @@
                     return;
                 }
 
-                // Semi-transparent background
+                // Color based on trend type with strength-based opacity
+                const strength = trend.strength || 1;
+                const baseOpacity = Math.min(0.08 + (strength / 50), 0.25);
+                
                 if (trend.type === 'LONG') {
-                    ctx.fillStyle = 'rgba(16, 185, 129, 0.08)';
+                    ctx.fillStyle = `rgba(16, 185, 129, ${baseOpacity})`;
                     ctx.fillRect(startX, chartPadding.top, width, chartHeight);
                 } else if (trend.type === 'SHORT') {
-                    ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+                    ctx.fillStyle = `rgba(239, 68, 68, ${baseOpacity})`;
+                    ctx.fillRect(startX, chartPadding.top, width, chartHeight);
+                } else {
+                    ctx.fillStyle = `rgba(156, 163, 175, ${Math.max(baseOpacity - 0.05, 0.02)})`;
                     ctx.fillRect(startX, chartPadding.top, width, chartHeight);
                 }
-                // FLAT trends have no background color
+                
+                // Add trend label with strength
+                if (width > 60) { // Only show label if trend is wide enough
+                    ctx.fillStyle = trend.type === 'LONG' ? '#10b981' : 
+                                   trend.type === 'SHORT' ? '#ef4444' : '#9ca3af';
+                    ctx.font = 'bold 10px monospace';
+                    ctx.textAlign = 'center';
+                    const labelX = startX + width / 2;
+                    const labelY = chartPadding.top + 15;
+                    ctx.fillText(`${trend.type}`, labelX, labelY);
+                    
+                    // Show strength if significant
+                    if (trend.strength && trend.strength > 1) {
+                        ctx.font = '8px monospace';
+                        ctx.fillText(`(${trend.strength.toFixed(1)})`, labelX, labelY + 12);
+                    }
+                }
+                
                 console.log(`Trend ${trendIdx}: drew successfully`);
             });
 
@@ -930,6 +1779,27 @@
             // Restore canvas transform after drawing
             ctx.restore();
 
+            // =============================================
+            // DRAW PATTERN OVERLAYS
+            // =============================================
+            if (patternOverlaysEnabled) {
+                // Save context for overlay drawing
+                ctx.save();
+                ctx.translate(-panPixels, 0);
+
+                // Draw trend lines
+                drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx);
+
+                // Draw support/resistance levels
+                drawSupportResistanceLevels(candleSpacing, chartHeight, chartPadding, canvas, ctx);
+
+                // Draw pattern markers
+                drawPatternMarkers(candleSpacing, chartHeight, chartPadding, canvas, ctx);
+
+                // Restore context
+                ctx.restore();
+            }
+
             // Mouse wheel zoom (vertical)
             canvas.onwheel = function(e) {
                 e.preventDefault();
@@ -973,7 +1843,7 @@
                         const candlesToMove = -deltaX * panSpeed;
                         candleOffset += candlesToMove;
                         
-                        // Clamp to valid range
+                        // Simple clamp to valid range
                         candleOffset = Math.max(0, Math.min(candles.length - 1, candleOffset));
                         dragStartX = e.clientX;
                     }
@@ -985,13 +1855,22 @@
                     const mouseX = e.clientX - rect.left;
                     const mouseY = e.clientY - rect.top;
 
-                    const chartWidth = canvas.width - chartPadding.left - chartPadding.right;
-                    const candleSpacing = chartWidth / candles.length;
-
-                    const candleIndex = Math.floor((mouseX - chartPadding.left) / candleSpacing) + Math.floor(candleOffset);
-                    if (candleIndex >= 0 && candleIndex < candles.length) {
-                        const candle = candles[candleIndex];
-                        showTooltip(candle, candleIndex, e.clientX, e.clientY);
+                    // Check if mouse is within chart area
+                    if (mouseX >= chartPadding.left && mouseX <= canvas.width - chartPadding.right) {
+                        const chartWidth = canvas.width - chartPadding.left - chartPadding.right;
+                        const candleSpacing = chartWidth / candles.length;
+                        
+                        // Account for panning offset when calculating candle index
+                        const panPixels = candleOffset * candleSpacing;
+                        const adjustedMouseX = mouseX + panPixels;
+                        const candleIndex = Math.floor((adjustedMouseX - chartPadding.left) / candleSpacing);
+                        
+                        if (candleIndex >= 0 && candleIndex < candles.length) {
+                            const candle = candles[candleIndex];
+                            showTooltip(candle, candleIndex, e.clientX, e.clientY);
+                        } else {
+                            tooltip.classList.remove('show');
+                        }
                     } else {
                         tooltip.classList.remove('show');
                     }
@@ -1008,9 +1887,163 @@
             }
         }
 
+        // =============================================
+        // PATTERN OVERLAY DRAWING FUNCTIONS
+        // =============================================
+
+        function drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx) {
+            if (!document.getElementById('enableTrendDetection').checked) return;
+
+            trendLines.forEach(trend => {
+                if (trend.startIdx < 0 || trend.endIdx >= candles.length) return;
+
+                // Use consistent spacing calculation that matches main chart
+                const startX = chartPadding.left + trend.startIdx * candleSpacing + candleSpacing / 2;
+                const endX = chartPadding.left + trend.endIdx * candleSpacing + candleSpacing / 2;
+                
+                const startCandle = candles[trend.startIdx];
+                const endCandle = candles[trend.endIdx];
+                const minPrice = Math.min(...candles.map(c => c.low));
+                const maxPrice = Math.max(...candles.map(c => c.high));
+                const priceRange = maxPrice - minPrice;
+
+                let startY, endY;
+                if (trend.type === 'UPTREND') {
+                    startY = chartPadding.top + ((maxPrice - startCandle.low) / priceRange) * chartHeight;
+                    endY = chartPadding.top + ((maxPrice - endCandle.high) / priceRange) * chartHeight;
+                    ctx.strokeStyle = '#10b981';
+                } else {
+                    startY = chartPadding.top + ((maxPrice - startCandle.high) / priceRange) * chartHeight;
+                    endY = chartPadding.top + ((maxPrice - endCandle.low) / priceRange) * chartHeight;
+                    ctx.strokeStyle = '#ef4444';
+                }
+
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.globalAlpha = 0.7;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+                
+                // Label
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.font = 'bold 10px monospace';
+                ctx.fillText(trend.type, (startX + endX) / 2, (startY + endY) / 2 - 10);
+                
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1.0;
+            });
+        }
+
+        function drawSupportResistanceLevels(candleSpacing, chartHeight, chartPadding, canvas, ctx) {
+            if (!document.getElementById('enableSupportResistance').checked) return;
+
+            const allPrices = candles.flatMap(c => [c.high, c.low]);
+            const minPrice = Math.min(...allPrices);
+            const maxPrice = Math.max(...allPrices);
+            const priceRange = maxPrice - minPrice;
+
+            supportResistanceLevels.forEach(level => {
+                const y = chartPadding.top + ((maxPrice - level.price) / priceRange) * chartHeight;
+                
+                if (level.type === 'SUPPORT') {
+                    ctx.strokeStyle = '#10b981';
+                } else {
+                    ctx.strokeStyle = '#ef4444';
+                }
+                
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.6;
+                ctx.setLineDash([3, 3]);
+                
+                ctx.beginPath();
+                ctx.moveTo(chartPadding.left, y);
+                ctx.lineTo(canvas.width - chartPadding.right, y);
+                ctx.stroke();
+                
+                // Label with strength
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.font = '10px monospace';
+                ctx.fillText(`${level.type} ${level.price.toFixed(2)} (${level.strength}x)`, 
+                           chartPadding.left + 5, y - 5);
+                
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1.0;
+            });
+        }
+
+        function drawPatternMarkers(candleSpacing, chartHeight, chartPadding, canvas, ctx) {
+            const allPrices = candles.flatMap(c => [c.high, c.low]);
+            const minPrice = Math.min(...allPrices);
+            const maxPrice = Math.max(...allPrices);
+            const priceRange = maxPrice - minPrice;
+
+            detectedPatterns.forEach(pattern => {
+                if (pattern.barIndex < 0 || pattern.barIndex >= candles.length) return;
+
+                // Use consistent spacing calculation that matches main chart
+                const x = chartPadding.left + pattern.barIndex * candleSpacing + candleSpacing / 2;
+                const candle = pattern.candle;
+                let y = chartPadding.top + ((maxPrice - candle.high) / priceRange) * chartHeight - 20;
+
+                // Choose marker style and color based on pattern type
+                let color = '#60a5fa';
+                let symbol = '●';
+                let size = 8;
+
+                if (pattern.type.includes('BULLISH') || pattern.type.includes('GOLDEN') || pattern.type.includes('WHITE')) {
+                    color = '#10b981';
+                    symbol = '▲';
+                } else if (pattern.type.includes('BEARISH') || pattern.type.includes('DEATH') || pattern.type.includes('BLACK')) {
+                    color = '#ef4444';
+                    symbol = '▼';
+                } else if (pattern.type.includes('DOJI')) {
+                    color = '#f59e0b';
+                    symbol = '◆';
+                } else if (pattern.type.includes('HAMMER')) {
+                    color = '#8b5cf6';
+                    symbol = '🔨';
+                    size = 12;
+                } else if (pattern.type.includes('VOLUME')) {
+                    color = '#06b6d4';
+                    symbol = '📊';
+                    size = 14; // Make volume spikes more prominent
+                }
+
+                // Draw marker background
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.beginPath();
+                ctx.arc(x, y, size + 2, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Draw marker
+                ctx.fillStyle = color;
+                ctx.font = `${size}px monospace`;
+                ctx.textAlign = 'center';
+                ctx.fillText(symbol, x, y + size/3);
+
+                // Draw pattern label
+                ctx.fillStyle = color;
+                ctx.font = 'bold 9px monospace';
+                ctx.textAlign = 'center';
+                const label = pattern.type.replace(/_/g, ' ');
+                ctx.fillText(label, x, y - size - 5);
+
+                // Draw confidence indicator
+                if (pattern.confidence) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                    ctx.font = '8px monospace';
+                    ctx.fillText(`${(pattern.confidence * 100).toFixed(0)}%`, x, y + size + 12);
+                }
+            });
+        }
+
         function showTooltip(candle, index, clientX, clientY) {
             const entryAtBar = entries.find(e => e.bar === candle.bar);
             const exitAtBar = exits.find(e => e.bar === candle.bar);
+            const patternsAtBar = detectedPatterns.filter(p => p.barIndex === index);
 
             let html = `
                 <div class="tooltip-row">
@@ -1065,11 +2098,73 @@
                 `;
             }
 
+            // Add pattern information
+            if (patternsAtBar.length > 0) {
+                html += `<div class="tooltip-row" style="margin-top: 8px; border-top: 1px solid #374151; padding-top: 6px;">`;
+                html += `<span class="tooltip-label">Patterns:</span>`;
+                html += `</div>`;
+                
+                patternsAtBar.forEach(pattern => {
+                    const confidence = pattern.confidence ? ` (${(pattern.confidence * 100).toFixed(0)}%)` : '';
+                    let patternColor = '#60a5fa';
+                    
+                    if (pattern.type.includes('BULLISH') || pattern.type.includes('GOLDEN') || pattern.type.includes('WHITE')) {
+                        patternColor = '#10b981';
+                    } else if (pattern.type.includes('BEARISH') || pattern.type.includes('DEATH') || pattern.type.includes('BLACK')) {
+                        patternColor = '#ef4444';
+                    } else if (pattern.type.includes('DOJI')) {
+                        patternColor = '#f59e0b';
+                    }
+                    
+                    html += `
+                        <div class="tooltip-row" style="margin-left: 12px;">
+                            <span class="tooltip-value" style="color: ${patternColor};">• ${pattern.type.replace(/_/g, ' ')}${confidence}</span>
+                        </div>
+                    `;
+                });
+            }
+
             tooltip.innerHTML = html;
             tooltip.style.left = (clientX + 15) + 'px';
             tooltip.style.top = (clientY - 100) + 'px';
             tooltip.classList.add('show');
         }
+
+        // Add event listeners for analysis checkboxes and controls
+        document.addEventListener('DOMContentLoaded', () => {
+            const analysisCheckboxes = document.querySelectorAll('.analysis-controls input[type="checkbox"]');
+            
+            analysisCheckboxes.forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    if (candles.length > 0) {
+                        runPatternAnalysis();
+                        drawChart();
+                    }
+                });
+            });
+
+            // Select All button
+            document.getElementById('selectAll').addEventListener('click', () => {
+                analysisCheckboxes.forEach(checkbox => {
+                    checkbox.checked = true;
+                });
+                if (candles.length > 0) {
+                    runPatternAnalysis();
+                    drawChart();
+                }
+            });
+
+            // Select None button
+            document.getElementById('selectNone').addEventListener('click', () => {
+                analysisCheckboxes.forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+                if (candles.length > 0) {
+                    runPatternAnalysis();
+                    drawChart();
+                }
+            });
+        });
 
         // Auto-resize chart
         window.addEventListener('resize', () => {

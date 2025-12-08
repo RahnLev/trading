@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candle Chart - Base with Trends</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2d3561 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #60a5fa;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 15px;
+        }
+
+        input[type="file"] {
+            padding: 8px;
+            background: #1a1f3a;
+            border: 1px solid #374151;
+            border-radius: 5px;
+            color: #e0e0e0;
+            cursor: pointer;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-box {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+        }
+
+        .stats {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: #1a1f3a;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+            min-width: 120px;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #9ca3af;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stat-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+
+        .chart-container {
+            background: #1a1f3a;
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        #chartCanvas {
+            cursor: crosshair;
+            display: block;
+            margin: 0 auto;
+            background: rgba(16, 20, 37, 0.8);
+            border-radius: 8px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: rgba(26, 31, 58, 0.95);
+            color: #e0e0e0;
+            padding: 12px;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            border: 1px solid #374151;
+            font-size: 12px;
+            min-width: 200px;
+            z-index: 1000;
+            backdrop-filter: blur(8px);
+        }
+
+        .tooltip.show {
+            opacity: 1;
+        }
+
+        .tooltip-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .tooltip-label {
+            color: #9ca3af;
+            font-weight: 600;
+        }
+
+        .tooltip-value {
+            color: #e0e0e0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📈 Candle Chart - Base with Trends</h1>
+        <div class="controls">
+            <input type="file" id="csvFile" accept=".csv" style="display: none;">
+            <button onclick="document.getElementById('csvFile').click()">Load CSV File</button>
+            <button onclick="loadSampleData()">Load Sample Data</button>
+        </div>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: #10b981; border: 2px solid #10b981;"></div>
+                <span>Bullish Candle</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #ef4444; border: 2px solid #ef4444;"></div>
+                <span>Bearish Candle</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(16, 185, 129, 0.2); border: 2px solid #10b981;"></div>
+                <span>LONG Trend</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(239, 68, 68, 0.2); border: 2px solid #ef4444;"></div>
+                <span>SHORT Trend</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(156, 163, 175, 0.1); border: 2px solid #9ca3af;"></div>
+                <span>FLAT Trend</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats" id="stats" style="display: none;">
+        <div class="stat-card">
+            <div class="stat-label">Total Bars</div>
+            <div class="stat-value" id="stat-bars">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #10b981;">
+            <div class="stat-label">LONG Trends</div>
+            <div class="stat-value" style="color: #10b981;" id="stat-long-trends">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #ef4444;">
+            <div class="stat-label">SHORT Trends</div>
+            <div class="stat-value" style="color: #ef4444;" id="stat-short-trends">0</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #9ca3af;">
+            <div class="stat-label">FLAT Trends</div>
+            <div class="stat-value" style="color: #9ca3af;" id="stat-flat-trends">0</div>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="chartCanvas"></canvas>
+        <div class="tooltip" id="tooltip"></div>
+    </div>
+
+    <script>
+        let rawCandles = [];
+        let candles = [];
+        let trends = [];
+        let ctx, tooltip;
+        let priceZoom = 1.0;
+        let priceOffset = 0;
+        let isDragging = false;
+        let dragStartY = 0;
+        let dragStartX = 0;
+        let candleOffset = 0;
+        let chartPadding = { top: 40, right: 80, bottom: 40, left: 80 };
+
+        function init() {
+            const canvas = document.getElementById('chartCanvas');
+            const container = document.querySelector('.chart-container');
+            
+            canvas.width = container.clientWidth - 40;
+            canvas.height = 600;
+            
+            ctx = canvas.getContext('2d');
+            tooltip = document.getElementById('tooltip');
+
+            document.getElementById('csvFile').addEventListener('change', handleFileSelect);
+            setupMouseEvents(canvas);
+        }
+
+        function setupMouseEvents(canvas) {
+            canvas.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                dragStartY = e.clientY;
+                dragStartX = e.clientX;
+                canvas.style.cursor = 'grabbing';
+            });
+
+            canvas.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaY = e.clientY - dragStartY;
+                    const deltaX = e.clientX - dragStartX;
+                    
+                    const priceRange = getPriceRange();
+                    const sensitivity = (priceRange.max - priceRange.min) / canvas.height;
+                    priceOffset += deltaY * sensitivity;
+                    
+                    const candleSpacing = (canvas.width - chartPadding.left - chartPadding.right) / candles.length;
+                    const candleSensitivity = deltaX / candleSpacing;
+                    candleOffset -= candleSensitivity;
+                    candleOffset = Math.max(0, Math.min(candleOffset, Math.max(0, candles.length - 1)));
+                    
+                    dragStartY = e.clientY;
+                    dragStartX = e.clientX;
+                    drawChart();
+                } else {
+                    const rect = canvas.getBoundingClientRect();
+                    const mouseX = e.clientX - rect.left;
+                    const mouseY = e.clientY - rect.top;
+
+                    const chartWidth = canvas.width - chartPadding.left - chartPadding.right;   
+                    const candleSpacing = chartWidth / candles.length;
+
+                    const candleIndex = Math.floor((mouseX - chartPadding.left) / candleSpacing) + Math.floor(candleOffset);
+                    if (candleIndex >= 0 && candleIndex < candles.length) {
+                        const candle = candles[candleIndex];
+                        showTooltip(candle, candleIndex, e.clientX, e.clientY);
+                    } else {
+                        tooltip.classList.remove('show');
+                    }
+                }
+            });
+
+            canvas.addEventListener('mouseup', () => {
+                isDragging = false;
+                canvas.style.cursor = 'crosshair';
+            });
+
+            canvas.addEventListener('mouseleave', () => {
+                isDragging = false;
+                canvas.style.cursor = 'crosshair';
+                tooltip.classList.remove('show');
+            });
+
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+                priceZoom *= zoomFactor;
+                priceZoom = Math.max(0.1, Math.min(10, priceZoom));
+                drawChart();
+            });
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const csvText = e.target.result;
+                parseCSV(csvText);
+            };
+            reader.readAsText(file);
+        }
+
+        function parseCSV(csvText) {
+            try {
+                const lines = csvText.trim().split('\n');
+                const headers = lines[0].split(',').map(h => h.trim());
+                
+                rawCandles = [];
+                trends = [];
+
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',');
+                    if (values.length < headers.length) continue;
+
+                    const row = {};
+                    headers.forEach((header, index) => {
+                        row[header] = values[index] ? values[index].trim() : '';
+                    });
+
+                    if (row.Bar && row.Open && row.High && row.Low && row.Close) {
+                        const candle = {
+                            bar: parseInt(row.Bar),
+                            open: parseFloat(row.Open),
+                            high: parseFloat(row.High),
+                            low: parseFloat(row.Low),
+                            close: parseFloat(row.Close),
+                            timestamp: row.Timestamp || '',
+                            trend: row.Trend || 'FLAT'
+                        };
+                        rawCandles.push(candle);
+                    }
+                }
+
+                console.log(`Loaded ${rawCandles.length} candles`);
+                
+                candles = [...rawCandles];
+                analyzeTrends();
+                updateStats();
+                drawChart();
+
+            } catch (error) {
+                console.error('Error parsing CSV:', error);
+                alert('Error parsing CSV file. Please check the format.');
+            }
+        }
+
+        function loadSampleData() {
+            candles = [];
+            trends = [];
+
+            const basePrice = 4000;
+            let currentPrice = basePrice;
+            let currentTrend = 'FLAT';
+            let trendLength = 0;
+
+            for (let i = 0; i < 100; i++) {
+                // Change trend occasionally
+                if (trendLength > 15 || (trendLength > 5 && Math.random() < 0.2)) {
+                    const trendOptions = ['LONG', 'SHORT', 'FLAT'];
+                    currentTrend = trendOptions[Math.floor(Math.random() * trendOptions.length)];
+                    trendLength = 0;
+                }
+
+                const volatility = Math.random() * 20 + 5;
+                const open = currentPrice;
+                
+                // Bias the price movement based on trend
+                let bias = 0;
+                if (currentTrend === 'LONG') bias = 0.3;
+                else if (currentTrend === 'SHORT') bias = -0.3;
+                
+                const change = (Math.random() - 0.5 + bias) * volatility;
+                const close = open + change;
+                const high = Math.max(open, close) + Math.random() * volatility * 0.3;
+                const low = Math.min(open, close) - Math.random() * volatility * 0.3;
+
+                candles.push({
+                    bar: i,
+                    open: open,
+                    high: high,
+                    low: low,
+                    close: close,
+                    timestamp: new Date(Date.now() - (100 - i) * 60000).toLocaleTimeString(),
+                    trend: currentTrend
+                });
+
+                currentPrice = close;
+                trendLength++;
+            }
+
+            console.log('Loaded sample data');
+            analyzeTrends();
+            updateStats();
+            drawChart();
+        }
+
+        function analyzeTrends() {
+            trends = [];
+            if (candles.length === 0) return;
+
+            let currentTrend = candles[0].trend;
+            let startBar = 0;
+
+            for (let i = 1; i < candles.length; i++) {
+                if (candles[i].trend !== currentTrend) {
+                    trends.push({
+                        direction: currentTrend,
+                        startBar: startBar,
+                        endBar: i - 1
+                    });
+                    currentTrend = candles[i].trend;
+                    startBar = i;
+                }
+            }
+
+            // Add final trend
+            trends.push({
+                direction: currentTrend,
+                startBar: startBar,
+                endBar: candles.length - 1
+            });
+        }
+
+        function updateStats() {
+            document.getElementById('stat-bars').textContent = candles.length;
+            
+            const longTrends = trends.filter(t => t.direction === 'LONG').length;
+            const shortTrends = trends.filter(t => t.direction === 'SHORT').length;
+            const flatTrends = trends.filter(t => t.direction === 'FLAT').length;
+            
+            document.getElementById('stat-long-trends').textContent = longTrends;
+            document.getElementById('stat-short-trends').textContent = shortTrends;
+            document.getElementById('stat-flat-trends').textContent = flatTrends;
+            
+            document.getElementById('stats').style.display = 'flex';
+        }
+
+        function getPriceRange() {
+            if (candles.length === 0) return { min: 0, max: 100 };
+
+            let min = Infinity;
+            let max = -Infinity;
+
+            candles.forEach(candle => {
+                min = Math.min(min, candle.low);
+                max = Math.max(max, candle.high);
+            });
+
+            const padding = (max - min) * 0.1;
+            return {
+                min: min - padding,
+                max: max + padding
+            };
+        }
+
+        function priceToY(price) {
+            const priceRange = getPriceRange();
+            const adjustedMin = priceRange.min - priceOffset;
+            const adjustedMax = priceRange.max - priceOffset;
+            const priceHeight = (adjustedMax - adjustedMin) / priceZoom;
+            
+            return chartPadding.top + ((adjustedMax - price) / priceHeight) * (ctx.canvas.height - chartPadding.top - chartPadding.bottom);
+        }
+
+        function drawChart() {
+            if (!ctx || candles.length === 0) return;
+
+            try {
+                // Clear canvas
+                ctx.fillStyle = 'rgba(16, 20, 37, 0.8)';
+                ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+                const chartWidth = ctx.canvas.width - chartPadding.left - chartPadding.right;
+                const chartHeight = ctx.canvas.height - chartPadding.top - chartPadding.bottom;
+                const candleSpacing = chartWidth / candles.length;
+
+                // Draw trend backgrounds
+                trends.forEach(trend => {
+                    const startX = chartPadding.left + (trend.startBar * candleSpacing);
+                    const endX = chartPadding.left + ((trend.endBar + 1) * candleSpacing);
+                    
+                    let fillStyle;
+                    switch (trend.direction) {
+                        case 'LONG':
+                            fillStyle = 'rgba(16, 185, 129, 0.1)';
+                            break;
+                        case 'SHORT':
+                            fillStyle = 'rgba(239, 68, 68, 0.1)';
+                            break;
+                        default:
+                            fillStyle = 'rgba(156, 163, 175, 0.05)';
+                    }
+                    
+                    ctx.fillStyle = fillStyle;
+                    ctx.fillRect(startX, chartPadding.top, endX - startX, chartHeight);
+                });
+
+                // Draw trend separators
+                trends.forEach((trend, index) => {
+                    if (index > 0) {
+                        const x = chartPadding.left + (trend.startBar * candleSpacing);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                        ctx.lineWidth = 1;
+                        ctx.setLineDash([5, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(x, chartPadding.top);
+                        ctx.lineTo(x, ctx.canvas.height - chartPadding.bottom);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                    }
+                });
+
+                // Draw candles
+                const candleWidth = Math.max(2, candleSpacing * 0.8);
+                candles.forEach((candle, index) => {
+                    const x = chartPadding.left + (index * candleSpacing) + (candleSpacing / 2);
+                    
+                    const openY = priceToY(candle.open);
+                    const closeY = priceToY(candle.close);
+                    const highY = priceToY(candle.high);
+                    const lowY = priceToY(candle.low);
+
+                    const isGreen = candle.close > candle.open;
+
+                    // Draw wick
+                    ctx.strokeStyle = isGreen ? '#10b981' : '#ef4444';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x, highY);
+                    ctx.lineTo(x, lowY);
+                    ctx.stroke();
+
+                    // Draw body
+                    ctx.fillStyle = isGreen ? '#10b981' : '#ef4444';
+                    const bodyHeight = Math.abs(closeY - openY);
+                    const bodyY = Math.min(openY, closeY);
+                    
+                    if (bodyHeight < 1) {
+                        ctx.fillRect(x - candleWidth/2, bodyY, candleWidth, 1);
+                    } else {
+                        ctx.fillRect(x - candleWidth/2, bodyY, candleWidth, bodyHeight);
+                    }
+                });
+
+                // Draw price axis
+                drawPriceAxis();
+
+            } catch (error) {
+                console.error('Error drawing chart:', error);
+                if (ctx) {
+                    ctx.fillStyle = '#ef4444';
+                    ctx.font = '14px monospace';
+                    ctx.fillText('Error drawing chart. Check console for details.', 20, 50);
+                }
+            }
+        }
+
+        function drawPriceAxis() {
+            const priceRange = getPriceRange();
+            const adjustedMin = priceRange.min - priceOffset;
+            const adjustedMax = priceRange.max - priceOffset;
+            const priceHeight = (adjustedMax - adjustedMin) / priceZoom;
+
+            ctx.fillStyle = '#9ca3af';
+            ctx.font = '12px monospace';
+            ctx.textAlign = 'right';
+
+            const numLevels = 10;
+            for (let i = 0; i <= numLevels; i++) {
+                const price = adjustedMin + (priceHeight * i / numLevels);
+                const y = priceToY(price);
+                
+                if (y >= chartPadding.top && y <= ctx.canvas.height - chartPadding.bottom) {
+                    ctx.fillText(price.toFixed(2), ctx.canvas.width - chartPadding.right + 5, y + 4);
+                    
+                    ctx.strokeStyle = 'rgba(156, 163, 175, 0.2)';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(chartPadding.left, y);
+                    ctx.lineTo(ctx.canvas.width - chartPadding.right, y);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        function showTooltip(candle, index, clientX, clientY) {
+            let html = `
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Bar:</span>
+                    <span class="tooltip-value">${candle.bar}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Time:</span>
+                    <span class="tooltip-value">${candle.timestamp || 'N/A'}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Open:</span>
+                    <span class="tooltip-value">${candle.open.toFixed(2)}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">High:</span>
+                    <span class="tooltip-value">${candle.high.toFixed(2)}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Low:</span>
+                    <span class="tooltip-value">${candle.low.toFixed(2)}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Close:</span>
+                    <span class="tooltip-value">${candle.close.toFixed(2)}</span>
+                </div>
+                <div class="tooltip-row">
+                    <span class="tooltip-label">Trend:</span>
+                    <span class="tooltip-value" style="color: ${
+                        candle.trend === 'LONG' ? '#10b981' : 
+                        candle.trend === 'SHORT' ? '#ef4444' : '#9ca3af'
+                    };">${candle.trend}</span>
+                </div>
+            `;
+
+            tooltip.innerHTML = html;
+            tooltip.style.left = (clientX + 15) + 'px';
+            tooltip.style.top = (clientY - 100) + 'px';
+            tooltip.classList.add('show');
+        }
+
+        window.addEventListener('resize', () => {
+            if (candles.length > 0) {
+                const canvas = document.getElementById('chartCanvas');
+                const container = document.querySelector('.chart-container');
+                canvas.width = container.clientWidth - 40;
+                drawChart();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
