@@ -351,6 +351,10 @@
             <div class="stat-label">SHORT Trends</div>
             <div class="stat-value" style="color: #ef4444;" id="stat-short-trends">0</div>
         </div>
+        <div class="stat-card" style="border-left-color: #4b5563;">
+            <div class="stat-label">NEUTRAL Zones</div>
+            <div class="stat-value" style="color: #4b5563;" id="stat-neutral-trends">0</div>
+        </div>
         <div class="stat-card" style="border-left-color: #8b5cf6;">
             <div class="stat-label">Total Patterns</div>
             <div class="stat-value" style="color: #8b5cf6;" id="stat-total-patterns">0</div>
@@ -398,45 +402,7 @@
         let patternDirections = { LONG: 0, SHORT: 0, FLAT: 0 };
         let patternOverlaysEnabled = false;
 
-        // Trend Analysis Functions
-        function analyzeTrendDirection(currentIndex, lookback) {
-            if (currentIndex < lookback) return 'FLAT';
-            
-            const startIdx = currentIndex - lookback;
-            const endIdx = currentIndex;
-            
-            // Calculate price momentum
-            const startPrice = (candles[startIdx].high + candles[startIdx].low + candles[startIdx].close) / 3;
-            const endPrice = (candles[endIdx].high + candles[endIdx].low + candles[endIdx].close) / 3;
-            const priceChange = (endPrice - startPrice) / startPrice;
-            
-            // Calculate moving average slope
-            const prices = candles.slice(startIdx, endIdx + 1).map(c => c.close);
-            const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-            const slope = calculateLinearRegression(prices).slope;
-            
-            // Analyze volume confirmation (if available)
-            let volumeConfirmation = 0;
-            if (candles[endIdx].volume && candles[startIdx].volume) {
-                const recentVolume = candles.slice(Math.max(0, endIdx - 3), endIdx + 1)
-                    .reduce((sum, c) => sum + (c.volume || 0), 0) / 4;
-                const earlierVolume = candles.slice(Math.max(0, startIdx - 3), startIdx + 1)
-                    .reduce((sum, c) => sum + (c.volume || 0), 0) / 4;
-                volumeConfirmation = recentVolume > earlierVolume ? 1 : -0.5;
-            }
-            
-            // Decision logic
-            const trendThreshold = 0.002; // 0.2% price change threshold
-            const slopeThreshold = 0.1;
-            
-            if (priceChange > trendThreshold && slope > slopeThreshold) {
-                return 'LONG';
-            } else if (priceChange < -trendThreshold && slope < -slopeThreshold) {
-                return 'SHORT';
-            } else {
-                return 'FLAT';
-            }
-        }
+        // Trend Analysis Functions (duplicate removed)
         
         function calculateLinearRegression(values) {
             const n = values.length;
@@ -666,10 +632,23 @@
             trends = [];
             if (candles.length < 20) return; // Need minimum data for trend analysis
             
+            // First, fill the initial lookback period with NEUTRAL trend
+            const lookbackPeriod = 5; // Reduced lookback period for more coverage
+            const minTrendLength = 3;  // Reduced minimum bars to catch more trends
+            
+            if (lookbackPeriod > 0) {
+                trends.push({
+                    type: 'NEUTRAL',
+                    startBar: candles[0].bar,
+                    endBar: candles[lookbackPeriod - 1].bar,
+                    startIdx: 0,
+                    endIdx: lookbackPeriod - 1,
+                    strength: 1
+                });
+            }
+            
             let currentTrend = null;
-            let trendStartIdx = 0;
-            const lookbackPeriod = 10; // Number of bars to analyze for trend direction
-            const minTrendLength = 5;  // Minimum bars to confirm a trend
+            let trendStartIdx = lookbackPeriod;
             
             for (let i = lookbackPeriod; i < candles.length; i++) {
                 const trendDirection = analyzeTrendDirection(i, lookbackPeriod);
@@ -725,9 +704,9 @@
             const prices = candles.slice(startIdx, endIdx + 1).map(c => c.close);
             const slope = calculateLinearRegression(prices).slope;
             
-            // Decision logic
-            const trendThreshold = 0.001; // 0.1% price change threshold
-            const slopeThreshold = 0.05;
+            // Decision logic - very sensitive for maximum trend detection
+            const trendThreshold = 0.0002; // 0.02% price change threshold  
+            const slopeThreshold = 0.005; // Very low slope threshold
             
             if (priceChange > trendThreshold && slope > slopeThreshold) {
                 return 'LONG';
@@ -796,6 +775,7 @@
             const longTrends = trends.filter(t => t.type === 'LONG');
             const shortTrends = trends.filter(t => t.type === 'SHORT');
             const flatTrends = trends.filter(t => t.type === 'FLAT');
+            const neutralTrends = trends.filter(t => t.type === 'NEUTRAL');
             
             const avgLongStrength = longTrends.length > 0 ? 
                 (longTrends.reduce((sum, t) => sum + (t.strength || 0), 0) / longTrends.length).toFixed(1) : '0.0';
@@ -804,6 +784,7 @@
             
             document.getElementById('stat-long-trends').textContent = `${longTrends.length} (${avgLongStrength})`;
             document.getElementById('stat-short-trends').textContent = `${shortTrends.length} (${avgShortStrength})`;
+            document.getElementById('stat-neutral-trends').textContent = `${neutralTrends.length}`;
 
             if (candles.length > 0) {
                 const allPrices = candles.flatMap(c => [c.high, c.low]);
@@ -851,7 +832,7 @@
             // Run enabled analyses
             if (document.getElementById('enableTrendDetection')?.checked) {
                 try {
-                    analyzetrends();
+                    analyzeTrends();
                 } catch (error) {
                     console.error('Error in trend analysis:', error);
                 }
@@ -938,7 +919,7 @@
         // TREND ANALYSIS
         // =============================================
 
-        function analyzetrends() {
+        function analyzeTrends() {
             if (!candles || candles.length < 30) {
                 console.log('Not enough candle data for trend analysis');
                 return;
@@ -1503,9 +1484,8 @@
                     return;
                 }
 
-                // Color based on trend type with strength-based opacity
-                const strength = trend.strength || 1;
-                const baseOpacity = Math.min(0.08 + (strength / 50), 0.25);
+                // Color based on trend type with consistent opacity (no strength variation)
+                const baseOpacity = 0.3; // Fixed opacity for consistent colors
                 
                 if (trend.type === 'LONG') {
                     ctx.fillStyle = `rgba(16, 185, 129, ${baseOpacity})`;
@@ -1513,15 +1493,20 @@
                 } else if (trend.type === 'SHORT') {
                     ctx.fillStyle = `rgba(239, 68, 68, ${baseOpacity})`;
                     ctx.fillRect(startX, chartPadding.top, width, chartHeight);
+                } else if (trend.type === 'NEUTRAL') {
+                    ctx.fillStyle = `rgba(75, 85, 99, ${baseOpacity * 0.6})`; // Darker gray for no-data zones
+                    ctx.fillRect(startX, chartPadding.top, width, chartHeight);
                 } else {
-                    ctx.fillStyle = `rgba(156, 163, 175, ${Math.max(baseOpacity - 0.05, 0.02)})`;
+                    // FLAT trends - light gray
+                    ctx.fillStyle = `rgba(156, 163, 175, ${baseOpacity * 0.8})`;
                     ctx.fillRect(startX, chartPadding.top, width, chartHeight);
                 }
                 
                 // Add trend label with strength
                 if (width > 60) { // Only show label if trend is wide enough
                     ctx.fillStyle = trend.type === 'LONG' ? '#10b981' : 
-                                   trend.type === 'SHORT' ? '#ef4444' : '#9ca3af';
+                                   trend.type === 'SHORT' ? '#ef4444' : 
+                                   trend.type === 'NEUTRAL' ? '#4b5563' : '#9ca3af';
                     ctx.font = 'bold 10px monospace';
                     ctx.textAlign = 'center';
                     const labelX = startX + width / 2;
@@ -1567,15 +1552,6 @@
                 ctx.moveTo(x1, y);
                 ctx.lineTo(x2, y);
                 ctx.stroke();
-
-                // Price labels
-                const price = maxPrice + pricePadding - ((maxPrice - minPrice + 2 * pricePadding) / numPriceLines) * i;
-                if (isFinite(price) && isFinite(y)) {
-                    ctx.fillStyle = '#9ca3af';
-                    ctx.font = '11px monospace';
-                    ctx.textAlign = 'right';
-                    ctx.fillText(price.toFixed(2), chartPadding.left - 10, y + 4);
-                }
             }
 
             // Draw candles
@@ -1776,7 +1752,38 @@
                 isDragging = false;
             };
             
-            // Restore canvas transform after drawing
+            // =============================================
+            // DRAW PRICE AXIS (uses current zoom/pan price range)
+            // =============================================
+            
+            // Use the already calculated maxPrice, minPrice, pricePadding from chart
+            const numPriceLinesAxis = 8;
+            
+            // Draw price labels on left side
+            for (let i = 0; i <= numPriceLinesAxis; i++) {
+                const y = chartPadding.top + (chartHeight / numPriceLinesAxis) * i;
+                const price = maxPrice + pricePadding - ((maxPrice - minPrice + 2 * pricePadding) / numPriceLinesAxis) * i;
+                
+                if (isFinite(price) && isFinite(y)) {
+                    const labelText = price.toFixed(2);
+                    
+                    // Draw price label on left side
+                    ctx.font = '12px monospace';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(labelText, 10, y + 4);
+                    
+                    // Also draw horizontal grid lines
+                    ctx.strokeStyle = '#374151';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(chartPadding.left, y);
+                    ctx.lineTo(canvas.width - chartPadding.right, y);
+                    ctx.stroke();
+                }
+            }
+
+            // Restore canvas transform after drawing price axis
             ctx.restore();
 
             // =============================================
@@ -1788,7 +1795,7 @@
                 ctx.translate(-panPixels, 0);
 
                 // Draw trend lines
-                drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx);
+                drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice);
 
                 // Draw support/resistance levels
                 drawSupportResistanceLevels(candleSpacing, chartHeight, chartPadding, canvas, ctx);
@@ -1891,7 +1898,7 @@
         // PATTERN OVERLAY DRAWING FUNCTIONS
         // =============================================
 
-        function drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx) {
+        function drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice) {
             if (!document.getElementById('enableTrendDetection').checked) return;
 
             trendLines.forEach(trend => {
@@ -1903,9 +1910,8 @@
                 
                 const startCandle = candles[trend.startIdx];
                 const endCandle = candles[trend.endIdx];
-                const minPrice = Math.min(...candles.map(c => c.low));
-                const maxPrice = Math.max(...candles.map(c => c.high));
-                const priceRange = maxPrice - minPrice;
+                        const priceRange = maxPrice - minPrice;
+                        if (!isFinite(priceRange) || priceRange <= 0) return;
 
                 let startY, endY;
                 if (trend.type === 'UPTREND') {
