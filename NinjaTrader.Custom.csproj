@@ -422,6 +422,7 @@
     <Compile Include="Indicators\EMAGradientPair.cs" />
     <Compile Include="Strategies\TimeframeAdvisor.cs" />
     <Compile Include="Strategies\BareOhlcLogger.cs" />
+    <Compile Include="Strategies\WebTrendFollower.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Properties\Resources.resx">

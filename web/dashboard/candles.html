@@ -238,7 +238,13 @@
         <div class="controls">
             <input type="file" id="fileInput" accept=".csv" />
             <button onclick="loadFromServer()">Load Latest from Server</button>
+                <button id="liveToggle" onclick="toggleLiveFeed()" style="background: #2563eb;">Go Live</button>
             <span id="status" style="color: #9ca3af; font-size: 12px;"></span>
+                <span id="liveStatus" style="color: #9ca3af; font-size: 12px;">Live: disconnected</span>
+            <button id="autoSendToggle" onclick="toggleAutoSendTrends()" style="background: #f97316;">Auto Send Trends: Off</button>
+            <button onclick="sendManualTrend('UP')" style="background:#10b981;">Send Long Trend</button>
+            <button onclick="sendManualTrend('FLAT')" style="background:#6b7280;">Send Flat Trend</button>
+            <button onclick="sendManualTrend('DOWN')" style="background:#ef4444;">Send Short Trend</button>
         </div>
 
         <div class="legend">
@@ -304,6 +310,7 @@
                 <button onclick="runPatternAnalysis()" style="background: #10b981;">🔍 Analyze Patterns</button>
                 <button onclick="clearPatternOverlays()" style="background: #6b7280;">Clear Overlays</button>
                 <button onclick="downloadAnalysis()" style="background: #2563eb;">⬇️ Download Analysis</button>
+                <button onclick="sendLatestTrendToStrategy()" style="background: #f97316;">📡 Send Latest Trend</button>
                 <span id="patternStats" style="color: #9ca3af; font-size: 12px; margin-left: 10px;"></span>
             </div>
         </div>
@@ -407,6 +414,14 @@
         let patternDirections = { LONG: 0, SHORT: 0, FLAT: 0 };
         let patternOverlaysEnabled = false;
         let lastHoverIndex = null; // track last hovered candle for quick copy
+        let liveBarMap = new Map(); // barIndex -> candle for live mode
+        let liveSocket = null;
+        let liveDrawPending = null;
+        let autoSendTrends = false;
+        let lastSentTrendKey = null;
+        let lastOverlayCommandKey = null; // avoid duplicate overlay-driven sends
+        let lastOverlayDirection = null;   // track overlay direction to avoid spamming same side
+        let lastOverlayStartIdx = null;
 
         // Trend Analysis Functions (duplicate removed)
         
@@ -478,6 +493,65 @@
             }
         }
 
+        async function preloadRecentBars() {
+            const statusEl = document.getElementById('status');
+            if (statusEl && rawCandles.length === 0) {
+                statusEl.textContent = 'Preloading recent bars...';
+            }
+
+            try {
+                const res = await fetch('/bars/latest?limit=1200');
+                if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+                const json = await res.json();
+                const bars = Array.isArray(json.bars) ? json.bars : [];
+                if (bars.length === 0) {
+                    if (statusEl && rawCandles.length === 0) {
+                        statusEl.textContent = 'No cached bars available';
+                    }
+                    return;
+                }
+
+                liveBarMap.clear();
+                bars.forEach(b => {
+                    const barIndex = Number(b.barIndex ?? b.BarIndex);
+                    if (!Number.isFinite(barIndex)) return;
+
+                    const open = Number(b.open ?? b.Open ?? b.close ?? b.Close ?? 0);
+                    const close = Number(b.close ?? b.Close ?? open);
+                    const high = Number(b.high ?? b.High ?? Math.max(open, close));
+                    const low = Number(b.low ?? b.Low ?? Math.min(open, close));
+                    const ts = b.localTime || b.time || (b.ts ? new Date(b.ts * 1000).toISOString() : new Date().toISOString());
+
+                    liveBarMap.set(barIndex, {
+                        bar: barIndex,
+                        timestamp: ts,
+                        open,
+                        high,
+                        low,
+                        close,
+                        candleType: b.trendSide || ''
+                    });
+                });
+
+                const merged = Array.from(liveBarMap.values()).sort((a, b) => a.bar - b.bar);
+                rawCandles = merged;
+                aggregateCandles();
+                generateRealTrends();
+                updateStats();
+                drawChart();
+
+                if (statusEl) {
+                    statusEl.textContent = `Preloaded ${rawCandles.length} cached bars`;
+                }
+            } catch (err) {
+                console.warn('Preload recent bars failed', err);
+                if (statusEl && rawCandles.length === 0) {
+                    statusEl.textContent = 'Preload failed';
+                }
+            }
+        }
+
         function parseCSV(csvText) {
             // Reset previously loaded data so uploads don't accumulate
             rawCandles = [];
@@ -544,6 +618,127 @@
 
             updateStats();
             drawChart();
+        }
+
+        // =============================================
+        // LIVE STREAMING (WebSocket) BRIDGE
+        // =============================================
+        function updateLiveStatus(text, color = '#9ca3af') {
+            const el = document.getElementById('liveStatus');
+            if (el) {
+                el.textContent = `Live: ${text}`;
+                el.style.color = color;
+            }
+        }
+
+        function toggleLiveFeed() {
+            if (liveSocket) {
+                disconnectLiveFeed();
+            } else {
+                connectLiveFeed();
+            }
+        }
+
+        function connectLiveFeed() {
+            try {
+                const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+                const host = (location.host && location.host.trim()) ? location.host : '127.0.0.1:51888';
+                const url = `${proto}://${host}/ws`;
+                liveSocket = new WebSocket(url);
+                document.getElementById('liveToggle').textContent = 'Stop Live';
+                updateLiveStatus(`connecting to ${host}...`, '#f59e0b');
+
+                liveSocket.onopen = () => {
+                    updateLiveStatus('connected', '#10b981');
+                };
+
+                liveSocket.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === 'diag' && msg.data) {
+                            handleLiveDiag(msg.data);
+                        }
+                    } catch (err) {
+                        console.warn('Live message parse error', err);
+                    }
+                };
+
+                liveSocket.onclose = (evt) => {
+                    liveSocket = null;
+                    document.getElementById('liveToggle').textContent = 'Go Live';
+                    const reason = evt && evt.code ? `disconnected (code ${evt.code})` : 'disconnected';
+                    updateLiveStatus(reason);
+                };
+
+                liveSocket.onerror = (evt) => {
+                    console.error('Live WS error', evt);
+                    updateLiveStatus('error', '#ef4444');
+                };
+            } catch (err) {
+                liveSocket = null;
+                document.getElementById('liveToggle').textContent = 'Go Live';
+                updateLiveStatus('error starting live', '#ef4444');
+                console.error('Live connect error', err);
+            }
+        }
+
+        function disconnectLiveFeed() {
+            if (liveSocket) {
+                try { liveSocket.close(); } catch (e) {}
+            }
+            liveSocket = null;
+            document.getElementById('liveToggle').textContent = 'Go Live';
+            updateLiveStatus('disconnected');
+        }
+
+        function handleLiveDiag(payload) {
+            const barIndex = Number(payload.barIndex ?? payload.BarIndex);
+            if (!Number.isFinite(barIndex)) return;
+
+            const open = Number(payload.open ?? payload.Open ?? payload.close ?? payload.Close ?? 0);
+            const high = Number(payload.high ?? payload.High ?? open);
+            const low = Number(payload.low ?? payload.Low ?? open);
+            const close = Number(payload.close ?? payload.Close ?? open);
+            const ts = payload.time || payload.localTime || new Date().toISOString();
+
+            const candle = {
+                bar: barIndex,
+                timestamp: ts,
+                open,
+                high,
+                low,
+                close,
+                candleType: payload.signal || payload.trendSide || ''
+            };
+
+            liveBarMap.set(barIndex, candle);
+            // Trim if we exceed max cache
+            if (liveBarMap.size > 800) {
+                const oldest = Math.min(...liveBarMap.keys());
+                liveBarMap.delete(oldest);
+            }
+
+            scheduleLiveRedraw();
+        }
+
+        function scheduleLiveRedraw() {
+            if (liveDrawPending) return;
+            liveDrawPending = requestAnimationFrame(() => {
+                const merged = Array.from(liveBarMap.values()).sort((a, b) => a.bar - b.bar);
+                rawCandles = merged;
+                aggregateCandles();
+                generateRealTrends();
+                sendOverlayTrendIfChanged('live-overlay');
+                updateStats();
+                drawChart();
+                // Auto-run candidate trend analysis in live mode when enabled so overlays and auto-send fire
+                if (autoSendTrends && document.getElementById('enableCandidateTrends')?.checked) {
+                    runPatternAnalysis();
+                    drawChart();
+                }
+                liveDrawPending = null;
+                document.getElementById('status').textContent = `Live bars: ${rawCandles.length}`;
+            });
         }
 
         function aggregateCandles() {
@@ -680,6 +875,44 @@
             }
             
             console.log(`Generated ${trends.length} real trends based on market analysis:`, trends);
+        }
+
+        function sendOverlayTrendIfChanged(reason = 'overlay') {
+            if (!autoSendTrends) return;
+            if (!trends || trends.length === 0) return;
+
+            const lastTrend = trends[trends.length - 1];
+            const dirRaw = String(lastTrend.type || '').toUpperCase();
+            const direction = dirRaw.includes('LONG') ? 'UP'
+                              : dirRaw.includes('SHORT') ? 'DOWN'
+                              : 'FLAT';
+
+            // Only fire when direction flips or a new trend starts; ignore end-bar growth
+            if (direction === lastOverlayDirection && lastTrend.startIdx === lastOverlayStartIdx) {
+                return;
+            }
+
+            const midIdx = Math.floor((lastTrend.startIdx + lastTrend.endIdx) / 2);
+            const candle = candles[midIdx] || candles[candles.length - 1];
+
+            // Use underlying raw bars when aggregated to keep barIndex aligned with live feed
+            let barIndexForCmd = candle?.bar ?? midIdx;
+            if (candle?.originalBars && Array.isArray(candle.originalBars) && candle.originalBars.length > 0) {
+                barIndexForCmd = Math.max(...candle.originalBars);
+            }
+
+            const payload = {
+                direction,
+                source: 'candles-overlay',
+                barIndex: barIndexForCmd,
+                price: candle?.close,
+                strength: lastTrend.strength ?? 0,
+                note: `overlay start:${lastTrend.startIdx} end:${lastTrend.endIdx} (${reason})`
+            };
+
+            lastOverlayDirection = direction;
+            lastOverlayStartIdx = lastTrend.startIdx;
+            sendTrendPayload(payload, reason);
         }
 
         // Trend Analysis Functions
@@ -836,6 +1069,7 @@
             if (document.getElementById('enableCandidateTrends')?.checked) {
                 try {
                     analyzeCandidateTrends();
+                    sendLatestTrendIfAuto();
                 } catch (error) {
                     console.error('Error in candidate trend analysis:', error);
                 }
@@ -2509,6 +2743,106 @@
             URL.revokeObjectURL(url);
         }
 
+        // Send the most recent candidate trend to the strategy via the server command bridge
+        async function sendLatestTrendToStrategy() {
+            if (!candidateTrends || candidateTrends.length === 0) {
+                alert('No candidate trends to send');
+                return;
+            }
+            const trend = candidateTrends[candidateTrends.length - 1];
+            await sendTrendPayload(trend, 'manual');
+        }
+
+        // Manual test buttons
+        async function sendManualTrend(direction) {
+            if (!candles || candles.length === 0) {
+                alert('No candles loaded');
+                return;
+            }
+            const last = candles[candles.length - 1];
+            const trend = {
+                direction: direction,
+                startIdx: last.bar ?? candles.length - 1,
+                endIdx: last.bar ?? candles.length - 1,
+                change: 0,
+                strength: 0,
+                note: 'manual-button'
+            };
+            await sendTrendPayload(trend, `manual-${direction.toLowerCase()}`);
+        }
+
+        function toggleAutoSendTrends() {
+            autoSendTrends = !autoSendTrends;
+            const btn = document.getElementById('autoSendToggle');
+            if (btn) {
+                btn.textContent = `Auto Send Trends: ${autoSendTrends ? 'On' : 'Off'}`;
+                btn.style.background = autoSendTrends ? '#10b981' : '#f97316';
+            }
+            updateLiveStatus(autoSendTrends ? 'auto-send ON' : 'auto-send OFF');
+        }
+
+        async function sendTrendPayload(trend, reason = 'auto') {
+            if (!trend) return;
+            const dirRaw = String(trend.direction || trend.type || '').toUpperCase();
+            const direction = dirRaw.includes('FLAT') || dirRaw.includes('NEUTRAL') ? 'FLAT'
+                              : (dirRaw.includes('UP') || dirRaw.includes('LONG')) ? 'UP'
+                              : (dirRaw.includes('DOWN') || dirRaw.includes('SHORT')) ? 'DOWN'
+                              : 'FLAT';
+
+
+            const startIdx = trend.startIdx ?? trend.startIndex ?? trend.index ?? 0;
+            const endIdx = trend.endIdx ?? trend.endIndex ?? startIdx;
+            const midIdx = Math.floor((startIdx + endIdx) / 2);
+            const candle = candles[midIdx] || candles[candles.length - 1];
+
+            // Use the latest underlying raw bar index when aggregated timeframe is active
+            let barIndexForCmd = candle?.bar ?? midIdx;
+            if (candle?.originalBars && Array.isArray(candle.originalBars) && candle.originalBars.length > 0) {
+                barIndexForCmd = Math.max(...candle.originalBars);
+            }
+
+            const payload = {
+                direction,
+                source: 'candles.html',
+                barIndex: barIndexForCmd,
+                price: candle?.close,
+                strength: trend.change ?? trend.strength,
+                note: `start:${startIdx} end:${endIdx} (${reason})`
+            };
+
+            const key = `${direction}:${startIdx}-${endIdx}`;
+            if (reason === 'auto' && key === lastSentTrendKey) {
+                return; // avoid duplicate sends for same segment
+            }
+
+            try {
+                const res = await fetch('/commands/trend', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok) {
+                    console.warn('Send trend failed', json);
+                    updateLiveStatus('command failed', '#f97316');
+                } else {
+                    lastSentTrendKey = key;
+                    console.log('Trend command sent', json);
+                    updateLiveStatus(`trend -> ${direction} (#${json.command?.id || ''})`, '#10b981');
+                }
+            } catch (err) {
+                console.warn('Error sending trend', err);
+                updateLiveStatus('command error', '#ef4444');
+            }
+        }
+
+        async function sendLatestTrendIfAuto() {
+            if (!autoSendTrends) return;
+            if (!candidateTrends || candidateTrends.length === 0) return;
+            const trend = candidateTrends[candidateTrends.length - 1];
+            await sendTrendPayload(trend, 'auto');
+        }
+
         // Add event listeners for analysis checkboxes and controls
         document.addEventListener('DOMContentLoaded', () => {
             const analysisCheckboxes = document.querySelectorAll('.analysis-controls input[type="checkbox"]');
@@ -2551,6 +2885,9 @@
                     copyBarContext(lastHoverIndex, 2);
                 }
             });
+
+            // Seed the chart with cached bars so a refresh keeps context before live data resumes
+            preloadRecentBars();
         });
 
         // Auto-resize chart

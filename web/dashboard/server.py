@@ -46,6 +46,11 @@ async def ws_endpoint(ws: WebSocket):
     await ws.accept()
     ws_clients.append(ws)
     try:
+        client_host = ws.client.host if ws.client else 'unknown'
+        print(f"[WS] client connected from {client_host}; active={len(ws_clients)}")
+    except Exception:
+        pass
+    try:
         # On connect: send a brief status snapshot
         await ws.send_json({
             'type': 'welcome',
@@ -74,6 +79,10 @@ async def ws_endpoint(ws: WebSocket):
             ws_clients.remove(ws)
         except ValueError:
             pass
+        try:
+            print(f"[WS] client disconnected; active={len(ws_clients)}")
+        except Exception:
+            pass
     except Exception as ex:
         try:
             await ws.send_json({'type': 'error', 'message': str(ex)})
@@ -82,6 +91,10 @@ async def ws_endpoint(ws: WebSocket):
         try:
             ws_clients.remove(ws)
         except ValueError:
+            pass
+        try:
+            print(f"[WS] client error: {ex}; active={len(ws_clients)}")
+        except Exception:
             pass
 
 def parse_bool(val):
@@ -557,15 +570,47 @@ MAX_DIAGS = 5000
 # --- Lightweight in-memory recent bar cache (normalized subset for fast queries) ---
 # Stores only the most recent BAR_CACHE_MAX normalized bar diagnostic entries.
 # Normalization flattens C# payload variants (FastGrad/fastGrad etc.) into consistent keys.
-BAR_CACHE_MAX = 400  # adjustable; small to keep lookup O(n) trivial
+BAR_CACHE_MAX = 1200  # adjustable; governs /bars/latest and in-memory preload
 bar_cache: deque[Dict[str, Any]] = deque(maxlen=BAR_CACHE_MAX)
 
 # --- Log entry cache for tracking actual strategy decisions ---
 LOG_CACHE_MAX = 1000  # Keep last 1000 log entries (entry/exit/filter decisions)
 log_cache: deque[Dict[str, Any]] = deque(maxlen=LOG_CACHE_MAX)
 
+# --- Command queue for page -> strategy signals ---
+COMMAND_QUEUE_MAX = 200
+command_queue: deque[Dict[str, Any]] = deque(maxlen=COMMAND_QUEUE_MAX)
+command_seq: int = 0
+CMD_LOG_FILE = os.path.join(os.path.dirname(__file__), 'command_payloads.log')
+
+def log_command_payload(data: Dict[str, Any]):
+    """Append inbound command payloads to disk for traceability."""
+    try:
+        rec = {
+            'ts': time.time(),
+            'direction': data.get('direction'),
+            'barIndex': data.get('barIndex'),
+            'price': data.get('price'),
+            'strength': data.get('strength'),
+            'note': data.get('note'),
+            'source': data.get('source'),
+        }
+        with open(CMD_LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + '\n')
+    except Exception as ex:
+        print('[CMD] payload file log error:', ex)
+
 # Strategy log folder (CSV + .log) used by the bar report endpoint
 LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'strategy_logs'))
+
+def enqueue_command(cmd: Dict[str, Any]) -> Dict[str, Any]:
+    """Assign id/timestamp and enqueue a command for strategies to poll."""
+    global command_seq
+    command_seq += 1
+    cmd['id'] = command_seq
+    cmd['ts'] = time.time()
+    command_queue.append(cmd)
+    return cmd
 
 def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
     """Extract a normalized minimal bar record from a raw diag payload."""
@@ -933,13 +978,20 @@ async def receive_diag(request: Request):
                     'receivedAt': p.get('receivedTs'),
                     'time': p.get('localTime') or p.get('time'),
                     'barIndex': p.get('barIndex') or p.get('BarIndex'),
+                    # Price data used by candles.html live feed
+                    'open': p.get('open') if p.get('open') is not None else p.get('Open'),
+                    'high': p.get('high') if p.get('high') is not None else p.get('High'),
+                    'low': p.get('low') if p.get('low') is not None else p.get('Low'),
+                    'close': p.get('close') if p.get('close') is not None else p.get('Close'),
+                    'volume': p.get('volume') if p.get('volume') is not None else p.get('Volume'),
+
+                    # Strategy diagnostics for dashboard chips
                     'fastGrad': p.get('fastGrad') if p.get('fastGrad') is not None else p.get('FastGrad'),
                     'slowGrad': p.get('slowGrad') if p.get('slowGrad') is not None else p.get('SlowGrad'),
                     'accel': p.get('accel') if p.get('accel') is not None else p.get('Accel'),
                     'adx': p.get('adx') if p.get('adx') is not None else p.get('ADX'),
                     'fastEMA': p.get('fastEMA') if p.get('fastEMA') is not None else p.get('FastEMA'),
                     'slowEMA': p.get('slowEMA') if p.get('slowEMA') is not None else p.get('SlowEMA'),
-                    'close': p.get('close') if p.get('close') is not None else p.get('Close'),
                     'atr': p.get('atr') if p.get('atr') is not None else p.get('ATR'),
                     'rsi': p.get('rsi') if p.get('rsi') is not None else p.get('RSI'),
                     'signal': p.get('signal') if p.get('signal') is not None else p.get('Signal'),
@@ -1240,7 +1292,8 @@ def debugdump(n: int = 50):
 def bars_latest(limit: int = 50):
     """Return latest normalized bar records from in-memory cache with optional classification join."""
     limit = max(1, min(limit, BAR_CACHE_MAX))
-    bars = list(bar_cache)[-limit:]
+    # Keep payload ordered by barIndex for predictable rendering on refresh
+    bars = sorted(list(bar_cache)[-limit:], key=lambda b: b.get('barIndex') or 0)
     if USE_SQLITE and bars:
         idx = [b.get('barIndex') for b in bars if b.get('barIndex') is not None]
         if idx:
@@ -1295,6 +1348,8 @@ async def save_analysis(request: Request):
         data = await request.json()
     except Exception:
         return JSONResponse({'status': 'error', 'message': 'Invalid JSON payload'}, status_code=400)
+# --- Command bridge: page -> strategy ---
+
 
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
@@ -1318,9 +1373,53 @@ async def clear_logs():
         print(f'[LOG] Clear error: {e}')
         return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
 
+# --- Command bridge: page -> strategy ---
+@app.post('/commands/trend')
+async def commands_trend(request: Request):
+    """Enqueue a trend command from the UI for strategies to poll."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({'status': 'error', 'message': 'invalid_json'}, status_code=400)
+
+    direction = str(data.get('direction', '')).upper()
+    if direction not in ('UP', 'DOWN', 'FLAT'):
+        return JSONResponse({'status': 'error', 'message': 'direction must be UP, DOWN, or FLAT'}, status_code=400)
+
+    # Lightweight payload log so we can trace exactly what the UI sent
+    try:
+        print('[CMD] incoming payload:', json.dumps(data))
+        log_command_payload(data)
+    except Exception:
+        pass
+
+    cmd = enqueue_command({
+        'type': 'trend',
+        'direction': direction,
+        'barIndex': data.get('barIndex'),
+        'price': data.get('price'),
+        'strength': data.get('strength'),
+        'note': data.get('note'),
+        'source': data.get('source', 'dashboard')
+    })
+    try:
+        print(f"[CMD] queued trend #{cmd['id']} dir={direction} bar={cmd.get('barIndex')} price={cmd.get('price')}")
+    except Exception:
+        pass
+    return JSONResponse({'status': 'ok', 'command': cmd, 'queued': len(command_queue)})
+
+@app.get('/commands/next')
+def commands_next():
+    """Pop the next pending command for the strategy to consume."""
+    if not command_queue:
+        return JSONResponse({'status': 'empty', 'remaining': 0})
+    cmd = command_queue.popleft()
+    return JSONResponse({'status': 'ok', 'command': cmd, 'remaining': len(command_queue)})
+
 @app.get('/logs/latest-csv')
 def get_latest_csv():
     """Serve the most recent strategy CSV from disk for the candles viewer."""
+
     csv_path = _pick_recent_csv()
     if not csv_path or not os.path.isfile(csv_path):
         return JSONResponse({'status': 'error', 'message': 'No CSV files found in strategy_logs'}, status_code=404)
