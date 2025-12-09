@@ -276,8 +276,9 @@
                 <!-- Trend Detection -->
                 <div class="analysis-group">
                     <label style="color: #10b981; font-weight: bold;">🔍 Trend Detection</label>
-                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableTrendDetection" checked> Enable Trend Lines</label>
-                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableSupportResistance" checked> Support/Resistance</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableTrendDetection"> Enable Trend Lines</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableCandidateTrends" checked> Candidate Trend Overlay</label>
+                    <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableSupportResistance"> Support/Resistance</label>
                     <label style="display: block; margin: 5px 0;"><input type="checkbox" id="enableBreakouts"> Breakout Detection</label>
                 </div>
 
@@ -302,6 +303,7 @@
             <div style="display: flex; gap: 10px; align-items: center;">
                 <button onclick="runPatternAnalysis()" style="background: #10b981;">🔍 Analyze Patterns</button>
                 <button onclick="clearPatternOverlays()" style="background: #6b7280;">Clear Overlays</button>
+                <button onclick="downloadAnalysis()" style="background: #2563eb;">⬇️ Download Analysis</button>
                 <span id="patternStats" style="color: #9ca3af; font-size: 12px; margin-left: 10px;"></span>
             </div>
         </div>
@@ -386,10 +388,13 @@
         let entries = [];
         let exits = [];
         let trends = [];
+        let candidateTrends = [];
         let ctx, tooltip;
         let priceZoom = 1.0; // Vertical zoom factor for price axis
         let priceOffset = 0; // Vertical pan offset (in price units)
+        let timeZoom = 1.0; // Horizontal zoom factor for candle spacing
         let isDragging = false;
+        let isTimeZoomDrag = false;
         let dragStartY = 0;
         let dragStartX = 0;
         let candleOffset = 0; // Horizontal scroll offset (in candles)
@@ -401,6 +406,7 @@
         let supportResistanceLevels = [];
         let patternDirections = { LONG: 0, SHORT: 0, FLAT: 0 };
         let patternOverlaysEnabled = false;
+        let lastHoverIndex = null; // track last hovered candle for quick copy
 
         // Trend Analysis Functions (duplicate removed)
         
@@ -632,20 +638,8 @@
             trends = [];
             if (candles.length < 20) return; // Need minimum data for trend analysis
             
-            // First, fill the initial lookback period with NEUTRAL trend
             const lookbackPeriod = 5; // Reduced lookback period for more coverage
             const minTrendLength = 3;  // Reduced minimum bars to catch more trends
-            
-            if (lookbackPeriod > 0) {
-                trends.push({
-                    type: 'NEUTRAL',
-                    startBar: candles[0].bar,
-                    endBar: candles[lookbackPeriod - 1].bar,
-                    startIdx: 0,
-                    endIdx: lookbackPeriod - 1,
-                    strength: 1
-                });
-            }
             
             let currentTrend = null;
             let trendStartIdx = lookbackPeriod;
@@ -826,6 +820,7 @@
             console.log('🔍 Starting pattern analysis...');
             detectedPatterns = [];
             trendLines = [];
+            candidateTrends = [];
             supportResistanceLevels = [];
             patternDirections = { LONG: 0, SHORT: 0, FLAT: 0 };
 
@@ -835,6 +830,14 @@
                     analyzeTrends();
                 } catch (error) {
                     console.error('Error in trend analysis:', error);
+                }
+            }
+
+            if (document.getElementById('enableCandidateTrends')?.checked) {
+                try {
+                    analyzeCandidateTrends();
+                } catch (error) {
+                    console.error('Error in candidate trend analysis:', error);
                 }
             }
             
@@ -891,6 +894,7 @@
         function clearPatternOverlays() {
             detectedPatterns = [];
             trendLines = [];
+            candidateTrends = [];
             supportResistanceLevels = [];
             patternOverlaysEnabled = false;
             updatePatternStats();
@@ -899,21 +903,128 @@
 
         function updatePatternStats() {
             const stats = document.getElementById('patternStats');
-            if (detectedPatterns.length === 0) {
-                stats.textContent = 'No patterns detected';
-                return;
-            }
-
             const patternCounts = {};
             detectedPatterns.forEach(p => {
                 patternCounts[p.type] = (patternCounts[p.type] || 0) + 1;
             });
 
-            const summaryText = Object.entries(patternCounts)
-                .map(([type, count]) => `${type}: ${count}`)
-                .join(' | ');
-            stats.textContent = `Detected: ${summaryText}`;
+            const parts = [];
+            if (Object.keys(patternCounts).length > 0) {
+                const summaryText = Object.entries(patternCounts)
+                    .map(([type, count]) => `${type}: ${count}`)
+                    .join(' | ');
+                parts.push(`Detected: ${summaryText}`);
+            }
+
+            if (candidateTrends.length > 0) {
+                parts.push(`Candidate trends: ${candidateTrends.length}`);
+            }
+
+            if (parts.length === 0) {
+                stats.textContent = 'No patterns detected';
+            } else {
+                stats.textContent = parts.join(' | ');
+            }
         }
+            // Debug helper to surface all annotations that touch a bar index
+            function getBarDiagnostics(barIndex) {
+                if (!candles || barIndex < 0 || barIndex >= candles.length) {
+                    console.warn(`Bar ${barIndex} is out of range`);
+                    return null;
+                }
+
+                const match = (entry) => {
+                    const start = entry.startIndex ?? entry.barIndex ?? entry.index;
+                    const end = entry.endIndex ?? entry.barIndex ?? entry.index;
+                    return start !== undefined && end !== undefined && start <= barIndex && barIndex <= end;
+                };
+
+                const candle = candles[barIndex];
+                return {
+                    barIndex,
+                    timestamp: candle.timestamp,
+                    candle,
+                    patterns: detectedPatterns.filter(match),
+                    candidateTrends: candidateTrends.filter(match),
+                    trends: trends.filter(match),
+                    supportResistance: supportResistanceLevels.filter(match)
+                };
+            }
+
+            // Expose a quick console helper: window.debugBar(42)
+            window.debugBar = (barIndex) => {
+                const info = getBarDiagnostics(barIndex);
+                if (!info) return null;
+                console.log('Bar diagnostics', info);
+                return info;
+            };
+
+            // Collect a window (barIndex +/- span) for sharing or clipboard
+            function getBarWindowContext(barIndex, span = 2) {
+                if (!candles || barIndex < 0 || barIndex >= candles.length) return null;
+                const start = Math.max(0, barIndex - span);
+                const end = Math.min(candles.length - 1, barIndex + span);
+
+                const inWindow = (idx) => idx >= start && idx <= end;
+                const windowCandles = candles.slice(start, end + 1);
+
+                const windowPatterns = detectedPatterns.filter(p => inWindow(p.barIndex ?? p.index ?? p.startIndex ?? -1));
+                const windowCandidateTrends = candidateTrends.filter(t => {
+                    const s = t.startIdx ?? t.startIndex ?? t.barIndex ?? t.index ?? -1;
+                    const e = t.endIdx ?? t.endIndex ?? t.barIndex ?? t.index ?? s;
+                    return e >= start && s <= end;
+                });
+                const windowTrends = trends.filter(t => {
+                    const sIdx = candles.findIndex(c => c.bar === t.startBar);
+                    const eIdx = candles.findIndex(c => c.bar === t.endBar);
+                    if (sIdx === -1 || eIdx === -1) return false;
+                    return eIdx >= start && sIdx <= end;
+                });
+                const windowSR = supportResistanceLevels.filter(() => true); // keep all; levels are global
+
+                return {
+                    barIndex,
+                    range: { start, end },
+                    candles: windowCandles,
+                    patterns: windowPatterns,
+                    candidateTrends: windowCandidateTrends,
+                    trends: windowTrends,
+                    supportResistance: windowSR
+                };
+            }
+
+            // Console helper: copy a bar window to clipboard (plain text) and log it
+            window.copyBarContext = (barIndex, span = 2) => {
+                const ctxPayload = getBarWindowContext(barIndex, span);
+                if (!ctxPayload) return null;
+
+                const lines = [];
+                lines.push(`Bar ${ctxPayload.barIndex} (range ${ctxPayload.range.start}-${ctxPayload.range.end})`);
+                ctxPayload.candles.forEach((c, idx) => {
+                    const label = ctxPayload.range.start + idx === ctxPayload.barIndex ? '>' : ' ';
+                    lines.push(`${label} ${ctxPayload.range.start + idx} ${c.timestamp} O:${c.open} H:${c.high} L:${c.low} C:${c.close}`);
+                });
+                if (ctxPayload.patterns.length) {
+                    lines.push('Patterns: ' + ctxPayload.patterns.map(p => `${p.type} ${(p.confidence||0)*100|0}%@${p.barIndex}`).join(', '));
+                }
+                if (ctxPayload.trends.length) {
+                    lines.push('Trends: ' + ctxPayload.trends.map(t => `${t.type} ${t.startBar}-${t.endBar}`).join(', '));
+                }
+                if (ctxPayload.candidateTrends.length) {
+                    lines.push('CandidateTrends: ' + ctxPayload.candidateTrends.map(t => `${t.direction||t.type||'?'}`).join(', '));
+                }
+                const text = lines.join('\n');
+
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(() => {
+                        console.log(`Copied bar ${barIndex} context to clipboard`);
+                    }).catch(() => {
+                        console.warn('Clipboard copy failed; context logged instead');
+                    });
+                }
+                console.log('Bar window context', ctxPayload);
+                return ctxPayload;
+            };
 
         // =============================================
         // TREND ANALYSIS
@@ -934,7 +1045,7 @@
                         type: 'UPTREND',
                         startIdx: i - lookback,
                         endIdx: i + 5,
-                        strength: calculateTrendStrength(segment, 'up')
+                        strength: calculateDirectionalTrendStrength(segment, 'up')
                     });
                 }
                 
@@ -944,7 +1055,7 @@
                         type: 'DOWNTREND',
                         startIdx: i - lookback,
                         endIdx: i + 5,
-                        strength: calculateTrendStrength(segment, 'down')
+                        strength: calculateDirectionalTrendStrength(segment, 'down')
                     });
                 }
             }
@@ -992,7 +1103,7 @@
             return avgSecondHigh < avgFirstHigh && avgSecondLow < avgFirstLow;
         }
 
-        function calculateTrendStrength(segment, direction) {
+        function calculateDirectionalTrendStrength(segment, direction) {
             if (!segment || !Array.isArray(segment) || segment.length < 2) {
                 return 0;
             }
@@ -1005,6 +1116,104 @@
             }
             
             return strength / (prices.length - 1);
+        }
+
+        // Lightweight slope-based candidate trends for missed moves
+        function analyzeCandidateTrends() {
+            if (!candles || candles.length < 15) return;
+
+            const minRun = 2;
+            const minChange = 0.0005; // 0.05% move for sensitivity
+            const minSlopePerBar = 0.00001;
+
+            let i = 0;
+            while (i + minRun <= candles.length) {
+                const baseSegment = candles.slice(i, i + minRun);
+                const baseCloses = baseSegment.map(c => c.close);
+                const baseReg = calculateLinearRegression(baseCloses);
+                const baseDir = baseReg.slope > 0 ? 'UP' : baseReg.slope < 0 ? 'DOWN' : null;
+                const baseChange = (baseCloses[baseCloses.length - 1] - baseCloses[0]) / baseCloses[0];
+                const slopePerBar = Math.abs(baseReg.slope) / baseCloses[0];
+
+                if (!baseDir || Math.abs(baseChange) < minChange || slopePerBar < minSlopePerBar) {
+                    i++;
+                    continue;
+                }
+
+                let end = i + minRun;
+                while (end < candles.length) {
+                    const extended = candles.slice(i, end + 1);
+                    const extendedCloses = extended.map(c => c.close);
+                    const { slope: extSlope } = calculateLinearRegression(extendedCloses);
+                    const extDir = extSlope > 0 ? 'UP' : extSlope < 0 ? 'DOWN' : null;
+                    const extChange = (extendedCloses[extendedCloses.length - 1] - extendedCloses[0]) / extendedCloses[0];
+                    const extSlopePerBar = Math.abs(extSlope) / extendedCloses[0];
+
+                    if (extDir !== baseDir || Math.abs(extChange) < minChange || extSlopePerBar < minSlopePerBar * 0.5) {
+                        break;
+                    }
+                    end++;
+                }
+
+                const finalSegment = candles.slice(i, end);
+                const finalCloses = finalSegment.map(c => c.close);
+                const { slope: finalSlope } = calculateLinearRegression(finalCloses);
+                const finalChange = (finalCloses[finalCloses.length - 1] - finalCloses[0]) / finalCloses[0];
+
+                candidateTrends.push({
+                    direction: baseDir,
+                    startIdx: i,
+                    endIdx: end - 1,
+                    change: finalChange,
+                    slopePerBar: Math.abs(finalSlope) / finalCloses[0]
+                });
+
+                i = end;
+            }
+
+            // If nothing found, retry once with ultra-lenient thresholds
+            if (candidateTrends.length === 0) {
+                const fallbackMinChange = 0.0001;
+                const fallbackMinSlopePerBar = 0.0;
+                let j = 0;
+                while (j + minRun <= candles.length) {
+                    const seg = candles.slice(j, j + minRun);
+                    const closes = seg.map(c => c.close);
+                    const reg = calculateLinearRegression(closes);
+                    const dir = reg.slope > 0 ? 'UP' : reg.slope < 0 ? 'DOWN' : null;
+                    const chg = (closes[closes.length - 1] - closes[0]) / closes[0];
+                    const slopePB = Math.abs(reg.slope) / closes[0];
+
+                    if (!dir || Math.abs(chg) < fallbackMinChange || slopePB < fallbackMinSlopePerBar) {
+                        j++;
+                        continue;
+                    }
+
+                    let k = j + minRun;
+                    while (k < candles.length) {
+                        const ext = candles.slice(j, k + 1);
+                        const extCloses = ext.map(c => c.close);
+                        const { slope: extSlope } = calculateLinearRegression(extCloses);
+                        const extDir = extSlope > 0 ? 'UP' : extSlope < 0 ? 'DOWN' : null;
+                        const extChange = (extCloses[extCloses.length - 1] - extCloses[0]) / extCloses[0];
+                        const extSlopePB = Math.abs(extSlope) / extCloses[0];
+                        if (extDir !== dir || Math.abs(extChange) < fallbackMinChange || extSlopePB < fallbackMinSlopePerBar) {
+                            break;
+                        }
+                        k++;
+                    }
+
+                    candidateTrends.push({
+                        direction: dir,
+                        startIdx: j,
+                        endIdx: k - 1,
+                        change: (candles[k - 1].close - candles[j].close) / candles[j].close,
+                        slopePerBar: Math.abs(reg.slope) / closes[0]
+                    });
+
+                    j = k;
+                }
+            }
         }
 
         // =============================================
@@ -1437,8 +1646,9 @@
 
             const chartHeight = canvas.height - chartPadding.top - chartPadding.bottom;
             const chartWidth = canvas.width - chartPadding.left - chartPadding.right;
-            const candleWidth = Math.max(6, Math.min(20, chartWidth / candles.length * 0.7));
-            const candleSpacing = chartWidth / candles.length;
+            const baseSpacing = chartWidth / candles.length;
+            const candleSpacing = baseSpacing * timeZoom;
+            const candleWidth = Math.max(2, Math.min(20, candleSpacing * 0.7));
 
             // Validate critical dimensions
             if (!isFinite(candleSpacing) || candleSpacing <= 0) {
@@ -1749,9 +1959,13 @@
 
             canvas.onmouseleave = function() {
                 tooltip.classList.remove('show');
+                lastHoverIndex = null;
                 isDragging = false;
             };
             
+            // Restore before drawing fixed axes so they don't pan
+            ctx.restore();
+
             // =============================================
             // DRAW PRICE AXIS (uses current zoom/pan price range)
             // =============================================
@@ -1783,9 +1997,6 @@
                 }
             }
 
-            // Restore canvas transform after drawing price axis
-            ctx.restore();
-
             // =============================================
             // DRAW PATTERN OVERLAYS
             // =============================================
@@ -1797,11 +2008,14 @@
                 // Draw trend lines
                 drawTrendLines(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice);
 
+                // Draw lightweight candidate trend overlays
+                drawCandidateTrends(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice);
+
                 // Draw support/resistance levels
                 drawSupportResistanceLevels(candleSpacing, chartHeight, chartPadding, canvas, ctx);
 
                 // Draw pattern markers
-                drawPatternMarkers(candleSpacing, chartHeight, chartPadding, canvas, ctx);
+                drawPatternMarkers(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice, pricePadding);
 
                 // Restore context
                 ctx.restore();
@@ -1820,8 +2034,20 @@
                 drawChart();
             };
 
-            // Click and drag vertical zoom
+            // Right-click drag: horizontal zoom; left-click drag: pan/vertical pan
+            canvas.oncontextmenu = function(e) { e.preventDefault(); };
+
             canvas.onmousedown = function(e) {
+                if (e.button === 2) {
+                    isTimeZoomDrag = true;
+                    dragStartX = e.clientX;
+                    canvas.style.cursor = 'ew-resize';
+                    return;
+                }
+                // If user is holding a modifier, treat as click-only (no pan)
+                if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) {
+                    return;
+                }
                 isDragging = true;
                 dragStartY = e.clientY;
                 dragStartX = e.clientX;
@@ -1829,9 +2055,20 @@
 
             canvas.onmouseup = function() {
                 isDragging = false;
+                isTimeZoomDrag = false;
+                canvas.style.cursor = 'default';
             };
 
             canvas.onmousemove = function(e) {
+                if (isTimeZoomDrag) {
+                    const deltaX = e.clientX - dragStartX;
+                    const factor = Math.exp(deltaX * 0.002);
+                    timeZoom = Math.min(5, Math.max(0.2, timeZoom * factor));
+                    dragStartX = e.clientX;
+                    drawChart();
+                    return;
+                }
+
                 if (isDragging) {
                     const deltaY = e.clientY - dragStartY;
                     const deltaX = e.clientX - dragStartX;
@@ -1849,8 +2086,6 @@
                         const panSpeed = 0.1; // Increased from 0.02
                         const candlesToMove = -deltaX * panSpeed;
                         candleOffset += candlesToMove;
-                        
-                        // Simple clamp to valid range
                         candleOffset = Math.max(0, Math.min(candles.length - 1, candleOffset));
                         dragStartX = e.clientX;
                     }
@@ -1865,7 +2100,7 @@
                     // Check if mouse is within chart area
                     if (mouseX >= chartPadding.left && mouseX <= canvas.width - chartPadding.right) {
                         const chartWidth = canvas.width - chartPadding.left - chartPadding.right;
-                        const candleSpacing = chartWidth / candles.length;
+                        const candleSpacing = (chartWidth / candles.length) * timeZoom;
                         
                         // Account for panning offset when calculating candle index
                         const panPixels = candleOffset * candleSpacing;
@@ -1874,13 +2109,38 @@
                         
                         if (candleIndex >= 0 && candleIndex < candles.length) {
                             const candle = candles[candleIndex];
+                            lastHoverIndex = candleIndex;
                             showTooltip(candle, candleIndex, e.clientX, e.clientY);
                         } else {
+                            lastHoverIndex = null;
                             tooltip.classList.remove('show');
                         }
                     } else {
+                        lastHoverIndex = null;
                         tooltip.classList.remove('show');
                     }
+                }
+            };
+
+            // Click: capture bar context (±2 bars) and log/copy for chat
+            canvas.onclick = function(e) {
+                if (isDragging || isTimeZoomDrag) return;
+
+                // Require a modifier to avoid interfering with normal pan/zoom
+                if (!(e.shiftKey || e.altKey || e.ctrlKey || e.metaKey)) return;
+
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                if (mouseX < chartPadding.left || mouseX > canvas.width - chartPadding.right) return;
+
+                const chartWidth = canvas.width - chartPadding.left - chartPadding.right;
+                const candleSpacingLocal = (chartWidth / candles.length) * timeZoom;
+                const panPixelsLocal = candleOffset * candleSpacingLocal;
+                const adjustedMouseX = mouseX + panPixelsLocal;
+                const candleIndex = Math.floor((adjustedMouseX - chartPadding.left) / candleSpacingLocal);
+
+                if (candleIndex >= 0 && candleIndex < candles.length) {
+                    copyBarContext(candleIndex, 2);
                 }
             };
             } catch (error) {
@@ -1943,6 +2203,43 @@
             });
         }
 
+        function drawCandidateTrends(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice) {
+            if (!document.getElementById('enableCandidateTrends').checked) return;
+
+            const priceRange = maxPrice - minPrice;
+            if (!isFinite(priceRange) || priceRange <= 0) return;
+
+            candidateTrends.forEach(trend => {
+                if (trend.startIdx < 0 || trend.endIdx >= candles.length) return;
+
+                const startX = chartPadding.left + trend.startIdx * candleSpacing + candleSpacing / 2;
+                const endX = chartPadding.left + trend.endIdx * candleSpacing + candleSpacing / 2;
+
+                const startPrice = candles[trend.startIdx].close;
+                const endPrice = candles[trend.endIdx].close;
+                const startY = chartPadding.top + ((maxPrice - startPrice) / priceRange) * chartHeight;
+                const endY = chartPadding.top + ((maxPrice - endPrice) / priceRange) * chartHeight;
+
+                ctx.strokeStyle = trend.direction === 'UP' ? '#22d3ee' : '#f472b6';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([2, 4]);
+                ctx.globalAlpha = 0.9;
+
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(endX, endY);
+                ctx.stroke();
+
+                ctx.setLineDash([]);
+                ctx.globalAlpha = 1.0;
+
+                const label = `${trend.direction === 'UP' ? '▲' : '▼'} ${(trend.change * 100).toFixed(1)}%`;
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.font = 'bold 10px monospace';
+                ctx.fillText(label, (startX + endX) / 2, (startY + endY) / 2 - 8);
+            });
+        }
+
         function drawSupportResistanceLevels(candleSpacing, chartHeight, chartPadding, canvas, ctx) {
             if (!document.getElementById('enableSupportResistance').checked) return;
 
@@ -1980,19 +2277,16 @@
             });
         }
 
-        function drawPatternMarkers(candleSpacing, chartHeight, chartPadding, canvas, ctx) {
-            const allPrices = candles.flatMap(c => [c.high, c.low]);
-            const minPrice = Math.min(...allPrices);
-            const maxPrice = Math.max(...allPrices);
-            const priceRange = maxPrice - minPrice;
+        function drawPatternMarkers(candleSpacing, chartHeight, chartPadding, canvas, ctx, maxPrice, minPrice, pricePadding) {
+            const priceRange = (maxPrice - minPrice) + 2 * pricePadding;
 
             detectedPatterns.forEach(pattern => {
                 if (pattern.barIndex < 0 || pattern.barIndex >= candles.length) return;
 
                 // Use consistent spacing calculation that matches main chart
                 const x = chartPadding.left + pattern.barIndex * candleSpacing + candleSpacing / 2;
-                const candle = pattern.candle;
-                let y = chartPadding.top + ((maxPrice - candle.high) / priceRange) * chartHeight - 20;
+                const candle = pattern.candle || candles[pattern.barIndex];
+                let y = chartPadding.top + ((maxPrice + pricePadding - candle.high) / priceRange) * chartHeight - 20;
 
                 // Choose marker style and color based on pattern type
                 let color = '#60a5fa';
@@ -2131,9 +2425,88 @@
             }
 
             tooltip.innerHTML = html;
-            tooltip.style.left = (clientX + 15) + 'px';
-            tooltip.style.top = (clientY - 100) + 'px';
             tooltip.classList.add('show');
+            tooltip.style.visibility = 'hidden';
+
+            // Measure and position within the chart container using relative coords
+            const container = tooltip.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const rect = tooltip.getBoundingClientRect();
+
+            // Start near the cursor relative to container
+            let left = (clientX - containerRect.left) + 15;
+            let top = (clientY - containerRect.top) - rect.height - 10; // prefer above
+
+            // If above goes off container, place below cursor
+            if (top < 8) {
+                top = (clientY - containerRect.top) + 15;
+            }
+
+            // Clamp within container bounds with small padding
+            left = Math.min(containerRect.width - rect.width - 8, Math.max(8, left));
+            top = Math.min(containerRect.height - rect.height - 8, Math.max(8, top));
+
+            tooltip.style.left = `${left}px`;
+            tooltip.style.top = `${top}px`;
+            tooltip.style.visibility = 'visible';
+        }
+
+        // Export current analysis state as JSON for sharing/debugging
+        async function downloadAnalysis() {
+            if (!candles || candles.length === 0) {
+                alert('Load data and run Analyze first');
+                return;
+            }
+
+            const payload = {
+                generatedAt: new Date().toISOString(),
+                stats: {
+                    candles: candles.length,
+                    patterns: detectedPatterns.length,
+                    candidateTrends: candidateTrends.length,
+                    trends: trends.length
+                },
+                candles,
+                detectedPatterns,
+                candidateTrends,
+                trends,
+                entries,
+                exits,
+                viewState: {
+                    priceZoom,
+                    timeZoom,
+                    candleOffset,
+                    priceOffset
+                }
+            };
+
+            // Save server-side into strategy_logs
+            try {
+                const res = await fetch('/logs/save-analysis', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (!res.ok) {
+                    console.warn('Server save failed:', json);
+                } else {
+                    console.log('Analysis saved to server:', json);
+                }
+            } catch (err) {
+                console.warn('Server save failed:', err);
+            }
+
+            // Client-side download
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'analysis.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
 
         // Add event listeners for analysis checkboxes and controls
@@ -2168,6 +2541,14 @@
                 if (candles.length > 0) {
                     runPatternAnalysis();
                     drawChart();
+                }
+            });
+
+            // Hotkey: press 'b' while hovering the chart to copy the hovered bar window (±2)
+            document.addEventListener('keydown', (e) => {
+                if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+                if (e.key === 'b' && lastHoverIndex !== null) {
+                    copyBarContext(lastHoverIndex, 2);
                 }
             });
         });

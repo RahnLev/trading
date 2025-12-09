@@ -1288,6 +1288,25 @@ def get_recent_logs(limit: int = 100):
     logs = list(log_cache)[-limit:]
     return JSONResponse({'logs': logs, 'count': len(logs)})
 
+@app.post('/logs/save-analysis')
+async def save_analysis(request: Request):
+    """Persist a client-submitted analysis JSON into strategy_logs."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({'status': 'error', 'message': 'Invalid JSON payload'}, status_code=400)
+
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        fname = f"analysis_{ts}.json"
+        fpath = os.path.join(LOG_DIR, fname)
+        with open(fpath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2)
+        return JSONResponse({'status': 'ok', 'file': fname, 'path': fpath})
+    except Exception as ex:
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
 @app.post('/logs/clear')
 async def clear_logs():
     """Clear the log cache (useful to reset position tracking)."""

@@ -194,7 +194,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Write header on first bar
                 if (!csvHeaderWritten)
                 {
-                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close,PNL,CandleType");
+                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close,Volume,PNL,CandleType,BodyPct,UpperWick,LowerWick,Bid,Ask,Spread,Instrument,TickSize");
                     csvHeaderWritten = true;
                     Print($"[BareOhlcLogger] Header written");
                 }
@@ -215,9 +215,36 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Calculate PNL (Close - Open) and classify candle
                 var pnl = Close[1] - Open[1];
                 var candleType = ClassifyCandle(Open[1], Close[1]);
-                
-                var line = string.Format("{0:yyyy-MM-dd HH:mm:ss},{1},{2:F2},{3:F2},{4:F2},{5:F2},{6:F2},{7}",
-                    ts, barIndex, Open[1], High[1], Low[1], Close[1], pnl, candleType);
+
+                double range = High[1] - Low[1];
+                double bodyPct = range > 0 ? (Close[1] - Open[1]) / range : 0;
+                double upperWick = High[1] - Math.Max(Open[1], Close[1]);
+                double lowerWick = Math.Min(Open[1], Close[1]) - Low[1];
+
+                // Current bid/ask (may be NaN on some data feeds)
+                double bid = GetCurrentBid();
+                double ask = GetCurrentAsk();
+                double spread = (double.IsNaN(bid) || double.IsNaN(ask)) ? double.NaN : ask - bid;
+
+                var line = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "{0:yyyy-MM-dd HH:mm:ss},{1},{2:F5},{3:F5},{4:F5},{5:F5},{6},{7:F5},{8},{9:F6},{10:F5},{11:F5},{12:F5},{13:F5},{14:F5},{15},{16:F5}",
+                    ts,
+                    barIndex,
+                    Open[1],
+                    High[1],
+                    Low[1],
+                    Close[1],
+                    Volume[1],
+                    pnl,
+                    candleType,
+                    bodyPct,
+                    upperWick,
+                    lowerWick,
+                    bid,
+                    ask,
+                    spread,
+                    Instrument?.FullName ?? "",
+                    TickSize);
 
                 csvWriter.WriteLine(line);
                 LogOutput($"Bar {barIndex}: O={Open[1]:F2} H={High[1]:F2} L={Low[1]:F2} C={Close[1]:F2} PNL={pnl:F2} Type={candleType} [LOGGED ONCE]");
