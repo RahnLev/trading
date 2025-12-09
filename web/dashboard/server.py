@@ -577,11 +577,14 @@ bar_cache: deque[Dict[str, Any]] = deque(maxlen=BAR_CACHE_MAX)
 LOG_CACHE_MAX = 1000  # Keep last 1000 log entries (entry/exit/filter decisions)
 log_cache: deque[Dict[str, Any]] = deque(maxlen=LOG_CACHE_MAX)
 
+# Strategy log folder (CSV + .log) used by the bar report endpoint
+LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'strategy_logs'))
+
 # --- Command queue for page -> strategy signals ---
 COMMAND_QUEUE_MAX = 200
 command_queue: deque[Dict[str, Any]] = deque(maxlen=COMMAND_QUEUE_MAX)
 command_seq: int = 0
-CMD_LOG_FILE = os.path.join(os.path.dirname(__file__), 'command_payloads.log')
+CMD_LOG_FILE = os.path.join(LOG_DIR, 'command_payloads.log')
 
 def log_command_payload(data: Dict[str, Any]):
     """Append inbound command payloads to disk for traceability."""
@@ -595,13 +598,11 @@ def log_command_payload(data: Dict[str, Any]):
             'note': data.get('note'),
             'source': data.get('source'),
         }
+        os.makedirs(LOG_DIR, exist_ok=True)
         with open(CMD_LOG_FILE, 'a', encoding='utf-8') as f:
             f.write(json.dumps(rec, ensure_ascii=False) + '\n')
     except Exception as ex:
         print('[CMD] payload file log error:', ex)
-
-# Strategy log folder (CSV + .log) used by the bar report endpoint
-LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'strategy_logs'))
 
 def enqueue_command(cmd: Dict[str, Any]) -> Dict[str, Any]:
     """Assign id/timestamp and enqueue a command for strategies to poll."""

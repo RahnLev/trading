@@ -164,8 +164,30 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (dir == "UP") dir = "LONG";
             if (dir == "DOWN") dir = "SHORT";
 
+            // FLAT means flatten-only: never chain a new entry in the same poll
+            if (dir == "FLAT")
+            {
+                if (Position.MarketPosition == MarketPosition.Long)
+                    ExitLong();
+                if (Position.MarketPosition == MarketPosition.Short)
+                    ExitShort();
+                return;
+            }
+
+            // If already on the requested side, do nothing (avoid adds)
+            if (dir == "LONG" && Position.MarketPosition == MarketPosition.Long)
+                return;
+            if (dir == "SHORT" && Position.MarketPosition == MarketPosition.Short)
+                return;
+
             if (dir == "LONG")
             {
+                // Reversal is two-step: flatten now, enter on a later poll
+                if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    ExitShort();
+                    return;
+                }
                 if (Position.MarketPosition == MarketPosition.Short)
                     ExitShort();
                 if (Position.MarketPosition != MarketPosition.Long)
@@ -173,17 +195,16 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (dir == "SHORT")
             {
+                // Reversal is two-step: flatten now, enter on a later poll
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    ExitLong();
+                    return;
+                }
                 if (Position.MarketPosition == MarketPosition.Long)
                     ExitLong();
                 if (Position.MarketPosition != MarketPosition.Short)
                     EnterShort(Math.Max(1, Contracts), "WebTrendShort");
-            }
-            else // FLAT or anything else
-            {
-                if (Position.MarketPosition == MarketPosition.Long)
-                    ExitLong();
-                if (Position.MarketPosition == MarketPosition.Short)
-                    ExitShort();
             }
         }
 
