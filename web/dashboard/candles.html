@@ -241,10 +241,35 @@
                 <button id="liveToggle" onclick="toggleLiveFeed()" style="background: #2563eb;">Go Live</button>
             <span id="status" style="color: #9ca3af; font-size: 12px;"></span>
                 <span id="liveStatus" style="color: #9ca3af; font-size: 12px;">Live: disconnected</span>
+            <button id="downloadTrendLogBtn" onclick="downloadTrendLogCsv()" style="background:#6b7280;">Download Trend CSV</button>
+            <button id="saveTrendLogBtn" onclick="saveTrendLogToServer()" style="background:#4b5563;">Save Trend CSV (server)</button>
+            <span id="trendLogStatus" style="color:#9ca3af; font-size:12px;">Trend log: 0</span>
+            <label style="display: inline-flex; align-items: center; gap: 6px; color: #9ca3af; font-size: 12px; margin-left: 8px;">
+                    <span>Trend start after</span>
+                    <input id="minLoggedBarsInput" type="number" min="1" max="10" step="1" value="5" style="width: 56px; background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 4px; padding: 4px 6px;" />
+                    <span>bars</span>
+                </label>
+            <label style="display: inline-flex; align-items: center; gap: 6px; color: #9ca3af; font-size: 12px; margin-left: 8px;">
+                <span>Min bars for trend</span>
+                <input id="minTrendBarsInput" type="number" min="1" max="50" step="1" value="" placeholder="auto" style="width: 72px; background: #1f2937; color: #e5e7eb; border: 1px solid #374151; border-radius: 4px; padding: 4px 6px;" />
+            </label>
+            <label style="display: inline-flex; align-items: center; gap: 6px; color: #9ca3af; font-size: 12px; margin-left: 8px;">
+                <input type="checkbox" id="enableFlipLogging"> Log trend flips
+            </label>
             <button id="autoSendToggle" onclick="toggleAutoSendTrends()" style="background: #f97316;">Auto Send Trends: Off</button>
             <button onclick="sendManualTrend('UP')" style="background:#10b981;">Send Long Trend</button>
             <button onclick="sendManualTrend('FLAT')" style="background:#6b7280;">Send Flat Trend</button>
             <button onclick="sendManualTrend('DOWN')" style="background:#ef4444;">Send Short Trend</button>
+        </div>
+
+        <div id="flipLogContainer" style="margin-top: 8px; background: rgba(31, 41, 55, 0.7); border: 1px solid #374151; border-radius: 6px; padding: 8px; max-width: 800px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; color: #9ca3af; font-size: 12px;">
+                <span>Trend flip log (last 50)</span>
+                <span id="flipLogStatus" style="color: #6b7280;">logging off</span>
+            </div>
+            <div id="flipLogList" style="margin-top: 6px; max-height: 120px; overflow-y: auto; font-family: monospace; font-size: 12px; color: #e5e7eb; white-space: nowrap;">
+                No flips yet
+            </div>
         </div>
 
         <div class="legend">
@@ -352,6 +377,10 @@
             <div class="stat-label">Price Range</div>
             <div class="stat-value" id="stat-range">0</div>
         </div>
+        <div class="stat-card" style="border-left-color: #06b6d4;">
+            <div class="stat-label">Total PNL</div>
+            <div class="stat-value" style="color: #06b6d4;" id="stat-total-pnl">0</div>
+        </div>
         <div class="stat-card" style="border-left-color: #10b981;">
             <div class="stat-label">LONG Trends</div>
             <div class="stat-value" style="color: #10b981;" id="stat-long-trends">0</div>
@@ -361,23 +390,23 @@
             <div class="stat-value" style="color: #ef4444;" id="stat-short-trends">0</div>
         </div>
         <div class="stat-card" style="border-left-color: #4b5563;">
-            <div class="stat-label">NEUTRAL Zones</div>
+            <div class="stat-label">FLAT / Neutral</div>
             <div class="stat-value" style="color: #4b5563;" id="stat-neutral-trends">0</div>
         </div>
         <div class="stat-card" style="border-left-color: #8b5cf6;">
-            <div class="stat-label">Total Patterns</div>
+            <div class="stat-label">Total Trends (>= bars)</div>
             <div class="stat-value" style="color: #8b5cf6;" id="stat-total-patterns">0</div>
         </div>
         <div class="stat-card" style="border-left-color: #10b981;">
-            <div class="stat-label">LONG Patterns</div>
+            <div class="stat-label">LONG (>= bars)</div>
             <div class="stat-value" style="color: #10b981;" id="stat-long-patterns">0</div>
         </div>
         <div class="stat-card" style="border-left-color: #ef4444;">
-            <div class="stat-label">SHORT Patterns</div>
+            <div class="stat-label">SHORT (>= bars)</div>
             <div class="stat-value" style="color: #ef4444;" id="stat-short-patterns">0</div>
         </div>
         <div class="stat-card" style="border-left-color: #f59e0b;">
-            <div class="stat-label">FLAT Patterns</div>
+            <div class="stat-label">FLAT (>= bars)</div>
             <div class="stat-value" style="color: #f59e0b;" id="stat-flat-patterns">0</div>
         </div>
     </div>
@@ -418,10 +447,39 @@
         let liveSocket = null;
         let liveDrawPending = null;
         let autoSendTrends = false;
+        let logTrendFlips = false;
+        let flipLogEntries = [];
         let lastSentTrendKey = null;
         let lastOverlayCommandKey = null; // avoid duplicate overlay-driven sends
         let lastOverlayDirection = null;   // track overlay direction to avoid spamming same side
         let lastOverlayStartIdx = null;
+        let liveTrendLog = []; // in-memory CSV rows while live feed runs
+        let liveLoggingActive = false;
+        let lastLoggedTrendKey = null;
+        let lastLoggedTrendObj = null;
+        let minLoggedBarsSetting = 5; // default bars required before START/overlay fire
+        let minTrendBarsSetting = null; // optional override for minimum bars to accept a trend
+
+        // Derive a candle type from payload hints or price direction
+        function deriveCandleType(candle, payload = {}) {
+            const fromPayload = payload?.signal ?? payload?.trendSide ?? payload?.candleType ?? payload?.CandleType ??
+                payload?.type ?? payload?.Type ?? payload?.trend ?? payload?.Trend ?? payload?.direction ?? payload?.Direction ??
+                payload?.side ?? payload?.Side ?? payload?.position ?? payload?.Position ?? '';
+
+            const trimmed = typeof fromPayload === 'string'
+                ? fromPayload.trim()
+                : (fromPayload != null ? String(fromPayload).trim() : '');
+
+            if (trimmed) return trimmed;
+
+            if (candle && Number.isFinite(candle.close) && Number.isFinite(candle.open)) {
+                if (candle.close > candle.open) return 'good';   // bullish
+                if (candle.close < candle.open) return 'bad';    // bearish
+                return 'flat';
+            }
+
+            return '';
+        }
 
         // Trend Analysis Functions (duplicate removed)
         
@@ -482,6 +540,10 @@
             try {
                 // Try to get latest CSV from server
                 const response = await fetch('/logs/latest-csv');
+                if (response.status === 404) {
+                    document.getElementById('status').textContent = 'No server CSV (404)';
+                    return;
+                }
                 if (!response.ok) throw new Error(`Server returned ${response.status}`);
                 
                 const csvText = await response.text();
@@ -501,6 +563,12 @@
 
             try {
                 const res = await fetch('/bars/latest?limit=1200');
+                if (res.status === 404) {
+                    if (statusEl && rawCandles.length === 0) {
+                        statusEl.textContent = 'No cached bars (404)';
+                    }
+                    return;
+                }
                 if (!res.ok) throw new Error(`Server returned ${res.status}`);
 
                 const json = await res.json();
@@ -530,7 +598,7 @@
                         high,
                         low,
                         close,
-                        candleType: b.trendSide || ''
+                        candleType: deriveCandleType({ open, close }, b)
                     });
                 });
 
@@ -547,7 +615,7 @@
             } catch (err) {
                 console.warn('Preload recent bars failed', err);
                 if (statusEl && rawCandles.length === 0) {
-                    statusEl.textContent = 'Preload failed';
+                    statusEl.textContent = `Preload failed: ${err.message || err}`;
                 }
             }
         }
@@ -560,18 +628,24 @@
             const lines = csvText.trim().split('\n');
             if (lines.length < 2) throw new Error('CSV file is empty or invalid');
 
-            // Parse header
+            // Parse header (case-insensitive so PNL/candle columns don't get lost)
             const header = lines[0].split(',').map(h => h.trim());
-            const barCol = header.indexOf('Bar');
-            const timestampCol = header.indexOf('Timestamp');
+            const lowerHeader = header.map(h => h.toLowerCase());
+            const barCol = lowerHeader.indexOf('bar');
+            const timestampCol = lowerHeader.indexOf('timestamp');
 
             // Find OHLC columns (they might have different names)
-            const openCol = header.findIndex(h => h.toLowerCase().includes('open'));
-            const highCol = header.findIndex(h => h.toLowerCase().includes('high'));
-            const lowCol = header.findIndex(h => h.toLowerCase().includes('low'));
-            const closeCol = header.findIndex(h => h.toLowerCase().includes('close'));
-            const pnlCol = header.indexOf('PNL');
-            const candleTypeCol = header.indexOf('CandleType');
+            const openCol = lowerHeader.findIndex(h => h.includes('open'));
+            const highCol = lowerHeader.findIndex(h => h.includes('high'));
+            const lowCol = lowerHeader.findIndex(h => h.includes('low'));
+            const closeCol = lowerHeader.findIndex(h => h.includes('close'));
+            const pnlCol = lowerHeader.findIndex(h => h === 'pnl' || h === 'pl' || h.includes('pnl'));
+            let candleTypeCol = lowerHeader.findIndex(h => h === 'candletype' || h.includes('candle'));
+            if (candleTypeCol === -1) {
+                // Fallback: grab a generic "type" column that's not already matched to known fields
+                const reserved = new Set([barCol, timestampCol, openCol, highCol, lowCol, closeCol, pnlCol]);
+                candleTypeCol = lowerHeader.findIndex((h, idx) => h.includes('type') && !reserved.has(idx));
+            }
 
             candles = [];
             entries = [];
@@ -593,7 +667,10 @@
                 const high = parseFloat(cols[highCol]) || null;
                 const low = parseFloat(cols[lowCol]) || null;
                 const close = parseFloat(cols[closeCol]) || null;
-                const pnl = pnlCol >= 0 ? parseFloat(cols[pnlCol]) || 0 : null;
+                const pnlRaw = pnlCol >= 0 ? parseFloat(cols[pnlCol]) : NaN;
+                const pnl = Number.isFinite(pnlRaw)
+                    ? pnlRaw
+                    : (Number.isFinite(close) && Number.isFinite(open) ? close - open : null);
                 const candleType = candleTypeCol >= 0 ? cols[candleTypeCol] || '' : '';
 
                 // Store candle data if we have price info
@@ -645,6 +722,7 @@
                 const host = (location.host && location.host.trim()) ? location.host : '127.0.0.1:51888';
                 const url = `${proto}://${host}/ws`;
                 liveSocket = new WebSocket(url);
+                resetLiveTrendLog();
                 document.getElementById('liveToggle').textContent = 'Stop Live';
                 updateLiveStatus(`connecting to ${host}...`, '#f59e0b');
 
@@ -688,7 +766,12 @@
             }
             liveSocket = null;
             document.getElementById('liveToggle').textContent = 'Go Live';
+            if (liveLoggingActive && lastLoggedTrendObj) {
+                appendTrendLog('END', lastLoggedTrendObj);
+            }
             updateLiveStatus('disconnected');
+            liveLoggingActive = false;
+            updateTrendLogStatus();
         }
 
         function handleLiveDiag(payload) {
@@ -699,6 +782,8 @@
             const high = Number(payload.high ?? payload.High ?? open);
             const low = Number(payload.low ?? payload.Low ?? open);
             const close = Number(payload.close ?? payload.Close ?? open);
+            const pnlRaw = Number(payload.pnl ?? payload.PNL ?? payload.pl ?? payload.PL);
+            const pnl = Number.isFinite(pnlRaw) ? pnlRaw : (close - open);
             const ts = payload.time || payload.localTime || new Date().toISOString();
 
             const candle = {
@@ -708,7 +793,8 @@
                 high,
                 low,
                 close,
-                candleType: payload.signal || payload.trendSide || ''
+                pnl,
+                candleType: deriveCandleType({ open, close }, payload)
             };
 
             liveBarMap.set(barIndex, candle);
@@ -728,6 +814,7 @@
                 rawCandles = merged;
                 aggregateCandles();
                 generateRealTrends();
+                maybeLogTrendChange();
                 sendOverlayTrendIfChanged('live-overlay');
                 updateStats();
                 drawChart();
@@ -739,6 +826,247 @@
                 liveDrawPending = null;
                 document.getElementById('status').textContent = `Live bars: ${rawCandles.length}`;
             });
+        }
+
+        function resetLiveTrendLog() {
+            liveTrendLog = [];
+            liveLoggingActive = true;
+            lastLoggedTrendKey = null;
+            lastLoggedTrendObj = null;
+            updateTrendLogStatus();
+        }
+
+        function updateTrendLogStatus() {
+            const el = document.getElementById('trendLogStatus');
+            if (!el) return;
+            const count = liveTrendLog.length;
+            const activeText = liveLoggingActive ? 'ON' : 'OFF';
+            el.textContent = `Trend log: ${count} (${activeText})`;
+            el.style.color = liveLoggingActive ? '#10b981' : '#9ca3af';
+        }
+
+        function recomputeAndRedraw(reason = 'ui-change') {
+            // Re-run derived data and refresh visuals when config toggles change
+            // Force overlay resend on recompute by clearing last overlay state
+            lastOverlayDirection = null;
+            lastOverlayStartIdx = null;
+            lastSentTrendKey = null;
+            generateRealTrends();
+            maybeLogTrendChange();
+            sendOverlayTrendIfChanged(reason);
+            updateStats();
+            drawChart();
+        }
+
+        function initMinTrendBarsControl() {
+            const input = document.getElementById('minTrendBarsInput');
+            if (!input) return;
+            if (Number.isFinite(minTrendBarsSetting)) {
+                input.value = minTrendBarsSetting;
+            }
+            input.addEventListener('change', () => {
+                const val = parseInt(input.value, 10);
+                if (Number.isFinite(val) && val >= 1 && val <= 50) {
+                    minTrendBarsSetting = val;
+                } else {
+                    minTrendBarsSetting = null; // fall back to auto-calculated trend length
+                    input.value = '';
+                }
+                recomputeAndRedraw('min-trend-bars-change');
+            });
+        }
+
+        function initMinLoggedBarsControl() {
+            const input = document.getElementById('minLoggedBarsInput');
+            if (!input) return;
+            input.value = minLoggedBarsSetting;
+            input.addEventListener('change', () => {
+                const val = parseInt(input.value, 10);
+                if (Number.isFinite(val) && val >= 1 && val <= 10) {
+                    minLoggedBarsSetting = val;
+                } else {
+                    minLoggedBarsSetting = 2;
+                    input.value = minLoggedBarsSetting;
+                }
+                recomputeAndRedraw('min-logged-bars-change');
+            });
+        }
+
+        async function appendTrendLog(eventType, trend) {
+            if (!liveLoggingActive || !trend) return;
+
+            const startIdx = trend.startIdx ?? trend.startIndex ?? trend.index ?? 0;
+            const endIdx = trend.endIdx ?? trend.endIndex ?? startIdx;
+            const startBar = trend.startBar ?? candles[startIdx]?.bar ?? startIdx;
+            const endBar = trend.endBar ?? candles[endIdx]?.bar ?? endIdx;
+
+            const rawDirection = String(trend.type || trend.direction || trend.side || trend.signal || '').toUpperCase();
+            const direction =
+                rawDirection.includes('SHORT') || rawDirection.includes('SELL') || rawDirection.includes('DOWN') ? 'SHORT' :
+                rawDirection.includes('LONG') || rawDirection.includes('BUY') || rawDirection.includes('UP') ? 'LONG' :
+                rawDirection.includes('FLAT') || rawDirection.includes('NEUTRAL') ? 'FLAT' :
+                'UNKNOWN';
+
+            const startPrice = candles[startIdx]?.close ?? candles[candles.length - 1]?.close ?? null;
+            const endPrice = candles[endIdx]?.close ?? candles[candles.length - 1]?.close ?? null;
+            const priceChange = (Number.isFinite(endPrice) && Number.isFinite(startPrice)) ? endPrice - startPrice : null;
+            const pctChange = (Number.isFinite(priceChange) && Number.isFinite(startPrice) && startPrice !== 0)
+                ? (priceChange / startPrice) * 100
+                : null;
+            const dirSign = direction === 'LONG' ? 1 : direction === 'SHORT' ? -1 : 0;
+            const signedChange = Number.isFinite(priceChange) && dirSign !== 0 ? priceChange * dirSign : null;
+            const signedPct = Number.isFinite(pctChange) && dirSign !== 0 ? pctChange * dirSign : null;
+
+            const row = {
+                timestamp: new Date().toISOString(),
+                event: eventType,
+                direction,
+                rawDirection,
+                startIdx,
+                endIdx,
+                startBar,
+                endBar,
+                startPrice,
+                endPrice,
+                priceChange,
+                pctChange,
+                price: endPrice,
+                signedChange,
+                signedPct,
+                strength: trend.strength ?? trend.change ?? null
+            };
+
+            liveTrendLog.push(row);
+            updateTrendLogStatus();
+
+            // Try to stream to server-side log writer if available
+            try {
+                await fetch('/logs/trend-event', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(row)
+                });
+            } catch (err) {
+                console.warn('Trend log post failed', err);
+            }
+
+            // Secondary attempt: append CSV-style row to a dedicated trend-log file server-side
+            try {
+                const csvRow = [
+                    row.timestamp,
+                    row.event,
+                    row.direction,
+                    row.rawDirection,
+                    startIdx,
+                    endIdx,
+                    startBar,
+                    endBar,
+                    startPrice ?? '',
+                    endPrice ?? '',
+                    priceChange ?? '',
+                    pctChange ?? '',
+                    signedChange ?? '',
+                    signedPct ?? '',
+                    row.strength ?? ''
+                ].join(',');
+                await fetch('/logs/trend-csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: csvRow
+                });
+            } catch (err) {
+                console.warn('Trend CSV post failed', err);
+            }
+        }
+
+        function maybeLogTrendChange() {
+            if (!liveLoggingActive) return;
+
+            // Require a minimum number of bars before logging a trend to avoid noisy flapping
+            const minLoggedBars = Math.max(1, Number(minLoggedBarsSetting) || 2);
+
+            if (!trends || trends.length === 0) {
+                if (lastLoggedTrendKey && lastLoggedTrendObj) {
+                    appendTrendLog('END', lastLoggedTrendObj);
+                }
+                lastLoggedTrendKey = null;
+                lastLoggedTrendObj = null;
+                return;
+            }
+
+            const lastTrend = trends[trends.length - 1];
+            const startIdx = lastTrend.startIdx ?? lastTrend.startIndex ?? lastTrend.index ?? 0;
+            const endIdx = lastTrend.endIdx ?? lastTrend.endIndex ?? startIdx;
+            const trendLength = endIdx - startIdx + 1;
+
+            // Key only on direction + start so extending the same trend does not relog START/END
+            const key = `${lastTrend.type}:${startIdx}`;
+
+            // If we switched to a new trend (direction or start changed), close the prior one
+            if (lastLoggedTrendKey && lastLoggedTrendKey !== key && lastLoggedTrendObj) {
+                appendTrendLog('END', lastLoggedTrendObj);
+            }
+
+            // Only log a START once the trend has enough bars
+            if (lastLoggedTrendKey !== key && trendLength >= minLoggedBars) {
+                appendTrendLog('START', lastTrend);
+                lastLoggedTrendKey = key;
+                lastLoggedTrendObj = lastTrend;
+                return;
+            }
+
+            // Update reference so we can END it when direction changes
+            if (lastLoggedTrendKey === key) {
+                lastLoggedTrendObj = lastTrend;
+            }
+        }
+
+        function downloadTrendLogCsv() {
+            if (!liveTrendLog || liveTrendLog.length === 0) {
+                alert('No trend log rows yet');
+                return;
+            }
+
+            const header = ['timestamp','event','direction','rawDirection','startIdx','endIdx','startBar','endBar','startPrice','endPrice','priceChange','pctChange','signedChange','signedPct','strength'];
+            const rows = liveTrendLog.map(r => header.map(h => r[h] ?? '').join(','));
+            const csv = [header.join(','), ...rows].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'trend-log.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        async function saveTrendLogToServer() {
+            if (!liveTrendLog || liveTrendLog.length === 0) {
+                alert('No trend log rows yet');
+                return;
+            }
+
+            const header = ['timestamp','event','direction','rawDirection','startIdx','endIdx','startBar','endBar','startPrice','endPrice','priceChange','pctChange','signedChange','signedPct','strength'];
+            const rows = liveTrendLog.map(r => header.map(h => r[h] ?? '').join(','));
+            const csv = [header.join(','), ...rows].join('\n');
+
+            try {
+                const res = await fetch('/logs/save-trend-csv', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: 'trend-log.csv', csv })
+                });
+                if (!res.ok) {
+                    const txt = await res.text();
+                    alert(`Server save failed: ${txt || res.status}`);
+                } else {
+                    updateLiveStatus('trend-log.csv saved to server', '#10b981');
+                }
+            } catch (err) {
+                alert('Could not save trend log to server');
+                console.warn('saveTrendLogToServer failed', err);
+            }
         }
 
         function aggregateCandles() {
@@ -776,8 +1104,9 @@
                         low: candle.low,
                         close: candle.close,
                         bars: [candle.bar],
-                        pnlSum: candle.pnl || 0,
-                        candleTypes: [candle.candleType || '']
+                        pnlSum: Number.isFinite(candle.pnl) ? candle.pnl : 0,
+                        pnlCount: Number.isFinite(candle.pnl) ? 1 : 0,
+                        candleTypes: [deriveCandleType(candle)]
                     });
                 } else {
                     const agg = candleMap.get(key);
@@ -785,8 +1114,11 @@
                     agg.low = Math.min(agg.low, candle.low);
                     agg.close = candle.close; // Last close in period
                     agg.bars.push(candle.bar);
-                    agg.pnlSum += (candle.pnl || 0);
-                    agg.candleTypes.push(candle.candleType || '');
+                    if (Number.isFinite(candle.pnl)) {
+                        agg.pnlSum += candle.pnl;
+                        agg.pnlCount += 1;
+                    }
+                    agg.candleTypes.push(deriveCandleType(candle));
                 }
             });
 
@@ -796,13 +1128,15 @@
             sortedKeys.forEach(key => {
                 const agg = candleMap.get(key);
                 // Calculate aggregated PNL and determine dominant candle type
-                const aggPnl = agg.close - agg.open; // Aggregated candle's PNL
+                const hasPnl = (agg.pnlCount || 0) > 0;
+                const aggPnl = hasPnl ? agg.pnlSum : (agg.close - agg.open);
                 const typeCount = agg.candleTypes.reduce((count, type) => {
                     count[type] = (count[type] || 0) + 1;
                     return count;
                 }, {});
                 const dominantType = Object.keys(typeCount).reduce((a, b) => typeCount[a] > typeCount[b] ? a : b) || '';
                 
+                const fallbackType = deriveCandleType({ open: agg.open, close: agg.close });
                 candles.push({
                     bar: barNum++,
                     timestamp: agg.timestamp,
@@ -811,9 +1145,9 @@
                     low: agg.low,
                     close: agg.close,
                     pnl: aggPnl,
-                    candleType: dominantType,
+                    candleType: dominantType || fallbackType,
                     originalBars: agg.bars,
-                    originalPnlSum: agg.pnlSum
+                    originalPnlSum: hasPnl ? agg.pnlSum : null
                 });
             });
 
@@ -831,10 +1165,26 @@
         function generateRealTrends() {
             // Real trend analysis based on market data
             trends = [];
-            if (candles.length < 20) return; // Need minimum data for trend analysis
+
+            const timeframeSeconds = parseInt(document.getElementById('timeframe')?.value) || 1;
+            const minBarsForTrend =
+                timeframeSeconds >= 1800 ? 3 :
+                timeframeSeconds >= 900 ? 3 :
+                timeframeSeconds >= 600 ? 3 :
+                timeframeSeconds >= 300 ? 4 :
+                timeframeSeconds >= 180 ? 6 :
+                timeframeSeconds >= 120 ? 8 :
+                timeframeSeconds >= 60 ? 10 :
+                timeframeSeconds >= 30 ? 8 :
+                20;
+
+            if (candles.length < minBarsForTrend) return; // Not enough data at this timeframe
             
-            const lookbackPeriod = 5; // Reduced lookback period for more coverage
-            const minTrendLength = 3;  // Reduced minimum bars to catch more trends
+            const lookbackPeriod = Math.min(5, Math.max(2, Math.floor(minBarsForTrend / 2)));
+            const baseMinTrendLength = Math.max(1, Math.floor(lookbackPeriod / 2));
+            const minTrendLength = Number.isFinite(minTrendBarsSetting)
+                ? Math.max(1, minTrendBarsSetting)
+                : baseMinTrendLength;  // Slightly shorter runs to avoid missed moves
             
             let currentTrend = null;
             let trendStartIdx = lookbackPeriod;
@@ -910,38 +1260,128 @@
                 note: `overlay start:${lastTrend.startIdx} end:${lastTrend.endIdx} (${reason})`
             };
 
+            if (logTrendFlips) {
+                const flipEntry = {
+                    reason,
+                    direction,
+                    startIdx: lastTrend.startIdx,
+                    endIdx: lastTrend.endIdx,
+                    barIndex: barIndexForCmd,
+                    strength: lastTrend.strength ?? 0,
+                    timestamp: candle?.timestamp
+                };
+                console.log('Trend flip', flipEntry);
+                appendFlipLog(flipEntry);
+            }
+
             lastOverlayDirection = direction;
             lastOverlayStartIdx = lastTrend.startIdx;
             sendTrendPayload(payload, reason);
         }
 
         // Trend Analysis Functions
+        function computeVolatilityStats(startIdx, endIdx) {
+            const closes = [];
+            let trSum = 0;
+            let count = 0;
+
+            for (let i = startIdx; i <= endIdx; i++) {
+                const candle = candles[i];
+                const prevClose = candles[i - 1]?.close ?? candle.close;
+                const trueRange = Math.max(
+                    candle.high - candle.low,
+                    Math.abs(candle.high - prevClose),
+                    Math.abs(candle.low - prevClose)
+                );
+
+                trSum += trueRange;
+                closes.push(candle.close);
+                count++;
+            }
+
+            const mean = closes.reduce((sum, v) => sum + v, 0) / Math.max(closes.length, 1);
+            const variance = closes.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / Math.max(closes.length, 1);
+            const stdDev = Math.sqrt(variance);
+
+            return {
+                atr: count > 0 ? trSum / count : 0,
+                stdDev,
+                refPrice: closes[closes.length - 1] || 1
+            };
+        }
+
         function analyzeTrendDirection(currentIndex, lookback) {
             if (currentIndex < lookback) return 'FLAT';
             
             const startIdx = currentIndex - lookback;
             const endIdx = currentIndex;
+            const timeframeSeconds = parseInt(document.getElementById('timeframe')?.value) || 1;
+            const timeframeScale = Math.max(0.5, Math.min(2, timeframeSeconds / 60));
             
             // Calculate price momentum
             const startPrice = (candles[startIdx].high + candles[startIdx].low + candles[startIdx].close) / 3;
             const endPrice = (candles[endIdx].high + candles[endIdx].low + candles[endIdx].close) / 3;
-            const priceChange = (endPrice - startPrice) / startPrice;
-            
+            const priceChangePct = (endPrice - startPrice) / startPrice;
+
             // Calculate moving average slope
             const prices = candles.slice(startIdx, endIdx + 1).map(c => c.close);
             const slope = calculateLinearRegression(prices).slope;
+
+            // Volatility-aware thresholds to stay active but not hyper-sensitive
+            const { atr, stdDev, refPrice } = computeVolatilityStats(startIdx, endIdx);
+            const safeRef = Math.max(refPrice, 0.0001);
+            const atrPct = atr / safeRef;
+            const stdPct = stdDev / safeRef;
+
+            const basePriceThreshold = 0.00005 * timeframeScale;
+            const baseSlopeThreshold = 0.0001 * timeframeScale;
+
+            const priceChangeThreshold = Math.max(basePriceThreshold, atrPct * 0.45 + stdPct * 0.25);
+            const slopePct = slope / safeRef;
+            const slopeThreshold = Math.max(baseSlopeThreshold, (atrPct + stdPct) * 0.2);
             
-            // Decision logic - very sensitive for maximum trend detection
-            const trendThreshold = 0.0002; // 0.02% price change threshold  
-            const slopeThreshold = 0.005; // Very low slope threshold
-            
-            if (priceChange > trendThreshold && slope > slopeThreshold) {
+            if (priceChangePct > priceChangeThreshold && slopePct > slopeThreshold) {
                 return 'LONG';
-            } else if (priceChange < -trendThreshold && slope < -slopeThreshold) {
+            } else if (priceChangePct < -priceChangeThreshold && slopePct < -slopeThreshold) {
                 return 'SHORT';
-            } else {
-                return 'FLAT';
             }
+
+            // Fallback: if both change and slope lean the same way, still emit a direction
+            const directionalHint = basePriceThreshold * 0.5;
+            if (priceChangePct > directionalHint && slopePct > 0) return 'LONG';
+            if (priceChangePct < -directionalHint && slopePct < 0) return 'SHORT';
+
+            return 'FLAT';
+        }
+
+        function appendFlipLog(entry) {
+            flipLogEntries.unshift(entry);
+            if (flipLogEntries.length > 50) {
+                flipLogEntries = flipLogEntries.slice(0, 50);
+            }
+            renderFlipLog();
+        }
+
+        function renderFlipLog() {
+            const listEl = document.getElementById('flipLogList');
+            if (!listEl) return;
+            if (flipLogEntries.length === 0) {
+                listEl.textContent = 'No flips yet';
+                return;
+            }
+            const rows = flipLogEntries.map(e => {
+                const ts = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '-';
+                const strength = Number.isFinite(e.strength) ? e.strength.toFixed(2) : '';
+                return `${ts}  ${e.direction}  bar:${e.barIndex}  s:${e.startIdx}->${e.endIdx}  str:${strength}  (${e.reason})`;
+            });
+            listEl.innerHTML = rows.join('<br>');
+        }
+
+        function updateFlipLogStatus() {
+            const statusEl = document.getElementById('flipLogStatus');
+            if (!statusEl) return;
+            statusEl.textContent = logTrendFlips ? 'logging on' : 'logging off';
+            statusEl.style.color = logTrendFlips ? '#10b981' : '#6b7280';
         }
         
         function calculateLinearRegression(values) {
@@ -989,6 +1429,9 @@
         function updateStats() {
             document.getElementById('stats').style.display = 'flex';
             document.getElementById('stat-bars').textContent = candles.length;
+            // Use the stricter of (trend override, logged bars) so stats/PNL match the chosen minimum trend length
+            const effectiveMinBars = Number.isFinite(minTrendBarsSetting) ? minTrendBarsSetting : (Number(minLoggedBarsSetting) || 2);
+            const minBars = Math.max(1, effectiveMinBars);
             
             // Hide entry/exit stats since we're not using them anymore
             const entryStats = document.getElementById('stat-long');
@@ -998,20 +1441,64 @@
             if (shortStats) shortStats.parentElement.style.display = 'none';
             if (exitStats) exitStats.parentElement.style.display = 'none';
             
-            // Show trend stats with strength analysis
-            const longTrends = trends.filter(t => t.type === 'LONG');
-            const shortTrends = trends.filter(t => t.type === 'SHORT');
-            const flatTrends = trends.filter(t => t.type === 'FLAT');
-            const neutralTrends = trends.filter(t => t.type === 'NEUTRAL');
-            
+            // Filter trends that meet the current minimum bar requirement so the threshold affects the stats and PNL
+            const effectiveTrends = trends.filter(t => {
+                const startIdx = t.startIdx ?? t.startIndex ?? t.index ?? 0;
+                const endIdx = t.endIdx ?? t.endIndex ?? startIdx;
+                return (endIdx - startIdx + 1) >= minBars;
+            });
+
+            const longTrends = effectiveTrends.filter(t => t.type === 'LONG');
+            const shortTrends = effectiveTrends.filter(t => t.type === 'SHORT');
+            const flatTrends = effectiveTrends.filter(t => t.type === 'FLAT');
+            const neutralTrends = effectiveTrends.filter(t => t.type === 'NEUTRAL');
+
             const avgLongStrength = longTrends.length > 0 ? 
                 (longTrends.reduce((sum, t) => sum + (t.strength || 0), 0) / longTrends.length).toFixed(1) : '0.0';
             const avgShortStrength = shortTrends.length > 0 ? 
                 (shortTrends.reduce((sum, t) => sum + (t.strength || 0), 0) / shortTrends.length).toFixed(1) : '0.0';
-            
-            document.getElementById('stat-long-trends').textContent = `${longTrends.length} (${avgLongStrength})`;
-            document.getElementById('stat-short-trends').textContent = `${shortTrends.length} (${avgShortStrength})`;
-            document.getElementById('stat-neutral-trends').textContent = `${neutralTrends.length}`;
+
+            const setText = (id, text) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = text;
+            };
+
+            const setLabel = (valueId, labelText) => {
+                const valueEl = document.getElementById(valueId);
+                if (valueEl && valueEl.previousElementSibling) {
+                    valueEl.previousElementSibling.textContent = labelText;
+                }
+            };
+
+            setText('stat-long-trends', `${longTrends.length} (${avgLongStrength})`);
+            setText('stat-short-trends', `${shortTrends.length} (${avgShortStrength})`);
+            setText('stat-neutral-trends', `${flatTrends.length + neutralTrends.length}`);
+
+            // Threshold-aware rollups in the formerly pattern cards
+            setLabel('stat-total-patterns', `Total Trends (>= ${minBars} bars)`);
+            setLabel('stat-long-patterns', `LONG (>= ${minBars} bars)`);
+            setLabel('stat-short-patterns', `SHORT (>= ${minBars} bars)`);
+            setLabel('stat-flat-patterns', `FLAT (>= ${minBars} bars)`);
+
+            setText('stat-total-patterns', `${effectiveTrends.length}`);
+            setText('stat-long-patterns', `${longTrends.length}`);
+            setText('stat-short-patterns', `${shortTrends.length}`);
+            setText('stat-flat-patterns', `${flatTrends.length + neutralTrends.length}`);
+
+            // Aggregate total PNL across effective trends
+            const totalPnl = effectiveTrends.reduce((sum, t) => {
+                const sIdx = t.startIdx ?? t.startIndex ?? t.index ?? 0;
+                const eIdx = t.endIdx ?? t.endIndex ?? sIdx;
+                const startPrice = candles[sIdx]?.close;
+                const endPrice = candles[eIdx]?.close;
+                if (!Number.isFinite(startPrice) || !Number.isFinite(endPrice)) return sum;
+                const dir = String(t.type || '').toUpperCase();
+                const sign = dir.includes('LONG') ? 1 : dir.includes('SHORT') ? -1 : 0;
+                if (sign === 0) return sum;
+                return sum + (endPrice - startPrice) * sign;
+            }, 0);
+            const pnlLabel = totalPnl >= 0 ? `+${totalPnl.toFixed(2)}` : totalPnl.toFixed(2);
+            setText('stat-total-pnl', pnlLabel);
 
             if (candles.length > 0) {
                 const allPrices = candles.flatMap(c => [c.high, c.low]);
@@ -2579,6 +3066,20 @@
             const exitAtBar = exits.find(e => e.bar === candle.bar);
             const patternsAtBar = detectedPatterns.filter(p => p.barIndex === index);
 
+            // Prefer summed PNL when available, otherwise fall back to candle PNL or close-open
+            const pnlValue = Number.isFinite(candle.originalPnlSum)
+                ? candle.originalPnlSum
+                : Number.isFinite(candle.pnl)
+                    ? candle.pnl
+                    : (Number.isFinite(candle.close) && Number.isFinite(candle.open)
+                        ? candle.close - candle.open
+                        : 0);
+            const pnlColor = pnlValue >= 0 ? '#10b981' : '#ef4444';
+
+            const candleType = deriveCandleType(candle);
+            const candleTypeLower = typeof candleType === 'string' ? candleType.toLowerCase() : '';
+            const candleTypeColor = candleTypeLower === 'good' ? '#10b981' : candleTypeLower === 'bad' ? '#ef4444' : '#9ca3af';
+
             let html = `
                 <div class="tooltip-row">
                     <span class="tooltip-label">Bar:</span>
@@ -2606,11 +3107,11 @@
                 </div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">PNL:</span>
-                    <span class="tooltip-value" style="color: ${(candle.pnl || 0) >= 0 ? '#10b981' : '#ef4444'};">${(candle.pnl || 0).toFixed(2)}</span>
+                    <span class="tooltip-value" style="color: ${pnlColor};">${pnlValue.toFixed(2)}</span>
                 </div>
                 <div class="tooltip-row">
                     <span class="tooltip-label">Candle:</span>
-                    <span class="tooltip-value" style="color: ${candle.candleType === 'good' ? '#10b981' : candle.candleType === 'bad' ? '#ef4444' : '#9ca3af'};">${candle.candleType || 'N/A'}</span>
+                    <span class="tooltip-value" style="color: ${candleTypeColor};">${candleType || 'N/A'}</span>
                 </div>
             `;
 
@@ -2846,7 +3347,23 @@
         // Add event listeners for analysis checkboxes and controls
         document.addEventListener('DOMContentLoaded', () => {
             const analysisCheckboxes = document.querySelectorAll('.analysis-controls input[type="checkbox"]');
+            const flipLogCheckbox = document.getElementById('enableFlipLogging');
             
+            if (flipLogCheckbox) {
+                logTrendFlips = flipLogCheckbox.checked;
+                flipLogCheckbox.addEventListener('change', () => {
+                    logTrendFlips = flipLogCheckbox.checked;
+                    updateFlipLogStatus();
+                    if (!logTrendFlips && flipLogEntries.length === 0) {
+                        renderFlipLog();
+                    }
+                    recomputeAndRedraw('flip-log-toggle');
+                });
+                updateFlipLogStatus();
+            }
+
+            updateTrendLogStatus();
+
             analysisCheckboxes.forEach(checkbox => {
                 checkbox.addEventListener('change', () => {
                     if (candles.length > 0) {
@@ -2896,6 +3413,8 @@
                 drawChart();
             }
         });
+        initMinLoggedBarsControl();
+        initMinTrendBarsControl();
     </script>
 </body>
 </html>
