@@ -503,7 +503,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (trendUp)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg < SkipLongsBelowGradient;
+                    bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
                     if (!skipDueToGradient)
                     {
                         CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -518,7 +518,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (trendDown && prevBad)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg > SkipShortsAboveGradient;
+                    bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
                     if (!skipDueToGradient)
                     {
                         CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -546,7 +546,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (trendDown)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg > SkipShortsAboveGradient;
+                    bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
                     if (!skipDueToGradient)
                     {
                         CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -565,7 +565,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (trendUp && prevGood)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg < SkipLongsBelowGradient;
+                    bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
                     if (!skipDueToGradient)
                     {
                         CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -629,7 +629,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else if (allowLongThisBar)
                     {
                         // Check gradient filter: skip longs if EMA gradient is below threshold
-                        bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg < SkipLongsBelowGradient;
+                        bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
                         if (!skipDueToGradient)
                         {
                             CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -695,7 +695,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else if (allowShortThisBar)
                     {
                         // Check gradient filter: skip shorts if EMA gradient is above threshold
-                        bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg > SkipShortsAboveGradient;
+                        bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
                         if (!skipDueToGradient)
                         {
                             CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -1633,6 +1633,18 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (StopLossPoints > 0)
                 SetStopLoss(orderName, CalculationMode.Ticks, StopLossPoints * 4, false);
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private bool ShouldSkipLongDueToGradient(double gradDeg)
+        {
+            return GradientFilterEnabled && !double.IsNaN(gradDeg) && gradDeg < SkipLongsBelowGradient;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private bool ShouldSkipShortDueToGradient(double gradDeg)
+        {
+            return GradientFilterEnabled && !double.IsNaN(gradDeg) && gradDeg > SkipShortsAboveGradient;
         }
 
         private void EnsureHttpClient()
