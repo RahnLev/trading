@@ -183,6 +183,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private Queue<double> fastGradientHistory = new Queue<double>();
         private double currentGradientStability = 0.0; // rolling std dev of fast gradient
         private double currentFastGradientAcceleration = 0.0; // fastGradient - prevFastGradient
+        private double lastFastGradDeg = double.NaN; // regression-based fast EMA slope in degrees
 
         // --- Entry filter thresholds (Phase 2) ---
         private double minAdxForEntry = 18.0;              // Trend strength filter (default tightened)

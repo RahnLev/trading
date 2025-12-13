@@ -11,6 +11,7 @@ using System.Web.Script.Serialization;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui.Tools;
 using NinjaTrader.NinjaScript;
+using NinjaTrader.NinjaScript.Indicators;
 using NinjaTrader.NinjaScript.DrawingTools;
 #endregion
 
@@ -71,6 +72,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         
         #endregion
 
+        private EMA fastEma;
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -81,12 +84,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EnableDashboardStreaming = false;
                 DashboardBaseUrl = "http://127.0.0.1:51888";
                 EnableCommandPolling = false;
+                FastEmaPeriod = 34;
             }
             else if (State == State.DataLoaded)
             {
                 // Initialize files once when data is loaded - this runs only once
                 InitializeCsvWriter();
                 EnsureHttpClient();
+                fastEma = EMA(FastEmaPeriod);
             }
             else if (State == State.Terminated)
             {
@@ -211,7 +216,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Write header on first bar
                 if (!csvHeaderWritten)
                 {
-                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close,Volume,PNL,CandleType,BodyPct,UpperWick,LowerWick,Bid,Ask,Spread,Instrument,TickSize");
+                    csvWriter.WriteLine("Timestamp,Bar,Open,High,Low,Close,Volume,PNL,CandleType,BodyPct,UpperWick,LowerWick,FastEma,FastEmaGradient,Bid,Ask,Spread,Instrument,TickSize");
                     csvHeaderWritten = true;
                     Print($"[BareOhlcLogger] Header written");
                 }
@@ -238,13 +243,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double upperWick = High[1] - Math.Max(Open[1], Close[1]);
                 double lowerWick = Math.Min(Open[1], Close[1]) - Low[1];
 
+                double fastEmaVal = double.NaN;
+                double fastEmaGradient = double.NaN;
+                if (fastEma != null && CurrentBar >= 2)
+                {
+                    fastEmaVal = fastEma[1];
+                    fastEmaGradient = fastEma[1] - fastEma[2];
+                }
+
                 // Current bid/ask (may be NaN on some data feeds)
                 double bid = GetCurrentBid();
                 double ask = GetCurrentAsk();
                 double spread = (double.IsNaN(bid) || double.IsNaN(ask)) ? double.NaN : ask - bid;
 
                 var line = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                    "{0:yyyy-MM-dd HH:mm:ss},{1},{2:F5},{3:F5},{4:F5},{5:F5},{6},{7:F5},{8},{9:F6},{10:F5},{11:F5},{12:F5},{13:F5},{14:F5},{15},{16:F5}",
+                    "{0:yyyy-MM-dd HH:mm:ss},{1},{2:F5},{3:F5},{4:F5},{5:F5},{6},{7:F5},{8},{9:F6},{10:F5},{11:F5},{12:F5},{13:F5},{14:F5},{15:F5},{16:F5},{17},{18:F5}",
                     ts,
                     barIndex,
                     Open[1],
@@ -257,6 +270,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     bodyPct,
                     upperWick,
                     lowerWick,
+                    fastEmaVal,
+                    fastEmaGradient,
                     bid,
                     ask,
                     spread,
@@ -566,6 +581,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         }
 
         #region Properties
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "Fast EMA Period", GroupName = "Parameters", Order = 0)]
+        public int FastEmaPeriod { get; set; }
+
         [NinjaScriptProperty]
         [Display(Name = "Show Bar Index Labels", GroupName = "Debug", Order = 0)]
         public bool ShowBarIndexLabels
