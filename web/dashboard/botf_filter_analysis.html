@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BarsOnTheFlow - Filter Analysis</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #0f172a; color: #e5e7eb; margin: 0; padding: 20px; }
+        h1 { color: #60a5fa; margin-bottom: 12px; }
+        .card { background: #111827; border: 1px solid #1f2937; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+        input[type="file"] { color: #e5e7eb; }
+        table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid #1f2937; text-align: left; white-space: nowrap; }
+        th { background: #1f2937; color: #93c5fd; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4); }
+        tr:hover { background: #1b2538; }
+        .pnl-pos { color: #10b981; font-weight: 700; }
+        .pnl-neg { color: #ef4444; font-weight: 700; }
+        .muted { color: #9ca3af; font-size: 13px; }
+        .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
+        .badge-long { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.35); }
+        .badge-short { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.35); }
+        .table-wrapper { max-height: 70vh; overflow-x: auto; overflow-y: auto; border: 1px solid #1f2937; border-radius: 8px; position: relative; }
+        thead th { position: sticky; top: 0; z-index: 10; background: #1f2937; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4); }
+        .candle-good { color: #10b981; font-weight: 700; }
+        .candle-bad { color: #ef4444; font-weight: 700; }
+        .candle-neutral { color: #9ca3af; font-weight: 700; }
+        .condition-block { background: #0f172a; border: 1px solid #1f2937; border-radius: 6px; padding: 8px 10px; min-width: 240px; }
+        .condition-title { font-weight: 700; color: #93c5fd; margin-bottom: 4px; }
+        .condition-select { background: #0f172a; color: #e5e7eb; border: 1px solid #1f2937; border-radius: 4px; padding: 4px; font-size: 12px; }
+        .bar-pattern { display: flex; gap: 4px; align-items: center; }
+        .bar-circle { width: 14px; height: 14px; border-radius: 50%; display: inline-block; }
+        .bar-good { background-color: #10b981; }
+        .bar-bad { background-color: #ef4444; }
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { background: #2d3748; }
+        .sort-indicator { margin-left: 4px; color: #60a5fa; font-size: 11px; }
+        .has-filter { }
+    </style>
+</head>
+<body>
+    <h1>BarsOnTheFlow - Filter Analysis</h1>
+    <div class="card">
+        <div class="row">
+            <label><strong>Load CSV (BarsOnTheFlow log)</strong></label>
+            <input type="file" id="fileInput" accept=".csv,.json" multiple />
+            <span class="muted">Upload CSV log file. Optional: also upload the matching _params.json file to see strategy parameters.</span>
+            <button id="restoreBtn">Restore last session</button>
+            <button id="clearBtn">Clear saved</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="row" style="gap:8px; margin-bottom:6px;">
+            <button id="sortPnlAsc">Sort PnL ▲</button>
+            <button id="sortPnlDesc">Sort PnL ▼</button>
+            <button id="sortReset">Reset order</button>
+        </div>
+        <div class="row" style="gap:10px; margin-bottom:10px; align-items:flex-end;">
+            <div class="condition-block">
+                <div class="condition-title">Condition 1</div>
+                <div class="row" style="gap:6px;">
+                    <select id="cond1Left" class="condition-select">
+                        <option value="none">None</option>
+                        <option value="openF">Open Final</option>
+                        <option value="highF">High Final</option>
+                        <option value="lowF">Low Final</option>
+                        <option value="closeF">Close Final</option>
+                        <option value="fastEma">Fast EMA</option>
+                        <option value="pnl">PnL</option>
+                        <option value="fastEmaGradDeg">Fast EMA GradDeg</option>
+                    </select>
+                    <select id="cond1Op" class="condition-select">
+                        <option value="lt">is less than</option>
+                        <option value="gt">is greater than</option>
+                    </select>
+                    <select id="cond1Right" class="condition-select">
+                        <option value="none">None</option>
+                        <option value="openF">Open Final</option>
+                        <option value="highF">High Final</option>
+                        <option value="lowF">Low Final</option>
+                        <option value="closeF">Close Final</option>
+                        <option value="fastEma">Fast EMA</option>
+                        <option value="pnl">PnL</option>
+                        <option value="fastEmaGradDeg">Fast EMA GradDeg</option>
+                    </select>
+                </div>
+            </div>
+            <div class="condition-block">
+                <div class="condition-title">Condition 2</div>
+                <div class="row" style="gap:6px;">
+                    <select id="cond2Left" class="condition-select">
+                        <option value="none">None</option>
+                        <option value="openF">Open Final</option>
+                        <option value="highF">High Final</option>
+                        <option value="lowF">Low Final</option>
+                        <option value="closeF">Close Final</option>
+                        <option value="fastEma">Fast EMA</option>
+                        <option value="pnl">PnL</option>
+                        <option value="fastEmaGradDeg">Fast EMA GradDeg</option>
+                    </select>
+                    <select id="cond2Op" class="condition-select">
+                        <option value="lt">is less than</option>
+                        <option value="gt">is greater than</option>
+                    </select>
+                    <select id="cond2Right" class="condition-select">
+                        <option value="none">None</option>
+                        <option value="openF">Open Final</option>
+                        <option value="highF">High Final</option>
+                        <option value="lowF">Low Final</option>
+                        <option value="closeF">Close Final</option>
+                        <option value="fastEma">Fast EMA</option>
+                        <option value="pnl">PnL</option>
+                        <option value="fastEmaGradDeg">Fast EMA GradDeg</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="muted">Set up to two AND conditions (column vs column). Leave either side as "None" to disable a condition. Example: Open Final &lt; Fast EMA and Close Final &gt; Fast EMA.</div>
+        <div class="muted" id="summary">No file loaded.</div>
+    </div>
+
+    <div class="card" id="paramsCard" style="display:none;">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+            <strong style="color:#93c5fd;">Strategy Parameters</strong>
+            <button id="toggleParamsBtn" style="padding:4px 8px; font-size:12px;">Collapse</button>
+        </div>
+        <div id="paramsContent" style="margin-top:12px;">
+            <div id="paramsGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:12px;"></div>
+        </div>
+    </div>
+
+    <div class="table-wrapper">
+        <table id="table" style="display:none;">
+            <thead>
+                <tr>
+                    <th>Trade #</th>
+                    <th>Bars in Trade</th>
+                    <th>Local Time</th>
+                    <th id="signalHeader" class="has-filter">Signal
+                        <select id="signalFilter" class="pnl-filter" title="Filter by signal">
+                            <option value="all">All</option>
+                            <option value="long">Longs</option>
+                            <option value="short">Shorts</option>
+                        </select>
+                    </th>
+                    <th>Entry Bar</th>
+                    <th>Exit Bar</th>
+                    <th id="candleHeader" class="sortable has-filter" onclick="sortTable('candleType')" title="Click to sort by Candle Type">Candle Type<span id="candleSort" class="sort-indicator"></span>
+                        <select id="candleFilter" class="pnl-filter" title="Filter by candle type" onclick="event.stopPropagation();">
+                            <option value="all">All</option>
+                            <option value="good">Good</option>
+                            <option value="bad">Bad</option>
+                            <option value="good_and_bad">Good & Bad</option>
+                        </select>
+                    </th>
+                    <th>Open Final</th>
+                    <th>High Final</th>
+                    <th>Low Final</th>
+                    <th>Close Final</th>
+                    <th class="sortable" onclick="sortTable('fastEma')" title="Click to sort by Fast EMA">Fast EMA<span id="fastEmaSort" class="sort-indicator"></span></th>
+                    <th id="gradHeader" class="has-filter">Fast EMA GradDeg
+                        <select id="gradFilter" class="pnl-filter" title="Filter by gradient degrees">
+                            <option value="all">All</option>
+                            <option value="positive">Positive</option>
+                            <option value="negative">Negative</option>
+                        </select>
+                    </th>
+                    <th id="pnlHeader" class="sortable has-filter" onclick="sortTable('pnl')" title="Click to sort by PnL">PnL<span id="pnlSort" class="sort-indicator"></span>
+                        <select id="pnlFilter" class="pnl-filter" title="Filter by PnL" onclick="event.stopPropagation();">
+                            <option value="all">All</option>
+                            <option value="positive">Positive</option>
+                            <option value="negative">Negative</option>
+                        </select>
+                    </th>
+                    <th class="sortable has-filter" onclick="sortTable('barPattern')" title="Click to sort by Bar Pattern">Bar Pattern<span id="barPatternSort" class="sort-indicator"></span>
+                        <select id="barPatternFilter" class="pnl-filter" title="Filter by bar pattern" onclick="event.stopPropagation();">
+                            <option value="all">All</option>
+                        </select>
+                    </th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+<script>
+// Simple CSV parser for BarsOnTheFlow logs and trade pairing with local persistence
+const fileInput = document.getElementById('fileInput');
+const tbody = document.getElementById('tbody');
+const table = document.getElementById('table');
+const summary = document.getElementById('summary');
+const restoreBtn = document.getElementById('restoreBtn');
+const clearBtn = document.getElementById('clearBtn');
+const pnlFilter = document.getElementById('pnlFilter');
+const signalFilter = document.getElementById('signalFilter');
+const candleFilter = document.getElementById('candleFilter');
+const cond1Left = document.getElementById('cond1Left');
+const cond1Op = document.getElementById('cond1Op');
+const cond1Right = document.getElementById('cond1Right');
+const cond2Left = document.getElementById('cond2Left');
+const cond2Op = document.getElementById('cond2Op');
+const cond2Right = document.getElementById('cond2Right');
+const sortAscBtn = document.getElementById('sortPnlAsc');
+const sortDescBtn = document.getElementById('sortPnlDesc');
+const sortResetBtn = document.getElementById('sortReset');
+const gradFilter = document.getElementById('gradFilter');
+const barPatternFilter = document.getElementById('barPatternFilter');
+const paramsCard = document.getElementById('paramsCard');
+const paramsContent = document.getElementById('paramsContent');
+const paramsGrid = document.getElementById('paramsGrid');
+const toggleParamsBtn = document.getElementById('toggleParamsBtn');
+const STORAGE_KEY = 'botf_filter_analysis_state_v1';
+
+let currentTrades = [];
+let currentName = '';
+let currentParams = {};
+let paramsCollapsed = false;
+let filterMode = 'all';
+let signalMode = 'all';
+let candleMode = 'all';
+let gradMode = 'all';
+let barPatternMode = 'all';
+let sortMode = 'none';
+let sortColumn = null;
+let sortDirection = 'asc';
+let condition1 = { left: 'none', op: 'lt', right: 'fastEma' };
+let condition2 = { left: 'none', op: 'lt', right: 'fastEma' };
+
+fileInput.addEventListener('change', (ev) => {
+    const files = ev.target.files;
+    if (!files || files.length === 0) return;
+    
+    // Check if we have both CSV and JSON files
+    let csvFile = null;
+    let jsonFile = null;
+    
+    for (let i = 0; i < files.length; i++) {
+        if (files[i].name.endsWith('.csv')) csvFile = files[i];
+        if (files[i].name.endsWith('_params.json')) jsonFile = files[i];
+    }
+    
+    // If only one file selected, check if it's CSV or JSON
+    if (files.length === 1) {
+        if (files[0].name.endsWith('.csv')) csvFile = files[0];
+        if (files[0].name.endsWith('_params.json')) jsonFile = files[0];
+    }
+    
+    // Process CSV file
+    if (csvFile) {
+        const reader = new FileReader();
+        reader.onload = (e) => processCsv(e.target.result, csvFile.name);
+        reader.readAsText(csvFile);
+    }
+    
+    // Process JSON file if available
+    if (jsonFile) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const params = JSON.parse(e.target.result);
+                displayParameters(params);
+            } catch (ex) {
+                console.warn('Failed to parse parameters JSON: ' + ex.message);
+            }
+        };
+        reader.readAsText(jsonFile);
+    }
+});
+
+restoreBtn.addEventListener('click', restoreFromStorage);
+clearBtn.addEventListener('click', () => {
+    localStorage.removeItem(STORAGE_KEY);
+    summary.textContent = 'Saved session cleared.';
+});
+pnlFilter.addEventListener('change', () => { filterMode = pnlFilter.value || 'all'; applyView(); });
+signalFilter.addEventListener('change', () => { signalMode = signalFilter.value || 'all'; applyView(); });
+candleFilter.addEventListener('change', () => { candleMode = candleFilter.value || 'all'; applyView(); });
+cond1Left.addEventListener('change', () => { condition1.left = cond1Left.value || 'none'; applyView(); });
+cond1Op.addEventListener('change', () => { condition1.op = cond1Op.value || 'lt'; applyView(); });
+cond1Right.addEventListener('change', () => { condition1.right = cond1Right.value || 'none'; applyView(); });
+cond2Left.addEventListener('change', () => { condition2.left = cond2Left.value || 'none'; applyView(); });
+cond2Op.addEventListener('change', () => { condition2.op = cond2Op.value || 'lt'; applyView(); });
+cond2Right.addEventListener('change', () => { condition2.right = cond2Right.value || 'none'; applyView(); });
+sortAscBtn.addEventListener('click', () => { sortMode = 'pnlAsc'; sortColumn = null; applyView(); });
+sortDescBtn.addEventListener('click', () => { sortMode = 'pnlDesc'; sortColumn = null; applyView(); });
+sortResetBtn.addEventListener('click', () => { sortMode = 'none'; sortColumn = null; applyView(); });
+if (gradFilter) gradFilter.addEventListener('change', () => { gradMode = gradFilter.value || 'all'; applyView(); });
+if (barPatternFilter) barPatternFilter.addEventListener('change', () => { barPatternMode = barPatternFilter.value || 'all'; applyView(); });
+
+if (toggleParamsBtn) {
+    toggleParamsBtn.addEventListener('click', () => {
+        paramsCollapsed = !paramsCollapsed;
+        const content = document.querySelector('#paramsCard > div:nth-child(2)');
+        if (content) {
+            content.style.display = paramsCollapsed ? 'none' : 'block';
+            toggleParamsBtn.textContent = paramsCollapsed ? 'Expand' : 'Collapse';
+        }
+    });
+}
+
+function sortTable(columnName) {
+    // If clicking the same column, toggle direction; otherwise set to ascending
+    if (sortColumn === columnName) {
+        sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortColumn = columnName;
+        sortDirection = 'asc';
+    }
+    
+    // Clear legacy button sorting when using column sorting
+    sortMode = 'none';
+    
+    applyView();
+}
+
+function updateSortIndicators() {
+    // Clear all indicators
+    ['candleSort', 'fastEmaSort', 'pnlSort', 'barPatternSort'].forEach(id => {
+        const elem = document.getElementById(id);
+        if (elem) elem.textContent = '';
+    });
+    
+    // Set indicator for active sort column
+    if (sortColumn) {
+        const indicatorMap = {
+            'candleType': 'candleSort',
+            'fastEma': 'fastEmaSort',
+            'pnl': 'pnlSort',
+            'barPattern': 'barPatternSort'
+        };
+        const indicatorId = indicatorMap[sortColumn];
+        if (indicatorId) {
+            const elem = document.getElementById(indicatorId);
+            if (elem) elem.textContent = sortDirection === 'asc' ? '▲' : '▼';
+        }
+    }
+}
+
+function processCsv(text, name) {
+    const allLines = text.trim().split(/\r?\n/);
+    
+    // Skip comment lines (starting with #) that come from strategy parameters logging
+    let lines = [];
+    let headerLineIndex = 0;
+    for (let i = 0; i < allLines.length; i++) {
+        if (!allLines[i].startsWith('#')) {
+            lines.push(allLines[i]);
+            if (headerLineIndex === 0) headerLineIndex = i; // Track where actual data starts
+        }
+    }
+    
+    if (lines.length <= 1) {
+        summary.textContent = 'No rows found in CSV.';
+        table.style.display = 'none';
+        return;
+    }
+    const header = lines[0].split(',').map(h => h.trim());
+    const idx = (col) => header.indexOf(col);
+    const iTs = idx('timestamp');
+    const iBar = idx('bar');
+    const iAct = idx('action');
+    const iName = idx('orderName');
+    const iPrice = idx('price');
+    const iPnl = idx('pnl');
+    const iOpenF = idx('openFinal');
+    const iHighF = idx('highFinal');
+    const iLowF = idx('lowFinal');
+    const iCloseF = idx('closeFinal');
+    const iEma = idx('fastEma');
+    const iGradDeg = idx('fastEmaGradDeg');
+    const iCandle = idx('candleType');
+    const iBarPattern = idx('barPattern');
+    if ([iTs,iBar,iAct,iName,iPrice].some(i => i === -1)) {
+        summary.textContent = 'Missing required columns in CSV.';
+        table.style.display = 'none';
+        return;
+    }
+
+    const entriesLong = [];
+    const entriesShort = [];
+    const trades = [];
+    let currentPosition = 'FLAT'; // Track if we're in LONG, SHORT, or FLAT
+    let lastEntryDirection = null; // Track last ENTRY direction for stop loss matching
+
+    // Group rows by bar number to process all ENTRYs before EXITs on same bar
+    const rowsByBar = new Map();
+    for (let k = 1; k < lines.length; k++) {
+        const parts = lines[k].split(',');
+        if (parts.length < header.length) continue;
+        const bar = parts[iBar].trim();
+        if (!rowsByBar.has(bar)) {
+            rowsByBar.set(bar, []);
+        }
+        rowsByBar.get(bar).push(parts);
+    }
+
+    // Process bars in order
+    const sortedBars = Array.from(rowsByBar.keys()).sort((a, b) => parseInt(a) - parseInt(b));
+    for (const bar of sortedBars) {
+        const barRows = rowsByBar.get(bar);
+        
+        // First pass: process all ENTRYs on this bar
+        for (const parts of barRows) {
+            const action = parts[iAct].trim();
+            if (action !== 'ENTRY') continue;
+            
+            const order = parts[iName].trim();
+            const ts = parts[iTs].trim();
+            const price = parseFloat(parts[iPrice] || 'NaN');
+            const candleType = iCandle >= 0 && parts[iCandle] ? parts[iCandle].trim() : '';
+            const barPattern = iBarPattern >= 0 && parts[iBarPattern] ? parts[iBarPattern].trim() : '';
+            
+            const isEntryLong = order === 'BarsOnTheFlowLong';
+            const isEntryShort = order === 'BarsOnTheFlowShort';
+            
+            if (isEntryLong) {
+                entriesLong.push({ barStart: bar, ts, price, candleType, barPattern });
+                currentPosition = 'LONG';
+                lastEntryDirection = 'LONG';
+            } else if (isEntryShort) {
+                entriesShort.push({ barStart: bar, ts, price, candleType, barPattern });
+                currentPosition = 'SHORT';
+                lastEntryDirection = 'SHORT';
+            }
+        }
+        
+        // Second pass: process all EXITs on this bar
+        for (const parts of barRows) {
+            const action = parts[iAct].trim();
+            if (action !== 'EXIT') continue;
+            
+            const order = parts[iName].trim();
+            const ts = parts[iTs].trim();
+            const price = parseFloat(parts[iPrice] || 'NaN');
+            const pnlRaw = (iPnl >= 0 ? parts[iPnl].trim() : '');
+            const pnlVal = pnlRaw === '' ? NaN : parseFloat(pnlRaw);
+            const openF = iOpenF >= 0 ? parseFloat(parts[iOpenF] || 'NaN') : NaN;
+            const highF = iHighF >= 0 ? parseFloat(parts[iHighF] || 'NaN') : NaN;
+            const lowF = iLowF >= 0 ? parseFloat(parts[iLowF] || 'NaN') : NaN;
+            const closeF = iCloseF >= 0 ? parseFloat(parts[iCloseF] || 'NaN') : NaN;
+            const fastEma = iEma >= 0 ? parseFloat(parts[iEma] || 'NaN') : NaN;
+            const fastEmaGradDeg = iGradDeg >= 0 ? parseFloat(parts[iGradDeg] || 'NaN') : NaN;
+            const candleType = iCandle >= 0 && parts[iCandle] ? parts[iCandle].trim() : '';
+            
+            // LONG exits: BarsOnTheFlowExit, BarsOnTheFlowRetrace
+            // SHORT exits: Buy to cover, BarsOnTheFlowExitS, BarsOnTheFlowRetraceS
+            // Stop loss: use lastEntryDirection to determine which to exit
+            const isExitLong = order === 'BarsOnTheFlowExit' || order === 'BarsOnTheFlowRetrace' || (order === 'Stop loss' && lastEntryDirection === 'LONG');
+            const isExitShort = order === 'Buy to cover' || order === 'BarsOnTheFlowExitS' || order === 'BarsOnTheFlowRetraceS' || (order === 'Stop loss' && lastEntryDirection === 'SHORT');
+
+            if (isExitLong && entriesLong.length) {
+                const entry = entriesLong.shift();
+                const tradeNum = trades.length + 1;
+                const duration = bar - entry.barStart + 1;
+                trades.push({
+                    tradeNumber: tradeNum,
+                    duration: duration,
+                    direction: 'LONG',
+                    barStart: entry.barStart,
+                    timeStart: entry.ts,
+                    barEnd: bar,
+                    pnl: !isNaN(pnlVal) ? pnlVal : ((price - entry.price) * 5),
+                    entryPrice: entry.price,
+                    exitPrice: price,
+                    openF, highF, lowF, closeF,
+                    fastEma,
+                    fastEmaGradDeg,
+                    candleType: entry.candleType,
+                    barPattern: entry.barPattern,
+                });
+                currentPosition = 'FLAT';
+            } else if (isExitShort && entriesShort.length) {
+                const entry = entriesShort.shift();
+                const tradeNum = trades.length + 1;
+                const duration = bar - entry.barStart + 1;
+                trades.push({
+                    tradeNumber: tradeNum,
+                    duration: duration,
+                    direction: 'SHORT',
+                    barStart: entry.barStart,
+                    timeStart: entry.ts,
+                    barEnd: bar,
+                    pnl: !isNaN(pnlVal) ? pnlVal : ((entry.price - price) * 5),
+                    entryPrice: entry.price,
+                    exitPrice: price,
+                    openF, highF, lowF, closeF,
+                    fastEma,
+                    fastEmaGradDeg,
+                    candleType: entry.candleType,
+                    barPattern: entry.barPattern,
+                });
+                currentPosition = 'FLAT';
+            }
+        }
+    }
+
+    currentTrades = trades;
+    currentName = name;
+    
+    // Populate bar pattern filter dropdown
+    if (barPatternFilter) {
+        const uniquePatterns = [...new Set(trades.map(t => t.barPattern).filter(p => p && p.trim()))];
+        uniquePatterns.sort();
+        
+        barPatternFilter.innerHTML = '<option value="all">All</option>';
+        uniquePatterns.forEach(pattern => {
+            const option = document.createElement('option');
+            option.value = pattern.trim();
+            option.textContent = pattern.trim();
+            barPatternFilter.appendChild(option);
+        });
+    }
+    
+    // Try to load parameters JSON file
+    loadParametersJson(name);
+    
+    applyView();
+    persistState();
+}
+
+function loadParametersJson(csvFileName) {
+    try {
+        // Derive JSON filename from CSV filename
+        // E.g., "BarsOnTheFlow_MNQZ24_2024-12-13_12-30-45-123.csv"
+        // becomes "BarsOnTheFlow_MNQZ24_2024-12-13_12-30-45-123_params.json"
+        const baseFileName = csvFileName.replace(/\.csv$/i, '');
+        const jsonFileName = baseFileName + '_params.json';
+        
+        // Try to find and load the JSON file from the same directory
+        // Since we're loading via File API, we can't directly access the file system
+        // So we'll store it for later reference or try to load via fetch if available
+        console.log('[BOTF] Looking for parameters file: ' + jsonFileName);
+    } catch (e) {
+        console.warn('Failed to load parameters: ' + e.message);
+    }
+}
+
+function displayParameters(params) {
+    if (!params || Object.keys(params).length === 0) {
+        paramsCard.style.display = 'none';
+        return;
+    }
+    
+    currentParams = params;
+    paramsCard.style.display = 'block';
+    paramsGrid.innerHTML = '';
+    
+    // Sort parameters by key for consistent display
+    const keys = Object.keys(params).sort();
+    
+    keys.forEach(key => {
+        const value = params[key];
+        const paramBox = document.createElement('div');
+        paramBox.style.cssText = 'background:#0f172a; border:1px solid #1f2937; border-radius:6px; padding:8px 10px; font-size:12px;';
+        
+        let displayValue = value;
+        if (typeof value === 'boolean') {
+            displayValue = value ? '✓ true' : '✗ false';
+        } else if (typeof value === 'number') {
+            displayValue = Number.isInteger(value) ? value : value.toFixed(4);
+        }
+        
+        paramBox.innerHTML = `<div style="color:#93c5fd; font-weight:700; margin-bottom:2px;">${key}</div><div style="color:#e5e7eb;">${displayValue}</div>`;
+        paramsGrid.appendChild(paramBox);
+    });
+}
+
+function applyView() {
+    if (!currentTrades.length) {
+        tbody.innerHTML = '';
+        table.style.display = 'none';
+        summary.textContent = 'No file loaded.';
+        return;
+    }
+    let view = currentTrades.slice();
+    if (filterMode === 'negative') {
+        view = view.filter(t => Number.isFinite(t.pnl) && t.pnl < 0);
+    } else if (filterMode === 'positive') {
+        view = view.filter(t => Number.isFinite(t.pnl) && t.pnl > 0);
+    }
+    if (gradMode === 'negative') {
+        view = view.filter(t => Number.isFinite(t.fastEmaGradDeg) && t.fastEmaGradDeg < 0);
+    } else if (gradMode === 'positive') {
+        view = view.filter(t => Number.isFinite(t.fastEmaGradDeg) && t.fastEmaGradDeg > 0);
+    }
+    if (signalMode === 'long') {
+        view = view.filter(t => t.direction === 'LONG');
+    } else if (signalMode === 'short') {
+        view = view.filter(t => t.direction === 'SHORT');
+    }
+    view = applyConditions(view, condition1);
+    view = applyConditions(view, condition2);
+    if (candleMode === 'good') {
+        view = view.filter(t => (t.candleType || '').toLowerCase() === 'good');
+    } else if (candleMode === 'bad') {
+        view = view.filter(t => (t.candleType || '').toLowerCase() === 'bad');
+    } else if (candleMode === 'good_and_bad') {
+        view = view.filter(t => (t.candleType || '').toLowerCase() === 'good_and_bad');
+    }
+    if (barPatternMode !== 'all') {
+        view = view.filter(t => (t.barPattern || '').trim() === barPatternMode);
+    }
+    // Apply legacy button sorting first
+    if (sortMode === 'pnlAsc') {
+        view.sort((a, b) => (a.pnl ?? 0) - (b.pnl ?? 0));
+    } else if (sortMode === 'pnlDesc') {
+        view.sort((a, b) => (b.pnl ?? 0) - (a.pnl ?? 0));
+    }
+    
+    // Apply column header sorting (overrides button sorting if active)
+    if (sortColumn) {
+        view.sort((a, b) => {
+            let aVal = a[sortColumn];
+            let bVal = b[sortColumn];
+            
+            // Handle Bar Pattern sorting (convert pattern string to comparable format)
+            if (sortColumn === 'barPattern') {
+                aVal = (aVal || '').trim();
+                bVal = (bVal || '').trim();
+                // Count good (G) vs bad (B) bars for sorting
+                const aGood = (aVal.match(/G/g) || []).length;
+                const bGood = (bVal.match(/G/g) || []).length;
+                const compare = aGood - bGood;
+                return sortDirection === 'asc' ? compare : -compare;
+            }
+            
+            // Handle Candle Type sorting
+            if (sortColumn === 'candleType') {
+                aVal = (aVal || '').toLowerCase();
+                bVal = (bVal || '').toLowerCase();
+                if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                return 0;
+            }
+            
+            // Handle numeric columns (pnl, fastEma)
+            aVal = Number.isFinite(aVal) ? aVal : (sortDirection === 'asc' ? Infinity : -Infinity);
+            bVal = Number.isFinite(bVal) ? bVal : (sortDirection === 'asc' ? Infinity : -Infinity);
+            return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+        });
+    }
+    
+    updateSortIndicators();
+    renderTrades(view, currentName);
+    persistState();
+}
+
+function renderTrades(trades, name) {
+    tbody.innerHTML = '';
+    // Reverse array so last bar appears at top
+    const reversedTrades = trades.slice().reverse();
+    reversedTrades.forEach(t => {
+        const tr = document.createElement('tr');
+        const pnlClass = t.pnl > 0 ? 'pnl-pos' : 'pnl-neg';
+        const cType = (t.candleType || '').toUpperCase();
+        const cClass = cType === 'GOOD' ? 'candle-good' : (cType === 'BAD' ? 'candle-bad' : 'candle-neutral');
+        
+        // Convert bar pattern text to visual circles
+        let barPatternHtml = '';
+        if (t.barPattern) {
+            const circles = [];
+            let i = 0;
+            const pattern = t.barPattern;
+            
+            while (i < pattern.length) {
+                // Check if current char is a digit
+                if (/\d/.test(pattern[i])) {
+                    // Extract full number (could be multi-digit)
+                    let numStr = '';
+                    while (i < pattern.length && /\d/.test(pattern[i])) {
+                        numStr += pattern[i];
+                        i++;
+                    }
+                    const count = parseInt(numStr);
+                    // Next char should be G or B
+                    if (i < pattern.length) {
+                        const type = pattern[i];
+                        const circleClass = type === 'G' ? 'bar-good' : 'bar-bad';
+                        for (let j = 0; j < count; j++) {
+                            circles.push(`<span class="bar-circle ${circleClass}"></span>`);
+                        }
+                        i++;
+                    }
+                } else {
+                    // Single G or B without number
+                    const type = pattern[i];
+                    const circleClass = type === 'G' ? 'bar-good' : 'bar-bad';
+                    circles.push(`<span class="bar-circle ${circleClass}"></span>`);
+                    i++;
+                }
+            }
+            barPatternHtml = `<div class="bar-pattern">${circles.join('')}</div>`;
+        }
+        
+        tr.innerHTML = `
+            <td>${t.tradeNumber || ''}</td>
+            <td>${t.duration || ''}</td>
+            <td>${t.timeStart}</td>
+            <td><span class="badge ${t.direction === 'LONG' ? 'badge-long' : 'badge-short'}">${t.direction}</span></td>
+            <td>${t.barStart}</td>
+            <td>${t.barEnd || ''}</td>
+            <td class="${cClass}">${cType}</td>
+            <td>${Number.isFinite(t.openF) ? t.openF.toFixed(4) : ''}</td>
+            <td>${Number.isFinite(t.highF) ? t.highF.toFixed(4) : ''}</td>
+            <td>${Number.isFinite(t.lowF) ? t.lowF.toFixed(4) : ''}</td>
+            <td>${Number.isFinite(t.closeF) ? t.closeF.toFixed(4) : ''}</td>
+            <td>${Number.isFinite(t.fastEma) ? t.fastEma.toFixed(4) : ''}</td>
+            <td>${Number.isFinite(t.fastEmaGradDeg) ? t.fastEmaGradDeg.toFixed(2) : ''}</td>
+            <td class="${pnlClass}">${isNaN(t.pnl) ? '' : t.pnl.toFixed(2)}</td>
+            <td>${barPatternHtml}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    const pnlLabel = filterMode === 'negative' ? 'negative PnL only' : (filterMode === 'positive' ? 'positive PnL only' : 'all PnL');
+    const gradLabel = gradMode === 'negative' ? 'negative grad only' : (gradMode === 'positive' ? 'positive grad only' : 'all grads');
+    const sigLabel = signalMode === 'long' ? 'longs only' : (signalMode === 'short' ? 'shorts only' : 'all signals');
+    const candleLabel = candleMode === 'good' ? 'good candles only' : (candleMode === 'bad' ? 'bad candles only' : (candleMode === 'good_and_bad' ? 'good & bad only' : 'all candles'));
+    const condText = buildConditionSummary();
+    summary.textContent = `${trades.length} trades shown (${pnlLabel}, ${gradLabel}, ${sigLabel}, ${candleLabel}${condText ? ', ' + condText : ''}), source: ${name}. (Includes final OHLC and fast EMA at exit bar)`;
+    table.style.display = trades.length ? 'table' : 'none';
+}
+
+function persistState() {
+    try {
+        const payload = { name: currentName, trades: currentTrades, filterMode, gradMode, sortMode, candleMode, ts: Date.now() };
+        payload.signalMode = signalMode;
+        payload.sortColumn = sortColumn;
+        payload.sortDirection = sortDirection;
+        payload.condition1 = condition1;
+        payload.condition2 = condition2;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch (e) {
+        console.warn('Failed to persist state', e);
+    }
+}
+
+function restoreFromStorage() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+            summary.textContent = 'No saved session to restore.';
+            return;
+        }
+        const payload = JSON.parse(raw);
+        if (!payload || !Array.isArray(payload.trades)) {
+            summary.textContent = 'Saved session is invalid.';
+            return;
+        }
+        currentTrades = payload.trades;
+        currentName = payload.name || 'saved session';
+        filterMode = payload.filterMode || 'all';
+        gradMode = payload.gradMode || 'all';
+        signalMode = payload.signalMode || 'all';
+        candleMode = payload.candleMode || 'all';
+        sortMode = payload.sortMode || 'none';
+        sortColumn = payload.sortColumn || null;
+        sortDirection = payload.sortDirection || 'asc';
+        if (pnlFilter) pnlFilter.value = filterMode;
+        if (gradFilter) gradFilter.value = gradMode;
+        if (signalFilter) signalFilter.value = signalMode;
+        if (candleFilter) candleFilter.value = candleMode;
+        condition1 = payload.condition1 || condition1;
+        condition2 = payload.condition2 || condition2;
+        if (cond1Left) cond1Left.value = condition1.left || 'none';
+        if (cond1Op) cond1Op.value = condition1.op || 'lt';
+        if (cond1Right) cond1Right.value = condition1.right || 'none';
+        if (cond2Left) cond2Left.value = condition2.left || 'none';
+        if (cond2Op) cond2Op.value = condition2.op || 'lt';
+        if (cond2Right) cond2Right.value = condition2.right || 'none';
+        applyView();
+    } catch (e) {
+        summary.textContent = 'Failed to restore saved session.';
+    }
+}
+
+function applyConditions(list, condition) {
+    if (!condition || condition.left === 'none' || condition.right === 'none') return list;
+    const op = condition.op || 'lt';
+    const leftKey = condition.left;
+    const rightKey = condition.right;
+    return list.filter(t => {
+        const lhs = t[leftKey];
+        const rhs = t[rightKey];
+        if (!Number.isFinite(lhs) || !Number.isFinite(rhs)) return false;
+        return op === 'gt' ? lhs > rhs : lhs < rhs;
+    });
+}
+
+function buildConditionSummary() {
+    const parts = [];
+    const labelFor = (key) => {
+        switch (key) {
+            case 'openF': return 'Open';
+            case 'highF': return 'High';
+            case 'lowF': return 'Low';
+            case 'closeF': return 'Close';
+            case 'fastEma': return 'Fast EMA';
+            case 'fastEmaGradDeg': return 'Fast EMA GradDeg';
+            case 'pnl': return 'PnL';
+            default: return '';
+        }
+    };
+    const toText = (cond) => {
+        if (!cond || cond.left === 'none' || cond.right === 'none') return '';
+        const l = labelFor(cond.left);
+        const r = labelFor(cond.right);
+        if (!l || !r) return '';
+        const mid = cond.op === 'gt' ? '>' : '<';
+        return `${l} ${mid} ${r}`;
+    };
+    const c1 = toText(condition1);
+    const c2 = toText(condition2);
+    if (c1) parts.push(c1);
+    if (c2) parts.push(c2);
+    return parts.length ? `conditions: ${parts.join(' AND ')}` : '';
+}
+
+// Minimal styling for inline header filter
+const style = document.createElement('style');
+style.textContent = `
+.pnl-filter {
+    position: static;
+    margin-left: 8px;
+    background: #0f172a;
+    color: #e5e7eb;
+    border: 1px solid #1f2937;
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+`;
+document.head.appendChild(style);
+
+// Auto-restore on load so refresh keeps data
+restoreFromStorage();
+</script>
+</body>
+</html>

@@ -3282,6 +3282,8 @@
             updateLiveStatus(autoSendTrends ? 'auto-send ON' : 'auto-send OFF');
         }
 
+        let enableCommandSend = false; // toggle to true if you want to actually POST commands
+
         async function sendTrendPayload(trend, reason = 'auto') {
             if (!trend) return;
             const dirRaw = String(trend.direction || trend.type || '').toUpperCase();
@@ -3317,19 +3319,24 @@
             }
 
             try {
-                const res = await fetch('/commands/trend', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const json = await res.json();
-                if (!res.ok) {
-                    console.warn('Send trend failed', json);
-                    updateLiveStatus('command failed', '#f97316');
+                if (enableCommandSend) {
+                    const res = await fetch('/commands/trend', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const json = await res.json();
+                    if (!res.ok) {
+                        console.warn('Send trend failed', json);
+                        updateLiveStatus('command failed', '#f97316');
+                    } else {
+                        lastSentTrendKey = key;
+                        console.log('Trend command sent', json);
+                        updateLiveStatus(`trend -> ${direction} (#${json.command?.id || ''})`, '#10b981');
+                    }
                 } else {
-                    lastSentTrendKey = key;
-                    console.log('Trend command sent', json);
-                    updateLiveStatus(`trend -> ${direction} (#${json.command?.id || ''})`, '#10b981');
+                    console.log('Trend command NOT sent (sending disabled)', payload);
+                    updateLiveStatus(`send disabled -> ${direction}`, '#9ca3af');
                 }
             } catch (err) {
                 console.warn('Error sending trend', err);

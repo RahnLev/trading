@@ -1,0 +1,6 @@
+NinjaScript File,Error,Code,Line,Column,
+WebTrendFollower.cs,'WebTrendFollower.OnExecutionUpdate(Execution ExecutionEventArgs)': no suitable method found to override,CS0115,148,33,
+WebTrendFollower.cs,The type or namespace name 'StreamWriter' could not be found (are you missing a using directive or an assembly reference?),CS0246,43,17,
+BareOhlcLogger.cs,'BareOhlcLogger.OnExecutionUpdate(Execution ExecutionEventArgs)': no suitable method found to override,CS0115,353,33,
+BareOhlcLogger.cs,There is no argument given that corresponds to the required parameter 'price' of 'StrategyBase.OnExecutionUpdate(Execution string double int MarketPosition string DateTime)',CS7036,355,18,
+WebTrendFollower.cs,There is no argument given that corresponds to the required parameter 'price' of 'StrategyBase.OnExecutionUpdate(Execution string double int MarketPosition string DateTime)',CS7036,150,18,

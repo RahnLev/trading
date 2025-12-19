@@ -578,7 +578,8 @@ LOG_CACHE_MAX = 1000  # Keep last 1000 log entries (entry/exit/filter decisions)
 log_cache: deque[Dict[str, Any]] = deque(maxlen=LOG_CACHE_MAX)
 
 # Strategy log folder (CSV + .log) used by the bar report endpoint
-LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'strategy_logs'))
+# Path is relative to the Custom folder (two levels up from web/dashboard, then into strategy_logs)
+LOG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'strategy_logs'))
 
 # --- Command queue for page -> strategy signals ---
 COMMAND_QUEUE_MAX = 200
@@ -625,6 +626,7 @@ def _normalize_bar(p: Dict[str, Any]) -> Dict[str, Any]:
             'low': float(p.get('Low') or p.get('low') or 0.0),
             'close': float(p.get('Close') or p.get('close') or 0.0),
             'fastGrad': float(p.get('FastGrad') or p.get('fastGrad') or 0.0),
+            'fastGradDeg': float(p.get('FastGradDeg') or p.get('fastGradDeg') or 0.0),
             'slowGrad': float(p.get('SlowGrad') or p.get('slowGrad') or 0.0),
             'accel': float(p.get('Accel') or p.get('accel') or 0.0),
             'adx': float(p.get('ADX') or p.get('adx') or 0.0),
@@ -840,6 +842,17 @@ def filter_analysis():
     except Exception as e:
         return HTMLResponse(f'<h1>Filter Analysis Page Not Found</h1><p>Error: {e}</p>', status_code=404)
 
+# BarsOnTheFlow-specific filter analysis page
+@app.get('/botf_filter_analysis.html', response_class=HTMLResponse)
+@app.get('/botf_filter_analysis', response_class=HTMLResponse)
+def botf_filter_analysis():
+    page_path = os.path.join(os.path.dirname(static_dir), 'botf_filter_analysis.html')
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return HTMLResponse(f'<h1>BOTF Filter Analysis Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
 @app.get('/bar_report.html', response_class=HTMLResponse)
 @app.get('/bar_report', response_class=HTMLResponse)
 def bar_report_page():
@@ -849,6 +862,16 @@ def bar_report_page():
             return f.read()
     except Exception as e:
         return HTMLResponse(f'<h1>Bar Report Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
+@app.get('/barFlowReport.html', response_class=HTMLResponse)
+@app.get('/barFlowReport', response_class=HTMLResponse)
+def bar_flow_report_page():
+    page_path = os.path.join(os.path.dirname(os.path.dirname(static_dir)), 'barFlowReport.html')
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return HTMLResponse(f'<h1>Bar Flow Report Page Not Found</h1><p>Error: {e}</p>', status_code=404)
 
 @app.get('/candles.html', response_class=HTMLResponse)
 @app.get('/candles', response_class=HTMLResponse)
@@ -868,6 +891,365 @@ def candles_page():
 @app.get('/ping')
 def ping():
     return JSONResponse({'status': 'ok', 'time': time.time()})
+
+@app.get('/api/latest-log')
+def api_latest_log():
+    """Return the path to the most recent BarsOnTheFlow CSV log file."""
+    csv_path = _pick_recent_csv()
+    if not csv_path or not os.path.isfile(csv_path):
+        return JSONResponse({'status': 'error', 'message': 'No log files found'}, status_code=404)
+    return JSONResponse({'status': 'ok', 'path': csv_path, 'filename': os.path.basename(csv_path)})
+
+@app.get('/api/bar-data')
+def api_bar_data(bar: int):
+    """Return detailed data for a specific bar from the latest log file."""
+    csv_path = _pick_recent_csv()
+    print(f'[API] bar-data request for bar={bar}, csv_path={csv_path}')
+    if not csv_path or not os.path.isfile(csv_path):
+        print(f'[API] bar-data: No CSV file found')
+        return JSONResponse({'status': 'error', 'message': 'No log files found'}, status_code=404)
+    
+    try:
+        with open(csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            row_count = 0
+            for row in reader:
+                row_count += 1
+                if int(row.get('bar', -1)) == bar:
+                    print(f'[API] bar-data: Found bar {bar} at row {row_count}')
+                    # Convert boolean string values to actual booleans
+                    bar_data = dict(row)
+                    for key in ['allowLongThisBar', 'allowShortThisBar', 'trendUpAtDecision', 'trendDownAtDecision', 'pendingShortFromGood', 'pendingLongFromBad']:
+                        if key in bar_data:
+                            bar_data[key] = bar_data[key].lower() == 'true'
+                    return JSONResponse(bar_data)
+        
+        print(f'[API] bar-data: Bar {bar} not found in log (scanned {row_count} rows)')
+        return JSONResponse({'status': 'error', 'message': f'Bar {bar} not found in log'}, status_code=404)
+    except Exception as ex:
+        print(f'[API] bar-data error: {ex}')
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.get('/api/strategy-params')
+def api_strategy_params():
+    """Return strategy parameters from the latest params JSON file."""
+    csv_path = _pick_recent_csv()
+    if not csv_path or not os.path.isfile(csv_path):
+        return JSONResponse({'status': 'error', 'message': 'No log files found'}, status_code=404)
+    
+    # Look for matching params file (same basename but with _params.json suffix)
+    base_path = os.path.splitext(csv_path)[0]
+    params_path = base_path + '_params.json'
+    
+    if not os.path.isfile(params_path):
+        return JSONResponse({'status': 'error', 'message': 'No parameters file found'}, status_code=404)
+    
+    try:
+        with open(params_path, 'r', encoding='utf-8') as f:
+            params = json.load(f)
+            return JSONResponse(params)
+    except Exception as ex:
+        print(f'[API] strategy-params error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.get('/api/strategy-state')
+def api_strategy_state():
+    """Return current strategy state from the live state JSON file.
+    This allows external tools (like Copilot) to query real-time strategy state
+    including contracts, position, intended position, and all key parameters.
+    """
+    state_path = os.path.join(LOG_DIR, '..', 'strategy_state', 'BarsOnTheFlow_state.json')
+    state_path = os.path.normpath(state_path)
+    
+    if not os.path.isfile(state_path):
+        return JSONResponse({
+            'status': 'offline',
+            'message': 'Strategy state file not found - strategy may not be running',
+            'expectedPath': state_path
+        }, status_code=404)
+    
+    try:
+        # Check file age - if older than 5 minutes, strategy may have stopped
+        file_age = time.time() - os.path.getmtime(state_path)
+        
+        with open(state_path, 'r', encoding='utf-8') as f:
+            state = json.load(f)
+        
+        state['_fileAgeSeconds'] = round(file_age, 1)
+        state['_isStale'] = file_age > 300  # Stale if older than 5 minutes
+        
+        return JSONResponse(state)
+    except Exception as ex:
+        print(f'[API] strategy-state error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+# ============================================================================
+# VOLATILITY / DYNAMIC STOP LOSS API
+# ============================================================================
+
+VOLATILITY_DB_PATH = os.path.join(os.path.dirname(__file__), 'volatility.db')
+
+@app.get('/api/volatility/recommended-stop')
+def api_volatility_recommended_stop(hour: int = None, volume: int = 0, symbol: str = 'MNQ'):
+    """Get recommended stop loss in ticks based on hour and current volume.
+    
+    Query params:
+        hour: Hour of day (0-23 ET). If not provided, uses current hour.
+        volume: Current bar volume for volume-adjusted stop
+        symbol: Trading symbol (default MNQ)
+    
+    Returns:
+        recommended_stop_ticks: Recommended stop loss in ticks
+        avg_bar_range: Average bar range for this hour (in points)
+        avg_volume: Average volume for this hour
+        volume_condition: LOW/NORMAL/HIGH based on current vs average
+        confidence: LOW/MEDIUM/HIGH based on sample count
+    """
+    try:
+        if hour is None:
+            hour = datetime.now().hour
+        
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get stats for this hour
+        cursor.execute('''
+            SELECT avg_bar_range, avg_volume, avg_range_per_1k_volume, sample_count
+            FROM volatility_stats
+            WHERE hour_of_day = ? AND symbol = ? AND day_of_week IS NULL
+        ''', (hour, symbol))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if not row or row[3] < 10:  # Need at least 10 samples
+            return JSONResponse({
+                'recommended_stop_ticks': 16,  # Default 4 points
+                'avg_bar_range': 0,
+                'avg_volume': 0,
+                'volume_condition': 'UNKNOWN',
+                'confidence': 'LOW',
+                'message': f'Insufficient data for hour {hour} ({row[3] if row else 0} samples)'
+            })
+        
+        avg_range, avg_volume, avg_range_per_vol, sample_count = row
+        
+        # Determine volume condition
+        if volume > 0 and avg_volume > 0:
+            volume_ratio = volume / avg_volume
+            if volume_ratio < 0.7:
+                volume_condition = 'LOW'
+                volume_multiplier = 0.85  # Tighter stops in low volume
+            elif volume_ratio > 1.3:
+                volume_condition = 'HIGH'
+                volume_multiplier = 1.25  # Wider stops in high volume
+            else:
+                volume_condition = 'NORMAL'
+                volume_multiplier = 1.0
+        else:
+            volume_condition = 'NORMAL'
+            volume_multiplier = 1.0
+        
+        # Calculate recommended stop
+        # Base: average bar range * 1.2 buffer * volume adjustment
+        base_stop_points = avg_range * 1.2 * volume_multiplier
+        recommended_ticks = int(base_stop_points * 4)  # 4 ticks per point
+        
+        # Confidence based on sample count
+        if sample_count >= 100:
+            confidence = 'HIGH'
+        elif sample_count >= 30:
+            confidence = 'MEDIUM'
+        else:
+            confidence = 'LOW'
+        
+        # Clamp to reasonable range (2-20 points = 8-80 ticks)
+        recommended_ticks = max(8, min(80, recommended_ticks))
+        
+        return JSONResponse({
+            'recommended_stop_ticks': recommended_ticks,
+            'avg_bar_range': round(avg_range, 2),
+            'avg_volume': int(avg_volume),
+            'volume_condition': volume_condition,
+            'confidence': confidence,
+            'sample_count': sample_count,
+            'hour': hour
+        })
+        
+    except Exception as ex:
+        print(f'[API] volatility recommended-stop error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.post('/api/volatility/record-bar')
+async def api_volatility_record_bar(request: Request):
+    """Record a bar sample for volatility tracking.
+    
+    POST body:
+        timestamp: Bar timestamp (string)
+        bar_index: Bar number
+        symbol: Trading symbol
+        open, high, low, close: Bar OHLC prices
+        volume: Bar volume
+        direction: LONG/SHORT/FLAT
+        in_trade: Boolean
+        trade_result_ticks: P/L in ticks if exiting (optional)
+    """
+    try:
+        data = await request.json()
+        
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cursor = conn.cursor()
+        
+        timestamp = data['timestamp']
+        bar_index = data.get('bar_index', 0)
+        symbol = data.get('symbol', 'MNQ')
+        open_p = float(data['open'])
+        high_p = float(data['high'])
+        low_p = float(data['low'])
+        close_p = float(data['close'])
+        volume = int(data['volume'])
+        direction = data.get('direction', 'FLAT')
+        in_trade = data.get('in_trade', False)
+        trade_result = data.get('trade_result_ticks')
+        
+        # Parse timestamp
+        try:
+            dt = datetime.strptime(timestamp.split('.')[0], '%Y-%m-%d %H:%M:%S')
+        except:
+            dt = datetime.now()
+        
+        hour_of_day = dt.hour
+        day_of_week = dt.weekday()
+        
+        # Calculate metrics
+        bar_range = high_p - low_p
+        body_size = abs(close_p - open_p)
+        
+        if close_p >= open_p:
+            upper_wick = high_p - close_p
+            lower_wick = open_p - low_p
+        else:
+            upper_wick = high_p - open_p
+            lower_wick = close_p - low_p
+        
+        range_per_1k_volume = (bar_range / (volume / 1000)) if volume > 0 else 0
+        
+        cursor.execute('''
+            INSERT INTO bar_samples (
+                timestamp, bar_index, symbol, hour_of_day, day_of_week,
+                open_price, high_price, low_price, close_price, volume,
+                bar_range, body_size, upper_wick, lower_wick,
+                range_per_1k_volume, direction, in_trade, trade_result_ticks
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            timestamp, bar_index, symbol, hour_of_day, day_of_week,
+            open_p, high_p, low_p, close_p, volume,
+            bar_range, body_size, upper_wick, lower_wick,
+            range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        return JSONResponse({'status': 'ok', 'bar_index': bar_index, 'hour': hour_of_day})
+        
+    except Exception as ex:
+        print(f'[API] volatility record-bar error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.get('/api/volatility/stats')
+def api_volatility_stats(symbol: str = 'MNQ'):
+    """Get volatility statistics by hour for analysis."""
+    try:
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT hour_of_day, sample_count, avg_bar_range, avg_volume, 
+                   avg_range_per_1k_volume, min_bar_range, max_bar_range
+            FROM volatility_stats
+            WHERE symbol = ? AND day_of_week IS NULL
+            ORDER BY hour_of_day
+        ''', (symbol,))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        stats = []
+        for row in rows:
+            stats.append({
+                'hour': row[0],
+                'sample_count': row[1],
+                'avg_bar_range': round(row[2], 2) if row[2] else 0,
+                'avg_volume': int(row[3]) if row[3] else 0,
+                'avg_range_per_1k_vol': round(row[4], 4) if row[4] else 0,
+                'min_bar_range': round(row[5], 2) if row[5] else 0,
+                'max_bar_range': round(row[6], 2) if row[6] else 0
+            })
+        
+        return JSONResponse({'status': 'ok', 'stats': stats})
+        
+    except Exception as ex:
+        print(f'[API] volatility stats error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.post('/api/volatility/update-aggregates')
+def api_volatility_update_aggregates(symbol: str = 'MNQ'):
+    """Recalculate aggregated volatility statistics from bar samples."""
+    try:
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Calculate stats for each hour
+        for hour in range(24):
+            cursor.execute('''
+                SELECT 
+                    AVG(volume) as avg_vol,
+                    MIN(volume) as min_vol,
+                    MAX(volume) as max_vol,
+                    AVG(bar_range) as avg_range,
+                    MIN(bar_range) as min_range,
+                    MAX(bar_range) as max_range,
+                    AVG(range_per_1k_volume) as avg_range_per_1k,
+                    COUNT(*) as sample_count,
+                    MIN(timestamp) as first_sample,
+                    MAX(timestamp) as last_sample
+                FROM bar_samples
+                WHERE hour_of_day = ? AND symbol = ?
+            ''', (hour, symbol))
+            
+            row = cursor.fetchone()
+            if row and row[7] > 0:  # sample_count > 0
+                cursor.execute('''
+                    INSERT OR REPLACE INTO volatility_stats (
+                        hour_of_day, day_of_week, symbol,
+                        avg_volume, min_volume, max_volume,
+                        avg_bar_range, min_bar_range, max_bar_range,
+                        avg_range_per_1k_volume,
+                        sample_count, first_sample_time, last_sample_time, last_updated
+                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ''', (
+                    hour, symbol,
+                    row[0], row[1], row[2],  # volume stats
+                    row[3], row[4], row[5],  # range stats
+                    row[6],                   # range per 1k volume
+                    row[7], row[8], row[9]   # counts and times
+                ))
+        
+        conn.commit()
+        conn.close()
+        
+        return JSONResponse({'status': 'ok', 'message': 'Aggregates updated'})
+        
+    except Exception as ex:
+        print(f'[API] volatility update-aggregates error: {ex}')
+        return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+# ============================================================================
+# END VOLATILITY API
+# ============================================================================
 
 @app.post('/recalculate')
 def recalculate():
@@ -912,6 +1294,7 @@ def get_diags(since: float = 0.0):
                 'time': d.get('localTime') or d.get('time'),
                 'barIndex': d.get('barIndex') or d.get('BarIndex'),
                 'fastGrad': d.get('fastGrad') if d.get('fastGrad') is not None else d.get('FastGrad'),
+                'fastGradDeg': d.get('fastGradDeg') if d.get('fastGradDeg') is not None else d.get('FastGradDeg'),
                 'slowGrad': d.get('slowGrad') if d.get('slowGrad') is not None else d.get('SlowGrad'),
                 'accel': d.get('accel') if d.get('accel') is not None else d.get('Accel'),
                 'adx': d.get('adx') if d.get('adx') is not None else d.get('ADX'),
@@ -988,6 +1371,7 @@ async def receive_diag(request: Request):
 
                     # Strategy diagnostics for dashboard chips
                     'fastGrad': p.get('fastGrad') if p.get('fastGrad') is not None else p.get('FastGrad'),
+                    'fastGradDeg': p.get('fastGradDeg') if p.get('fastGradDeg') is not None else p.get('FastGradDeg'),
                     'slowGrad': p.get('slowGrad') if p.get('slowGrad') is not None else p.get('SlowGrad'),
                     'accel': p.get('accel') if p.get('accel') is not None else p.get('Accel'),
                     'adx': p.get('adx') if p.get('adx') is not None else p.get('ADX'),
@@ -1457,8 +1841,28 @@ def _pick_latest_file(ext: str, exclude_substrings: List[str] | None = None) -> 
     return newest_path
 
 def _pick_recent_csv() -> str | None:
-    # Prefer bar-level CSVs (skip trade summaries)
-    return _pick_latest_file('.csv', exclude_substrings=['trades'])
+    # Look specifically for BarsOnTheFlow strategy CSV files (exclude Opportunities and OutputWindow logs)
+    if not os.path.isdir(LOG_DIR):
+        return None
+    newest_path = None
+    newest_mtime = -1.0
+    for name in os.listdir(LOG_DIR):
+        lower = name.lower()
+        # Only select BarsOnTheFlow CSV files (not NinjaTrader Grid exports or other CSVs)
+        if not lower.startswith('barsontheflow') or not lower.endswith('.csv'):
+            continue
+        # Exclude the opportunity log and output window log
+        if 'opportunities' in lower or 'outputwindow' in lower:
+            continue
+        path = os.path.join(LOG_DIR, name)
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime > newest_mtime:
+            newest_mtime = mtime
+            newest_path = path
+    return newest_path
 
 def _pick_recent_log() -> str | None:
     return _pick_latest_file('.log')
@@ -2677,6 +3081,266 @@ def get_ai_footprints(limit: int = 50, action: str = None):
     except Exception as ex:
         print(f"[AI-FOOTPRINT] Query error: {ex}")
         return JSONResponse({'error': str(ex)}, status_code=500)
+
+# ==================== Opportunity Analysis Endpoints ====================
+
+@app.get('/opportunity_analysis.html', response_class=HTMLResponse)
+@app.get('/opportunity_analysis', response_class=HTMLResponse)
+def opportunity_analysis():
+    """Serve the opportunity analysis page for streak detection"""
+    page_path = os.path.join(os.path.dirname(static_dir), 'opportunity_analysis.html')
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            return HTMLResponse(f.read())
+    except Exception as e:
+        return HTMLResponse(f'<h1>Opportunity Analysis Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
+@app.get('/api/opportunity-files')
+def get_opportunity_files():
+    """List available opportunity log CSV files"""
+    try:
+        files = []
+        for filename in os.listdir(LOG_DIR):
+            if filename.startswith('BarsOnTheFlow_Opportunities_') and filename.endswith('.csv'):
+                filepath = os.path.join(LOG_DIR, filename)
+                # Get file stats
+                stat = os.stat(filepath)
+                mtime = datetime.fromtimestamp(stat.st_mtime)
+                
+                # Count rows
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        row_count = sum(1 for _ in f) - 1  # Subtract header
+                except:
+                    row_count = 0
+                
+                files.append({
+                    'filename': filename,
+                    'timestamp': mtime.strftime('%Y-%m-%d %H:%M:%S'),
+                    'bars': row_count,
+                    'size': stat.st_size
+                })
+        
+        # Sort by timestamp descending (newest first)
+        files.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return JSONResponse({'files': files, 'count': len(files)})
+    except Exception as ex:
+        print(f"[OPPORTUNITY] Error listing files: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/analyze-streaks')
+async def analyze_streaks(request: Request):
+    """Analyze opportunity log for directional streaks"""
+    try:
+        params = await request.json()
+        filename = params.get('filename')
+        min_streak = params.get('min_streak', 5)
+        max_streak = params.get('max_streak', 8)
+        long_gradient_threshold = params.get('long_gradient_threshold', 7.0)
+        short_gradient_threshold = params.get('short_gradient_threshold', -7.0)
+        min_movement = params.get('min_movement', 5.0)
+        counter_ratio = params.get('counter_ratio', 0.2)
+        streak_type = params.get('streak_type', 'both')
+        
+        if not filename:
+            return JSONResponse({'error': 'filename required'}, status_code=400)
+        
+        filepath = os.path.join(LOG_DIR, filename)
+        if not os.path.exists(filepath):
+            return JSONResponse({'error': 'file not found'}, status_code=404)
+        
+        # Read CSV data
+        bars = []
+        with open(filepath, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                bars.append({
+                    'bar': int(row['bar']),
+                    'timestamp': row['timestamp'],
+                    'open': float(row['open']),
+                    'high': float(row['high']),
+                    'low': float(row['low']),
+                    'close': float(row['close']),
+                    'candleType': row['candleType'],
+                    'fastEmaGradDeg': float(row['fastEmaGradDeg']) if row['fastEmaGradDeg'] not in ('', 'NaN') else None,
+                    'trendUpSignal': row['trendUpSignal'] == 'True',
+                    'trendDownSignal': row['trendDownSignal'] == 'True',
+                    'currentPosition': row['currentPosition'],
+                    'entryBar': int(row['entryBar']) if row['entryBar'] not in ('', '-1') else -1,
+                    'actionTaken': row['actionTaken'],
+                    'blockReason': row['blockReason'],
+                    'opportunityType': row['opportunityType'],
+                    'barPattern': row.get('barPattern', '')
+                })
+        
+        # Find streaks
+        streaks = find_streaks(bars, min_streak, max_streak, long_gradient_threshold, 
+                               short_gradient_threshold, min_movement, counter_ratio, streak_type)
+        
+        # Calculate statistics
+        total = len(streaks)
+        caught = sum(1 for s in streaks if s['status'] == 'caught')
+        missed = sum(1 for s in streaks if s['status'] == 'missed')
+        partial = sum(1 for s in streaks if s['status'] == 'partial')
+        avg_length = sum(s['length'] for s in streaks) / total if total > 0 else 0
+        avg_missed_points = sum(s['missed_points'] for s in streaks if s['missed_points'] > 0) / missed if missed > 0 else 0
+        
+        # Calculate PnL
+        total_pnl = 0.0
+        missed_pnl = 0.0
+        for streak in streaks:
+            if streak['status'] == 'caught':
+                # Full profit captured
+                total_pnl += streak['net_movement']
+            elif streak['status'] == 'partial':
+                # Partial profit (net movement - missed points)
+                caught_pnl = streak['net_movement'] - streak['missed_points']
+                total_pnl += caught_pnl
+                missed_pnl += streak['missed_points']
+            elif streak['status'] == 'missed':
+                # All profit missed
+                missed_pnl += streak['net_movement']
+        
+        potential_pnl = total_pnl + missed_pnl
+        
+        stats = {
+            'total_streaks': total,
+            'caught': caught,
+            'missed': missed,
+            'partial': partial,
+            'avg_length': avg_length,
+            'avg_missed_points': avg_missed_points,
+            'total_bars': len(bars),
+            'total_pnl': total_pnl,
+            'missed_pnl': missed_pnl,
+            'potential_pnl': potential_pnl
+        }
+        
+        return JSONResponse({
+            'streaks': streaks,
+            'stats': stats,
+            'params': params
+        })
+        
+    except Exception as ex:
+        print(f"[OPPORTUNITY] Analysis error: {ex}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+def find_streaks(bars, min_streak, max_streak, long_grad_thresh, short_grad_thresh, 
+                 min_movement, counter_ratio, streak_type):
+    """
+    Find directional streaks in the bar data similar to BarsOnTheFlow's 5-bar patterns.
+    
+    A streak is a sequence of bars with consistent overall direction (net positive/negative movement)
+    allowing for some counter-trend bars based on counter_ratio.
+    """
+    streaks = []
+    i = 0
+    
+    while i < len(bars) - min_streak + 1:
+        # Try to find a streak starting at bar i
+        for length in range(max_streak, min_streak - 1, -1):
+            if i + length > len(bars):
+                continue
+            
+            streak_bars = bars[i:i+length]
+            
+            # Calculate net movement and direction
+            start_price = streak_bars[0]['open']
+            end_price = streak_bars[-1]['close']
+            net_movement = end_price - start_price
+            
+            if abs(net_movement) < min_movement:
+                continue
+            
+            direction = 'LONG' if net_movement > 0 else 'SHORT'
+            
+            # Filter by streak type
+            if streak_type == 'long' and direction != 'LONG':
+                continue
+            if streak_type == 'short' and direction != 'SHORT':
+                continue
+            
+            # Count good/bad bars (good = candle matches direction)
+            good_bars = 0
+            bad_bars = 0
+            for bar in streak_bars:
+                is_good_candle = bar['candleType'] == 'good'
+                if (direction == 'LONG' and is_good_candle) or (direction == 'SHORT' and not is_good_candle):
+                    good_bars += 1
+                else:
+                    bad_bars += 1
+            
+            # Check counter-trend ratio
+            actual_counter_ratio = bad_bars / length if length > 0 else 0
+            if actual_counter_ratio > counter_ratio:
+                continue
+            
+            # Calculate average gradient
+            gradients = [b['fastEmaGradDeg'] for b in streak_bars if b['fastEmaGradDeg'] is not None]
+            avg_gradient = sum(gradients) / len(gradients) if gradients else 0
+            
+            # Check if gradient meets threshold
+            gradient_ok = True
+            if direction == 'LONG' and avg_gradient < long_grad_thresh:
+                gradient_ok = False
+            if direction == 'SHORT' and avg_gradient > short_grad_thresh:
+                gradient_ok = False
+            
+            # Determine entry status
+            entry_bar = -1
+            entry_status = 'missed'
+            missed_points = abs(net_movement)
+            block_reason = ''
+            
+            # Check if we entered during this streak
+            for idx, bar in enumerate(streak_bars):
+                if bar['entryBar'] >= 0 and bar['currentPosition'] != 'Flat':
+                    entry_bar = bar['bar']
+                    if idx == 0:
+                        entry_status = 'caught'
+                        missed_points = 0
+                    else:
+                        entry_status = 'partial'
+                        # Calculate how many points were missed before entry
+                        entry_price = streak_bars[idx]['open']
+                        missed_points = abs(entry_price - start_price)
+                    break
+                
+                # Capture block reason from missed opportunities
+                if bar['opportunityType'] in ('LONG_SIGNAL', 'SHORT_SIGNAL'):
+                    if 'SKIPPED' in bar['actionTaken'] or 'BLOCKED' in bar['actionTaken']:
+                        block_reason = bar['blockReason']
+            
+            # Only add valid streaks (either caught or had valid signal but was blocked)
+            if entry_status != 'missed' or block_reason:
+                streaks.append({
+                    'start_bar': streak_bars[0]['bar'],
+                    'end_bar': streak_bars[-1]['bar'],
+                    'length': length,
+                    'direction': direction,
+                    'net_movement': abs(net_movement),
+                    'avg_gradient': avg_gradient,
+                    'good_bars': good_bars,
+                    'bad_bars': bad_bars,
+                    'status': entry_status,
+                    'entry_bar': entry_bar,
+                    'missed_points': missed_points,
+                    'block_reason': block_reason,
+                    'pattern': streak_bars[0].get('barPattern', ''),
+                    'gradient_ok': gradient_ok
+                })
+                
+                # Skip ahead to avoid overlapping streaks
+                i += length
+                break
+        else:
+            i += 1
+    
+    return streaks
 
 if __name__ == '__main__':
     import uvicorn

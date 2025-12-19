@@ -1,0 +1,103 @@
+Category,Item,Status,Details,DateAdded
+RESOLVED,Trading with 2 contracts,VERIFIED,API shows contracts=1 - was not an issue with this strategy,2025-12-18
+FIXED,NinjaTrader compile errors,RESOLVED,Commented out missing language resource refs in csproj lines 410-417 and AssemblyAttributes line 403,2025-12-18
+FIXED,Re-entry on consecutive bars,RESOLVED,Added intendedPosition tracking to prevent UniqueEntries causing exit/re-enter on each bar - see lines 225 and OnExecutionUpdate,2025-12-18
+FIXED,Trailing stop not moving,RESOLVED,AdjustStopLoss was using SetStopLoss instead of SetTrailStop - fixed in line ~1950,2025-12-17
+FIXED,Dynamic stop loss,IMPLEMENTED,UseDynamicStopLoss + DynamicStopLookback + DynamicStopMultiplier parameters - calculates stop from average bar range,2025-12-17
+FIXED,barFlowReport undefined,RESOLVED,_pick_recent_csv was selecting Opportunities CSV instead of main trade log,2025-12-17
+API_ENDPOINT,/api/strategy-state,LIVE,GET http://localhost:51888/api/strategy-state - returns live strategy state JSON with all key parameters,2025-12-18
+API_ENDPOINT,/api/strategy-params,LIVE,GET http://localhost:51888/api/strategy-params - returns parameter config,2025-12-17
+STATE_FILE,BarsOnTheFlow_state.json,LIVE,strategy_state/BarsOnTheFlow_state.json - written every 10 bars by ExportStrategyState(),2025-12-18
+STATE_JSON_FIELD,contracts,NUMBER,Current contract size setting (verified = 1),2025-12-18
+STATE_JSON_FIELD,positionMarketPosition,STRING,Current position: Flat/Long/Short,2025-12-18
+STATE_JSON_FIELD,positionQuantity,NUMBER,Number of contracts currently held,2025-12-18
+STATE_JSON_FIELD,intendedPosition,STRING,Intended position state to prevent re-entry bugs,2025-12-18
+STATE_JSON_FIELD,stopLossPoints,NUMBER,Stop loss in points,2025-12-18
+STATE_JSON_FIELD,useTrailingStop,BOOL,Whether trailing stop is enabled,2025-12-18
+STATE_JSON_FIELD,useDynamicStopLoss,BOOL,Whether dynamic stop from candle range is enabled,2025-12-18
+STATE_JSON_FIELD,dynamicStopLookback,NUMBER,Number of bars to look back for dynamic stop calc,2025-12-18
+STATE_JSON_FIELD,dynamicStopMultiplier,NUMBER,Multiplier for dynamic stop range,2025-12-18
+STATE_JSON_FIELD,enableShorts,BOOL,Whether short entries are allowed,2025-12-18
+STATE_JSON_FIELD,pendingLongFromBad,BOOL,Whether a pending long entry is waiting,2025-12-18
+STATE_JSON_FIELD,pendingShortFromGood,BOOL,Whether a pending short entry is waiting,2025-12-18
+STATE_JSON_FIELD,currentBar,NUMBER,Current bar index in backtest/replay,2025-12-18
+KEY_PARAMETER,Contracts,VERIFIED=1,User parameter controlling position size - confirmed via API as 1,2025-12-18
+KEY_PARAMETER,intendedPosition,TRACKING,Private field at line ~225 tracks intended position to prevent re-entry bugs,2025-12-18
+KEY_PARAMETER,UseTrailingStop,SETTING,Must be True for trailing stops - works with UseDynamicStopLoss,2025-12-17
+KEY_PARAMETER,UseDynamicStopLoss,SETTING,Must be True for dynamic stop calculation from candle range,2025-12-17
+KEY_FILE,BarsOnTheFlow.cs,STRATEGY,Main strategy file ~2800 lines - Strategies folder - includes ExportStrategyState(),2025-12-18
+KEY_FILE,server.py,API,FastAPI server port 51888 - serves dashboard + /api/strategy-state endpoint,2025-12-18
+KEY_FILE,BarsOnTheFlow_state.json,STATE,strategy_state folder - live strategy state updated every 10 bars,2025-12-18
+KEY_FILE,NinjaTrader.Custom.csproj,BUILD,Project file - language resource refs commented out at lines 403-420,2025-12-18
+DEBUG_LOG_PREFIX,[EXIT_DEBUG],LOGGING,Shows which exit condition fires,2025-12-17
+DEBUG_LOG_PREFIX,[ENTRY],LOGGING,Shows entry attempts with CurrentPos and Contracts,2025-12-17
+DEBUG_LOG_PREFIX,[Entry Skip],LOGGING,Shows when entry skipped due to intendedPosition,2025-12-17
+DEBUG_LOG_PREFIX,[EXIT_FILL_DEBUG],LOGGING,Shows when exit orders fill - resets intendedPosition,2025-12-18
+DEBUG_LOG_PREFIX,[ENTRY_FILL_DEBUG],LOGGING,Shows when entry orders fill - sets intendedPosition,2025-12-18
+DEBUG_LOG_PREFIX,[ApplyStopLoss],LOGGING,Shows stop loss calculation and type,2025-12-17
+DISCOVERY,UniqueEntries bug,IMPORTANT,EntryHandling.UniqueEntries with EntriesPerDirection=1 causes NT to exit+re-enter when calling EnterLong while already long,2025-12-17
+DISCOVERY,Position.MarketPosition timing,IMPORTANT,On first tick of bar with Calculate.OnEachTick the Position state may not reflect filled orders yet,2025-12-17
+DISCOVERY,NinjaTrader compile cache,IMPORTANT,NinjaTrader generates resources.cs internally - clearing cache folder doesnt fix duplicate attribute errors,2025-12-18
+HOW_TO,Query strategy state,COPILOT,Read strategy_state/BarsOnTheFlow_state.json or call http://localhost:51888/api/strategy-state,2025-12-18
+HOW_TO,Check contracts,COPILOT,Look at 'contracts' field in state JSON - currently verified as 1,2025-12-18
+HOW_TO,Check position,COPILOT,Look at positionMarketPosition (Flat/Long/Short) and positionQuantity in state JSON,2025-12-18
+HOW_TO,Build strategy,COPILOT,Run task 'Build NinjaTrader Custom' or dotnet build NinjaTrader.Custom.csproj -c Debug,2025-12-18
+HOW_TO,Start dashboard server,COPILOT,Run task 'Run Dashboard' or python web/dashboard/server.py,2025-12-18
+STRATEGY,CBAS_SuperTrendStrategy,ACTIVE,SuperTrend-based strategy with CBAS indicator - uses in-memory bus not HTTP,2025-12-19
+COMMUNICATION,CBASTerminalBus,IN-MEMORY,CBAS strategy publishes logs/metrics via Shared/CBASTerminalBus.cs - NOT HTTP to web,2025-12-19
+COMMUNICATION,CBASTerminalWindow,NT_ADDON,NinjaTrader AddOn window receives CBASTerminalBus events - AddOns/CBASTerminalWindow.cs,2025-12-19
+COMMUNICATION,CBASTerminalRegistry,IN-MEMORY,Strategy registers with CBASTerminalRegistry.Register(InstanceId) for command routing,2025-12-19
+COMMUNICATION,CBASTerminalCommands,IN-MEMORY,Terminal commands parsed via CBASTerminalCommands.Parse() - help/toggle/set/testlong/testshort/flat/reverse,2025-12-19
+KEY_FILE,CBASSuperTrendStrategy.cs,STRATEGY,Strategies folder - ~4200 lines - A/B leg scale-out with runner trails,2025-12-19
+KEY_FILE,CBASTerminalBus.cs,SHARED,Shared folder - in-memory pub/sub bus for strategy-to-addon communication,2025-12-19
+KEY_FILE,CBASTerminalWindow.cs,ADDON,AddOns folder - NinjaTrader window UI that receives terminal bus events,2025-12-19
+KEY_FILE,CBASTestingIndicator3.cs,INDICATOR,Indicators folder - main CBAS indicator used by strategy,2025-12-19
+CSV_OUTPUT,indicators_log/*.csv,FILE,CBAS strategy writes indicator logs to LogFolder property path,2025-12-19
+PARAMETER,InstanceId,STRING,Unique ID for terminal bus routing - set in strategy properties,2025-12-19
+PARAMETER,LogFolder,PATH,Default: indicators_log - CSV output path for indicator logging,2025-12-19
+PARAMETER,MetricsIntervalSec,NUMBER,Interval for publishing metrics to terminal bus (default 2.0),2025-12-19
+TERMINAL_CMD,help,CBAS,Shows available terminal commands,2025-12-19
+TERMINAL_CMD,toggle <BoolProperty>,CBAS,Toggles boolean property value,2025-12-19
+TERMINAL_CMD,set <Property> <value>,CBAS,Sets property to value,2025-12-19
+TERMINAL_CMD,testlong <qty>,CBAS,Submits test long A/B entries,2025-12-19
+TERMINAL_CMD,testshort <qty>,CBAS,Submits test short A/B entries,2025-12-19
+TERMINAL_CMD,flat/close/cancelall,CBAS,Cancels all orders and flattens position,2025-12-19
+TERMINAL_CMD,reverse,CBAS,Reverses current position direction,2025-12-19
+TERMINAL_CMD,trailstatus,CBAS,Shows A-trail status and remaining time,2025-12-19
+TERMINAL_CMD,tpm on/off,CBAS,Enables/disables ticks-per-minute tracking,2025-12-19
+DISCOVERY,CBAS uses AddOn not HTTP,IMPORTANT,CBAS_SuperTrendStrategy communicates via in-memory CBASTerminalBus to CBASTerminalWindow AddOn - no web server,2025-12-19
+DATABASE,volatility.db,SQLITE,web/dashboard/volatility.db - 5580+ bar samples for volume/volatility analysis by hour,2025-12-19
+DB_TABLE,bar_samples,VOLATILITY,Individual bar samples: timestamp bar_index symbol hour_of_day OHLC volume bar_range direction in_trade,2025-12-19
+DB_TABLE,volatility_stats,VOLATILITY,Aggregated stats by hour: avg_bar_range avg_volume sample_count - computed from bar_samples,2025-12-19
+DB_TABLE,stop_loss_recommendations,VOLATILITY,Hour-based stop loss recommendations in ticks with confidence level,2025-12-19
+API_ENDPOINT,/api/volatility/record-bar,POST,BarsOnTheFlow POSTs bar data for volatility tracking - fire-and-forget,2025-12-19
+API_ENDPOINT,/api/volatility/recommended-stop,GET,Returns recommended stop ticks for hour/volume - used by UseVolumeAwareStop,2025-12-19
+API_ENDPOINT,/api/volatility/stats,GET,Returns all hourly volatility stats for visualization,2025-12-19
+API_ENDPOINT,/api/volatility/update-aggregates,POST,Recalculates volatility_stats from bar_samples,2025-12-19
+KEY_PARAMETER,UseVolumeAwareStop,BOTF,When True BarsOnTheFlow queries /api/volatility/recommended-stop for dynamic stops,2025-12-19
+KEY_PARAMETER,UseDynamicStopLoss,BOTF,When True calculates stop from local candle range (not database),2025-12-19
+KEY_FILE,setup_volatility_db.py,DASHBOARD,Creates volatility.db schema - bar_samples volatility_stats stop_loss_recommendations,2025-12-19
+KEY_FILE,import_volatility_data.py,DASHBOARD,Imports historical bar data from CSV into bar_samples table,2025-12-19
+KEY_FILE,check_volatility_db.py,DASHBOARD,Quick status check of volatility database - shows samples and hourly stats,2025-12-19
+HOW_TO,Check volatility DB,COPILOT,python web/dashboard/check_volatility_db.py - shows bar counts and hourly stats,2025-12-19
+HOW_TO,Query bar samples,COPILOT,SELECT * FROM bar_samples ORDER BY id DESC LIMIT 10 - in volatility.db,2025-12-19
+HOW_TO,Check hourly volatility,COPILOT,SELECT hour_of_day avg_bar_range avg_volume FROM volatility_stats WHERE symbol='MNQ',2025-12-19
+INSIGHT,Peak volatility hours,TRADING,Hour 17 (5pm ET): 37.99 avg range 10739 avg vol - highest volatility,2025-12-19
+INSIGHT,Low volatility hours,TRADING,Hour 06-08: ~7.5 avg range ~420 avg vol - lowest volatility morning hours,2025-12-19
+FEATURE,Strategy State JSON,CRITICAL,"Real-time JSON file updated by running strategies - shows ALL parameters and live position state",2025-12-19
+FEATURE,State JSON Purpose,DEBUGGING,"Copilot/AI can READ this file directly to know strategy state without asking user - instant debugging context",2025-12-19
+FEATURE,State JSON Location,PATH,strategy_state/<StrategyName>_state.json - e.g. strategy_state/BarsOnTheFlow_state.json,2025-12-19
+FEATURE,State JSON Update Freq,TIMING,Updated every 10 bars by ExportStrategyState() method - near real-time,2025-12-19
+HOW_TO,Check if strategy running,COPILOT,"Read strategy_state/<name>_state.json - if timestamp is recent and isRunning=true then active",2025-12-19
+HOW_TO,Get ALL strategy params,COPILOT,Read entire JSON file - contains all input parameters and calculated values,2025-12-19
+HOW_TO,Check current position,COPILOT,Look at positionMarketPosition and positionQuantity fields in state JSON,2025-12-19
+HOW_TO,Debug entry issues,COPILOT,Check pendingLongFromBad/pendingShortFromGood flags in state JSON,2025-12-19
+STATE_JSON_FIELD,isRunning,BOOL,True if strategy is actively processing bars - key indicator of activity,2025-12-19
+STATE_JSON_FIELD,timestamp,DATETIME,When state was last written - if old strategy not running,2025-12-19
+STATE_JSON_FIELD,calculatedStopTicks,NUMBER,Actual computed stop loss in ticks (when available),2025-12-19
+STATE_JSON_FIELD,calculatedStopPoints,NUMBER,Actual computed stop loss in points (when available),2025-12-19
+IMPORTANT,Strategy State Priority,COPILOT_FIRST,ALWAYS check strategy_state/*.json files FIRST when debugging strategy issues,2025-12-19
+IMPORTANT,State JSON Advantages,BENEFITS,"No API calls needed - direct file read - works even if dashboard server down",2025-12-19
+TODO,Add State JSON to CBAS,ENHANCEMENT,CBAS_SuperTrendStrategy should implement ExportStrategyState() like BarsOnTheFlow,2025-12-19
+CURRENT_STATE,BarsOnTheFlow,RUNNING,"Last update 2025-12-19 17:40 - Long 1 contract - bar 3950",2025-12-19
+

@@ -6,14 +6,7 @@
     <DefineConstants>$(DefineConstants);$(CiConstants)</DefineConstants>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <GenerateAssemblyCompanyAttribute>false</GenerateAssemblyCompanyAttribute>
-    <GenerateAssemblyProductAttribute>false</GenerateAssemblyProductAttribute>
-    <GenerateAssemblyTitleAttribute>false</GenerateAssemblyTitleAttribute>
-    <GenerateAssemblyCopyrightAttribute>false</GenerateAssemblyCopyrightAttribute>
-    <GenerateAssemblyCultureAttribute>false</GenerateAssemblyCultureAttribute>
-    <GenerateAssemblyVersionAttribute>false</GenerateAssemblyVersionAttribute>
-    <GenerateAssemblyFileVersionAttribute>false</GenerateAssemblyFileVersionAttribute>
-    <GenerateAssemblyInformationalVersionAttribute>false</GenerateAssemblyInformationalVersionAttribute>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
     <LangVersion>13.0</LangVersion>
     <OutputPath>bin\$(Configuration)\</OutputPath>
@@ -25,17 +18,7 @@
     <CodeAnalysisRuleSet>ManagedMinimumRules.ruleset</CodeAnalysisRuleSet>
     <DocumentationFile>bin\Release\NinjaTrader.Custom.XML</DocumentationFile>
     <GenerateSerializationAssemblies>Off</GenerateSerializationAssemblies>
-    <NoWarn>1591;CS0579;0579</NoWarn>
-    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
-    <DisableImplicitNamespaceImports>true</DisableImplicitNamespaceImports>
-    <EmbeddedResourceUseDependentUponConvention>false</EmbeddedResourceUseDependentUponConvention>
-    <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <NoWarn>1591</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <DebugSymbols>true</DebugSymbols>
@@ -91,14 +74,15 @@
   <ItemGroup>
     <PackageReference Include="ActiproSoftware.Controls.WPF.SyntaxEditor.Addons.DotNet" Version="25.1.1" />
     <PackageReference Include="System.ComponentModel.Annotations" Version="5.0.0" />
-    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Indicators\%40IchimokuCloud.cs" />
     <Compile Include="Indicators\%40FVG.cs" />
+    <Compile Include="Resource.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>Resource.resx</DependentUpon>
+    </Compile>
     <Compile Include="BarsTypes\%40DayBarsType.cs" />
     <Compile Include="BarsTypes\%40HeikenAshiBarsType.cs" />
     <Compile Include="BarsTypes\%40KagiBarsType.cs" />
@@ -379,57 +363,95 @@
     <Compile Include="SuperDomColumns\%40Recent.cs" />
     <Compile Include="SuperDomColumns\%40Volume.cs" />
     <Compile Include="SuperDomColumns\%40PullingStacking.cs" />
+    <Compile Include="Strategies\BarsOnTheFlow.cs" />
     <Compile Include="Strategies\OpenAISTR.cs" />
     <Compile Include="Strategies\%40%40DepthPeekExample.cs" />
+    <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
     <Compile Include="Strategies\Learningstrategy.cs" />
     <Compile Include="Strategies\%40%40CBASTesting.cs" />
     <Compile Include="Strategies\CorysBuySellStrategyGPT5.cs" />
     <Compile Include="Strategies\%40%40CorysBuySellSupertrendStrategy.cs" />
     <Compile Include="Strategies\CorysBuySellStrategyGPT5Trailing.cs" />
+    <Compile Include="Strategies\GradientSlopeStrategy.cs" />
     <Compile Include="Strategies\LearningStrategyUnlocked.cs" />
+    <Compile Include="Strategies\WebTrendFollower.cs" />
     <Compile Include="Strategies\CoryBuySellV2.cs" />
+    <Compile Include="Strategies\TimeframeAdvisor.cs" />
+    <Compile Include="Strategies\AiAssistedOptimizer.cs" />
     <Compile Include="Strategies\CorySTR.cs" />
     <Compile Include="Strategies\Learninstrategy.cs" />
     <Compile Include="Strategies\MNQTickTemplate.cs" />
     <Compile Include="Strategies\CoryBuySellStrategySimplfied.cs" />
+    <Compile Include="Strategies\BareOhlcLogger.cs" />
+    <Compile Include="Indicators\SecondsLeftOnBar.cs" />
     <Compile Include="Indicators\%40%40CBASTestingIndicator1.cs" />
     <Compile Include="Indicators\CBASTestingIndicator2.cs" />
+    <Compile Include="Indicators\CBASTestingIndicator3.cs" />
     <Compile Include="Indicators\%40%40CBASTestingIndicator.cs" />
+    <Compile Include="Indicators\CBASTestingIndicator4.cs" />
+    <Compile Include="Indicators\EMAGradientPair.cs" />
     <Compile Include="Indicators\StackedBuySellVolume.cs" />
     <Compile Include="Indicators\TicksPerMinute.cs" />
     <Compile Include="Indicators\CorysSupertrendBands.cs" />
+    <Compile Include="Indicators\SimpleGradientLabels.cs" />
+    <Compile Include="AddOns\%40%40CBASTerminalTab.cs" />
+    <Compile Include="AddOns\Dtoscs.cs" />
+    <Compile Include="AddOns\CBASTerminalAddOn.cs" />
+    <Compile Include="AddOns\CBASTerminalWindow.cs" />
+    <Compile Include="Shared\CBASTerminalBus.cs" />
+    <Compile Include="Shared\CBASTerminalUtils.cs" />
+    <!-- Auto-generated, commented out for VS Code builds
+    <Compile Include="obj\x64\Debug\.NETFramework,Version=v4.8.AssemblyAttributes.cs" />
+    -->
     <Compile Include="NinjaTrader.Vendor.cs" />
+    <Compile Include="GlobalSuppressions.cs" />
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DependentUpon>Resources.resx</DependentUpon>
     </Compile>
-    <Compile Include="Shared\CBASTerminalBus.cs" />
-    <Compile Include="AddOns\CBASTerminalWindow.cs" />
-    <Compile Include="Shared\CBASTerminalUtils.cs" />
-    <Compile Include="AddOns\CBASTerminalAddOn.cs" />
-    <Compile Include="AddOns\%40%40CBASTerminalTab.cs" />
-    <Compile Include="Indicators\CBASTestingIndicator4.cs" />
-    <Compile Include="Strategies\AiAssistedOptimizer.cs" />
-    <Compile Include="AddOns\Dtoscs.cs" />
-    <Compile Include="Resource.Designer.cs">
-      <AutoGen>True</AutoGen>
-      <DependentUpon>Resource.resx</DependentUpon>
-    </Compile>
-    <Compile Include="GlobalSuppressions.cs" />
-    <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
-    <Compile Include="Indicators\CBASTestingIndicator3.cs" />
-    <Compile Include="Strategies\GradientSlopeStrategy.cs" />
-    <Compile Include="Indicators\EMAGradientPair.cs" />
-    <Compile Include="Strategies\TimeframeAdvisor.cs" />
-    <Compile Include="Strategies\BareOhlcLogger.cs" />
-    <Compile Include="Strategies\WebTrendFollower.cs" />
+    <!-- Language resource files - generated by NinjaTrader, commented out for VS Code builds
+    <Compile Include="obj\Debug\zh-Hans\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\fr-FR\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\de-DE\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\es-ES\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\ru-RU\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\pt-PT\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\ko-KR\NinjaTrader.Custom.resources.cs" />
+    <Compile Include="obj\Debug\it-IT\NinjaTrader.Custom.resources.cs" />
+    -->
   </ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Update="Properties\Resources.resx">
-      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
-      <Generator>PublicResXFileCodeGenerator</Generator>
-    </EmbeddedResource>
     <EmbeddedResource Update="Resource.resx">
+      <Generator>PublicResXFileCodeGenerator</Generator>
+      <LastGenOutput>Resource.Designer.cs</LastGenOutput>
+      <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
+      <SubType>Designer</SubType>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.ru-RU.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.fr-FR.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.de-DE.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.pt-PT.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.es-ES.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.zh-Hans.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.it-IT.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Resource.ko-KR.resx">
+      <DependentUpon>Resource.resx</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Update="Properties\Resources.resx">
       <CustomToolNamespace>NinjaTrader.Custom</CustomToolNamespace>
       <Generator>PublicResXFileCodeGenerator</Generator>
     </EmbeddedResource>
@@ -437,15 +459,5 @@
   <ItemGroup>
     <None Remove="obj\**" />
     <Page Remove="obj\**" />
-    <Compile Remove="obj\**" />
-    <Compile Remove="**\obj\**" />
-    <Compile Remove="**\*.NETFramework*.cs" />
-    <Compile Remove="obj\**\*.NETFramework*.cs" />
-    <Compile Remove="**\*.NETFramework,Version*.cs" />
   </ItemGroup>
-  <Target Name="RemoveAutoGeneratedAssemblyAttributes" BeforeTargets="CoreCompile">
-    <ItemGroup>
-      <Compile Remove="@(Compile)" Condition="'%(Filename)' == '.NETFramework,Version=v4.8.AssemblyAttributes'" />
-    </ItemGroup>
-  </Target>
 </Project>

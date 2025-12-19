@@ -4,6 +4,17 @@
         <name>NinjaTrader.Custom</name>
     </assembly>
     <members>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ExportStrategyState">
+            <summary>
+            Exports current strategy state to a JSON file for external API queries.
+            This allows external tools (like Copilot) to query strategy state without asking the user.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.UpdateStrategyState">
+            <summary>
+            Updates the strategy state file - call periodically or on significant events
+            </summary>
+        </member>
         <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.IsReverseCooldownActive">
             <summary>
             Checks if reverse cooldown is active (prevents immediate reversal after flattening)

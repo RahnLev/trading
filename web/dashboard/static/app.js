@@ -13,8 +13,11 @@ function initCharts() {
   if (fastGradChart) fastGradChart.destroy();
   fastGradChart = new Chart(fgCtx, {
     type: 'line',
-    data: { labels: [], datasets: [{ label: 'FastGrad', data: [], borderColor: '#00d1b2' }] },
-    options: { animation: false, scales: { x: { display: false } }, maintainAspectRatio: true }
+    data: { labels: [], datasets: [
+      { label: 'FastGrad', data: [], borderColor: '#00d1b2' },
+      { label: 'FastGradDeg', data: [], borderColor: '#ff8c00', yAxisID: 'y1' }
+    ] },
+    options: { animation: false, scales: { x: { display: false }, y: { position: 'left' }, y1: { position: 'right', grid: { display: false } } }, maintainAspectRatio: true }
   });
   const adxCtx = document.getElementById('adxChart');
   // Destroy existing chart if it exists
@@ -45,12 +48,13 @@ async function pollDiags() {
       const lines = items.map(d => {
         const t = d.time || '';
         const fg = d.fastGrad != null ? d.fastGrad.toFixed(4) : 'N/A';
+        const fgDeg = d.fastGradDeg != null ? d.fastGradDeg.toFixed(2) : 'N/A';
         const sg = d.slowGrad != null ? d.slowGrad.toFixed(4) : 'N/A';
         const ac = d.accel != null ? d.accel.toFixed(4) : 'N/A';
         const adx = d.adx != null ? d.adx.toFixed(1) : 'N/A';
         const rsi = d.rsi != null ? d.rsi.toFixed(1) : 'N/A';
         const gs = d.gradStab != null ? d.gradStab.toFixed(4) : 'N/A';
-        return `${t} bar=${d.barIndex} fastGrad=${fg} slowGrad=${sg} accel=${ac} gradStab=${gs} adx=${adx} rsi=${rsi} blockersL=${(d.blockersLong||[]).length} blockersS=${(d.blockersShort||[]).length}`;
+        return `${t} bar=${d.barIndex} fastGrad=${fg} fastGradDeg=${fgDeg} slowGrad=${sg} accel=${ac} gradStab=${gs} adx=${adx} rsi=${rsi} blockersL=${(d.blockersLong||[]).length} blockersS=${(d.blockersShort||[]).length}`;
       });
       const isPlaceholder = out.textContent === 'Waiting for data… ensure server is running and strategy is posting.';
       const prev = isPlaceholder ? '' : out.textContent;
@@ -67,7 +71,9 @@ async function pollDiags() {
         items.forEach(d => {
           fastGradChart.data.labels.push('');
           const fgVal = Number.parseFloat(d.fastGrad);
+          const fgDegVal = Number.parseFloat(d.fastGradDeg);
           fastGradChart.data.datasets[0].data.push(Number.isFinite(fgVal) ? fgVal : 0);
+          fastGradChart.data.datasets[1].data.push(Number.isFinite(fgDegVal) ? fgDegVal : 0);
           adxChart.data.labels.push('');
           const adxVal = Number.parseFloat(d.adx);
           adxChart.data.datasets[0].data.push(Number.isFinite(adxVal) ? adxVal : 0);
@@ -77,6 +83,7 @@ async function pollDiags() {
         const excess = fastGradChart.data.labels.length - MAX_CHART_POINTS;
         fastGradChart.data.labels.splice(0, excess);
         fastGradChart.data.datasets[0].data.splice(0, excess);
+        fastGradChart.data.datasets[1].data.splice(0, excess);
       }
       if (adxChart.data.labels.length > MAX_CHART_POINTS) {
         const excess = adxChart.data.labels.length - MAX_CHART_POINTS;
@@ -96,6 +103,7 @@ async function pollDiags() {
           if (fastGradChart) {
             fastGradChart.data.labels = [];
             fastGradChart.data.datasets[0].data = [];
+            fastGradChart.data.datasets[1].data = [];
             fastGradChart.update();
           }
           if (adxChart) {

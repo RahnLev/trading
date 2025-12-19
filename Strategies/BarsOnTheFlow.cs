@@ -102,7 +102,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int FastGradLookbackBars { get; set; } = 2; // gradient lookback - use 2 for immediate visual slope
 
         [NinjaScriptProperty]
-        [Display(Name = "ExitIfEntryBarOpposite", Order = 18, GroupName = "BarsOnTheFlow")]
+        [Display(Name = "ExitIfEntryBarOpposite", Order = 18, GroupName = "BarsOnTheFlow", Description = "Exit immediately if the entry bar closes opposite to trade direction (e.g., long entry bar closes down). Helps avoid positions that show immediate weakness.")]
         public bool ExitIfEntryBarOpposite { get; set; } = true; // exit if the entry bar closes opposite to trade direction
 
         [NinjaScriptProperty]
@@ -130,25 +130,60 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool ReverseOnTrendBreak { get; set; } = false; // reverse position instead of just exiting on trend break
 
         [NinjaScriptProperty]
-        [Range(3, 5)]
-        [Display(Name = "MinConsecutiveBars", Order = 25, GroupName = "BarsOnTheFlow")]
-        public int MinConsecutiveBars { get; set; } = 4; // minimum consecutive bars to start a trend (3, 4, or 5)
+        [Range(3, 10)]
+        [Display(Name = "TrendLookbackBars", Order = 25, GroupName = "BarsOnTheFlow", Description = "Number of recent bars to analyze for trend detection (3-10). Independent of minimum required matching bars.")]
+        public int TrendLookbackBars { get; set; } = 5; // lookback window for trend analysis
 
         [NinjaScriptProperty]
-        [Display(Name = "AllowMidBarGradientEntry", Order = 26, GroupName = "BarsOnTheFlow")]
+        [Range(2, 10)]
+        [Display(Name = "MinConsecutiveBars", Order = 26, GroupName = "BarsOnTheFlow", Description = "Minimum number of good/bad bars required within the lookback window to trigger a trend (2-10).")]
+        public int MinConsecutiveBars { get; set; } = 3; // minimum matching bars required
+
+        [NinjaScriptProperty]
+        [Display(Name = "UsePnLTiebreaker", Order = 27, GroupName = "BarsOnTheFlow", Description = "When enabled, allows trend entry when minimum bars not met but net PnL supports the direction. When disabled, strictly requires minimum consecutive bars.")]
+        public bool UsePnLTiebreaker { get; set; } = false; // PnL tiebreaker for marginal patterns
+
+        [NinjaScriptProperty]
+        [Display(Name = "AllowMidBarGradientEntry", Order = 28, GroupName = "BarsOnTheFlow")]
         public bool AllowMidBarGradientEntry { get; set; } = false; // allow entry mid-bar when gradient crosses threshold
 
         [NinjaScriptProperty]
-        [Display(Name = "AllowMidBarGradientExit", Order = 27, GroupName = "BarsOnTheFlow")]
+        [Display(Name = "AllowMidBarGradientExit", Order = 29, GroupName = "BarsOnTheFlow")]
         public bool AllowMidBarGradientExit { get; set; } = false; // allow exit mid-bar when gradient crosses unfavorable threshold
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
-        [Display(Name = "Stop Loss Points", Order = 28, GroupName = "BarsOnTheFlow")]
+        [Display(Name = "Stop Loss Points", Order = 30, GroupName = "BarsOnTheFlow")]
         public int StopLossPoints { get; set; } = 20; // stop loss in points (0 = disabled)
 
-        private readonly Queue<bool> recentGood = new Queue<bool>(5);
-        private readonly Queue<double> recentPnl = new Queue<double>(5);
+        [NinjaScriptProperty]
+        [Display(Name = "UseTrailingStop", Order = 31, GroupName = "BarsOnTheFlow", Description = "When enabled, stop loss trails price dynamically. When disabled, stop loss is static at entry price minus StopLossPoints.")]
+        public bool UseTrailingStop { get; set; } = false; // use trailing stop instead of static stop
+
+        [NinjaScriptProperty]
+        [Display(Name = "UseDynamicStopLoss", Order = 32, GroupName = "BarsOnTheFlow", Description = "When enabled, stop loss is calculated based on volatility data. When disabled, uses fixed StopLossPoints value.")]
+        public bool UseDynamicStopLoss { get; set; } = false; // calculate stop loss from volatility data
+
+        [NinjaScriptProperty]
+        [Range(1, 20)]
+        [Display(Name = "DynamicStopLookback", Order = 33, GroupName = "BarsOnTheFlow", Description = "Number of recent candles to average for dynamic stop loss calculation (fallback when API unavailable).")]
+        public int DynamicStopLookback { get; set; } = 5; // number of bars to average for dynamic stop
+
+        [NinjaScriptProperty]
+        [Range(0.1, 5.0)]
+        [Display(Name = "DynamicStopMultiplier", Order = 34, GroupName = "BarsOnTheFlow", Description = "Multiplier for average candle range (e.g., 1.0 = 1x average range, 1.5 = 1.5x average range).")]
+        public double DynamicStopMultiplier { get; set; } = 1.0; // multiplier for average range
+
+        [NinjaScriptProperty]
+        [Display(Name = "UseVolumeAwareStop", Order = 35, GroupName = "BarsOnTheFlow", Description = "Query volatility database for hour/volume adjusted stop loss. Requires server running.")]
+        public bool UseVolumeAwareStop { get; set; } = true; // use API for volume-aware stops
+
+        [NinjaScriptProperty]
+        [Display(Name = "EnableOpportunityLog", Order = 36, GroupName = "BarsOnTheFlow")]
+        public bool EnableOpportunityLog { get; set; } = true; // log every bar with opportunity analysis
+
+        private readonly Queue<bool> recentGood = new Queue<bool>(10);
+        private readonly Queue<double> recentPnl = new Queue<double>(10);
 
         private double lastFastEmaSlope = double.NaN;
 
@@ -162,6 +197,16 @@ namespace NinjaTrader.NinjaScript.Strategies
         private StreamWriter logWriter;
         private string logFilePath;
         private bool logInitialized;
+        
+        // Opportunity analysis logging
+        private StreamWriter opportunityLogWriter;
+        private string opportunityLogPath;
+        private bool opportunityLogInitialized;
+        
+        // Output window logging
+        private StreamWriter outputLogWriter;
+        private string outputLogPath;
+        private bool outputLogInitialized;
 
         // Deferred execution logs waiting for bar-close OHLC
         private readonly List<PendingLogEntry> pendingLogs = new List<PendingLogEntry>();
@@ -181,6 +226,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Track the bar and direction of the most recent entry to police entry-bar closes
         private int lastEntryBarIndex = -1;
         private MarketPosition lastEntryDirection = MarketPosition.Flat;
+        
+        // Track intended position to avoid re-entry with UniqueEntries mode
+        private MarketPosition intendedPosition = MarketPosition.Flat;
 
         private double lastFastEmaGradDeg = double.NaN;
 
@@ -188,6 +236,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         private System.Windows.Controls.Grid barNavPanel;
         private System.Windows.Controls.TextBox barNavTextBox;
         private System.Windows.Controls.Button barNavButton;
+        
+        // Stop loss controls
+        private System.Windows.Controls.TextBox stopLossTextBox;
+        private System.Windows.Controls.Button stopLossPlusButton;
+        private System.Windows.Controls.Button stopLossMinusButton;
 
         protected override void OnStateChange()
         {
@@ -206,6 +259,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 fastEma = EMA(FastEmaPeriod);
                 InitializeLog();
+                
+                // Export strategy state for API queries
+                ExportStrategyState();
                 
                 // Initialize bar navigation panel on UI thread
                 if (ChartControl != null)
@@ -235,7 +291,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                     catch { }
                     fastGradDebugWriter = null;
                 }
+                if (opportunityLogWriter != null)
+                {
+                    try
+                    {
+                        opportunityLogWriter.Flush();
+                        opportunityLogWriter.Dispose();
+                    }
+                    catch { }
+                    opportunityLogWriter = null;
+                }
+                if (outputLogWriter != null)
+                {
+                    try
+                    {
+                        outputLogWriter.Flush();
+                        outputLogWriter.Dispose();
+                    }
+                    catch { }
+                    outputLogWriter = null;
+                }
                 logInitialized = false;
+                opportunityLogInitialized = false;
+                outputLogInitialized = false;
                 
                 // Clean up bar navigation panel
                 if (ChartControl != null && barNavPanel != null)
@@ -348,6 +426,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!IsFirstTickOfBar)
                 return; // only score once per bar using the just-closed bar
             
+            // Update strategy state for external API queries
+            UpdateStrategyState();
+            
             // Reset mid-bar gradient waiting flags at start of new bar
             waitingForLongGradient = false;
             waitingForShortGradient = false;
@@ -360,6 +441,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             bool prevGood = prevClose > prevOpen;
             bool prevBad = prevClose < prevOpen;
+            
+            // Debug: Show which bar we're analyzing
+            if (CurrentBar >= 2653 && CurrentBar <= 2670)
+            {
+                Print($"[BAR_DATA_DEBUG] CurrentBar={CurrentBar}, Time={Time[0]:HH:mm}, Open[1]={Open[1]:F2}, Close[1]={Close[1]:F2}, prevGood={prevGood}, prevBad={prevBad}");
+            }
             bool trendUp = IsTrendUp();
             bool trendDown = EnableShorts && IsTrendDown();
             bool allowShortThisBar = !(AvoidShortsOnGoodCandle && prevGood);
@@ -435,6 +522,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SendDashboardDiag(allowLongThisBar, allowShortThisBar);
             }
 
+            // Record bar sample for volatility database (non-blocking)
+            if (UseVolumeAwareStop && CurrentBar > 10)
+            {
+                RecordBarSample();
+            }
+
             // Optional guard: if the bar we entered on closes opposite to our position, exit immediately on the next bar open.
             if (ExitIfEntryBarOpposite && lastEntryBarIndex == CurrentBar - 1 && Position.MarketPosition != MarketPosition.Flat)
             {
@@ -446,15 +539,19 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 if (longExits)
                 {
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitIfEntryBarOpposite triggering LONG exit - entry bar was BAD (O:{Open[1]:F2}, C:{Close[1]:F2})");
                     CaptureDecisionContext(Open[1], Close[1], true, true, trendUp, trendDown);
                     ExitLong("BarsOnTheFlowEntryBarOpp", "BarsOnTheFlowLong");
+                    intendedPosition = MarketPosition.Flat;
                     return;
                 }
 
                 if (shortExits)
                 {
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitIfEntryBarOpposite triggering SHORT exit - entry bar was GOOD (O:{Open[1]:F2}, C:{Close[1]:F2})");
                     CaptureDecisionContext(Open[1], Close[1], true, true, trendUp, trendDown);
                     ExitShort("BarsOnTheFlowEntryBarOppS", "BarsOnTheFlowShort");
+                    intendedPosition = MarketPosition.Flat;
                     return;
                 }
             }
@@ -466,14 +563,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (prevGood)
                 {
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitShortOnBad resolving - prevGood, exiting SHORT (O:{prevOpen:F2}, C:{prevClose:F2})");
                     // Previous bar was good, confirms reversal - exit now
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
                     ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
+                    intendedPosition = MarketPosition.Flat;
                     pendingExitShortOnBad = false;
                     // Don't return here - allow reversal logic to potentially enter long
                 }
                 else if (prevBad)
                 {
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitShortOnBad cancelling - prevBad, trend continues (O:{prevOpen:F2}, C:{prevClose:F2})");
                     // Previous bar was bad, we now have 3 bad bars - trend continues, cancel exit
                     pendingExitShortOnBad = false;
                 }
@@ -483,14 +583,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (prevBad)
                 {
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitLongOnGood resolving - prevBad, exiting LONG (O:{prevOpen:F2}, C:{prevClose:F2})");
                     // Previous bar was bad, confirms reversal - exit now
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
                     ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                    intendedPosition = MarketPosition.Flat;
                     pendingExitLongOnGood = false;
                     // Don't return here - allow reversal logic to potentially enter short
                 }
                 else if (prevGood)
                 {
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitLongOnGood cancelling - prevGood, trend continues (O:{prevOpen:F2}, C:{prevClose:F2})");
                     // Previous bar was good, we now have 3 good bars - trend continues, cancel exit
                     pendingExitLongOnGood = false;
                 }
@@ -501,90 +604,167 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Resolve pending deferred shorts that were blocked by a prior good bar.
             if (pendingShortFromGood && currentPos == MarketPosition.Flat)
             {
+                PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: Resolving pendingShortFromGood | trendUp={trendUp}, trendDown={trendDown}, prevGood={prevGood}, prevBad={prevBad}, gradient={lastFastEmaGradDeg:F2}", "DEBUG");
+                
                 if (trendUp)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg < SkipLongsBelowGradient;
+                    bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
+                    PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: TrendUp detected, reversing to LONG | skipDueToGradient={skipDueToGradient}", "DEBUG");
                     if (!skipDueToGradient)
                     {
-                        CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                        EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                        ApplyStopLoss("BarsOnTheFlowLong");
-                        lastEntryBarIndex = CurrentBar;
-                        lastEntryDirection = MarketPosition.Long;
-                        placedEntry = true;
+                        if (intendedPosition == MarketPosition.Long)
+                        {
+                            PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Long, skipping pendingShortFromGood entry", "DEBUG");
+                        }
+                        else
+                        {
+                            CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                            PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG from pendingShortFromGood, CurrentPos={Position.Quantity}, Contracts={Contracts}", "ENTRY");
+                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                            ApplyStopLoss("BarsOnTheFlowLong");
+                            lastEntryBarIndex = CurrentBar;
+                            lastEntryDirection = MarketPosition.Long;
+                            intendedPosition = MarketPosition.Long;
+                            placedEntry = true;
+                        }
                         pendingShortFromGood = false;
                         pendingLongFromBad = false;
+                    }
+                    else
+                    {
+                        PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: Gradient blocked LONG, clearing pending flag", "DEBUG");
+                        pendingShortFromGood = false;
                     }
                 }
                 else if (trendDown && prevBad)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg > SkipShortsAboveGradient;
+                    bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
+                    PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: TrendDown + prevBad, executing pending SHORT | skipDueToGradient={skipDueToGradient}", "DEBUG");
                     if (!skipDueToGradient)
                     {
-                        CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                        EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                        ApplyStopLoss("BarsOnTheFlowShort");
-                        lastEntryBarIndex = CurrentBar;
-                        lastEntryDirection = MarketPosition.Short;
-                        placedEntry = true;
+                        if (intendedPosition == MarketPosition.Short)
+                        {
+                            PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Short, skipping pendingShortFromGood short entry", "DEBUG");
+                        }
+                        else
+                        {
+                            CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                            PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT from pendingShortFromGood, CurrentPos={Position.Quantity}, Contracts={Contracts}", "ENTRY");
+                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                            ApplyStopLoss("BarsOnTheFlowShort");
+                            lastEntryBarIndex = CurrentBar;
+                            lastEntryDirection = MarketPosition.Short;
+                            intendedPosition = MarketPosition.Short;
+                            placedEntry = true;
+                        }
                         pendingShortFromGood = false;
                         pendingLongFromBad = false;
                     }
                     else if (AllowMidBarGradientEntry)
                     {
+                        PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: Gradient blocked SHORT, waiting for mid-bar gradient", "DEBUG");
                         waitingForShortGradient = true;
+                    }
+                    else
+                    {
+                        PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: Gradient blocked SHORT, clearing pending flag", "DEBUG");
+                        pendingShortFromGood = false;
                     }
                 }
                 else if (!trendDown)
                 {
+                    PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: TrendDown LOST, clearing pendingShortFromGood flag", "DEBUG");
                     pendingShortFromGood = false;
+                }
+                else
+                {
+                    PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: Waiting for prevBad - trendDown={trendDown}, prevGood={prevGood}, prevBad={prevBad}, keeping pending flag", "DEBUG");
                 }
             }
 
             // Resolve pending deferred longs that were blocked by a prior bad bar.
             if (!placedEntry && pendingLongFromBad && currentPos == MarketPosition.Flat)
             {
+                PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Resolving pendingLongFromBad | trendUp={trendUp}, trendDown={trendDown}, prevGood={prevGood}, prevBad={prevBad}, gradient={lastFastEmaGradDeg:F2}", "DEBUG");
+                
                 if (trendDown)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg > SkipShortsAboveGradient;
+                    bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
+                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendDown detected, reversing to SHORT | skipDueToGradient={skipDueToGradient}", "DEBUG");
                     if (!skipDueToGradient)
                     {
-                        CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                        EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                        ApplyStopLoss("BarsOnTheFlowShort");
-                        lastEntryBarIndex = CurrentBar;
-                        lastEntryDirection = MarketPosition.Short;
-                        placedEntry = true;
+                        if (intendedPosition == MarketPosition.Short)
+                        {
+                            PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Short, skipping pendingLongFromBad short entry", "DEBUG");
+                        }
+                        else
+                        {
+                            CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                            PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT from pendingLongFromBad, CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                            ApplyStopLoss("BarsOnTheFlowShort");
+                            lastEntryBarIndex = CurrentBar;
+                            lastEntryDirection = MarketPosition.Short;
+                            intendedPosition = MarketPosition.Short;
+                            placedEntry = true;
+                        }
                         pendingLongFromBad = false;
                         pendingShortFromGood = false;
                     }
                     else if (AllowMidBarGradientEntry)
                     {
+                        PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Gradient blocked SHORT, waiting for mid-bar gradient", "DEBUG");
                         waitingForShortGradient = true;
+                    }
+                    else
+                    {
+                        PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Gradient blocked SHORT, clearing pending flag", "DEBUG");
+                        pendingLongFromBad = false;
                     }
                 }
                 else if (trendUp && prevGood)
                 {
-                    bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg < SkipLongsBelowGradient;
+                    bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
+                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendUp + prevGood, executing pending LONG | skipDueToGradient={skipDueToGradient}", "DEBUG");
                     if (!skipDueToGradient)
                     {
-                        CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                        EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                        ApplyStopLoss("BarsOnTheFlowLong");
-                        lastEntryBarIndex = CurrentBar;
-                        lastEntryDirection = MarketPosition.Long;
-                        placedEntry = true;
+                        if (intendedPosition == MarketPosition.Long)
+                        {
+                            PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Long, skipping pendingLongFromBad entry", "DEBUG");
+                        }
+                        else
+                        {
+                            CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                            PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG from pendingLongFromBad, CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                            ApplyStopLoss("BarsOnTheFlowLong");
+                            lastEntryBarIndex = CurrentBar;
+                            lastEntryDirection = MarketPosition.Long;
+                            intendedPosition = MarketPosition.Long;
+                            placedEntry = true;
+                        }
                         pendingLongFromBad = false;
                         pendingShortFromGood = false;
                     }
                     else if (AllowMidBarGradientEntry)
                     {
+                        PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Gradient blocked LONG, waiting for mid-bar gradient", "DEBUG");
                         waitingForLongGradient = true;
+                    }
+                    else
+                    {
+                        PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Gradient blocked LONG, clearing pending flag", "DEBUG");
+                        pendingLongFromBad = false;
                     }
                 }
                 else if (!trendUp)
                 {
+                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendUp LOST, clearing pendingLongFromBad flag", "DEBUG");
                     pendingLongFromBad = false;
+                }
+                else
+                {
+                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Waiting for prevGood - trendUp={trendUp}, prevGood={prevGood}, prevBad={prevBad}, keeping pending flag", "DEBUG");
                 }
             }
 
@@ -599,22 +779,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                         // Use the same entry validation logic as normal long entries
                         if (AvoidLongsOnBadCandle && prevBad)
                         {
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT (no reverse due to bad candle)");
                             // Don't reverse if we would avoid longs on bad candles
                             ExitShort();
                         }
                         else
                         {
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT and REVERSING to LONG");
                             // ReverseOnTrendBreak overrides gradient filter
                             ExitShort();
-                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                            ApplyStopLoss("BarsOnTheFlowLong");
-                            lastEntryBarIndex = CurrentBar;
-                            lastEntryDirection = MarketPosition.Long;
-                            placedEntry = true;
+                            if (intendedPosition != MarketPosition.Long)
+                            {
+                                PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (reverse from short), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                // Don't apply stop loss during reversal - let NT handle the transition
+                                lastEntryBarIndex = CurrentBar;
+                                lastEntryDirection = MarketPosition.Long;
+                                intendedPosition = MarketPosition.Long;
+                                placedEntry = true;
+                            }
+                            else
+                            {
+                                PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Long, skipping reversal entry", "DEBUG");
+                            }
                         }
                     }
                     else
                     {
+                        Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         ExitShort();
                     }
                 }
@@ -623,28 +815,49 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (AvoidLongsOnBadCandle && prevBad)
                     {
+                        Print($"[Entry Block] Bar {CurrentBar}: Deferring LONG - bar closed BAD (O:{prevOpen:F2}, C:{prevClose:F2})");
                         pendingLongFromBad = true;
                         pendingShortFromGood = false;
                     }
                     else if (allowLongThisBar)
                     {
-                        // Check gradient filter: skip longs if EMA gradient is below threshold
-                        bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg < SkipLongsBelowGradient;
-                        if (!skipDueToGradient)
+                        // Double-check: don't enter long if bar just closed bad
+                        if (AvoidLongsOnBadCandle && prevBad)
                         {
-                            CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                            ApplyStopLoss("BarsOnTheFlowLong");
-                            lastEntryBarIndex = CurrentBar;
-                            lastEntryDirection = MarketPosition.Long;
-                            placedEntry = true;
-                            pendingLongFromBad = false;
+                            Print($"[Entry Block] Bar {CurrentBar}: BLOCKED LONG - bar closed BAD despite allowLongThisBar=true (O:{prevOpen:F2}, C:{prevClose:F2})");
+                            pendingLongFromBad = true;
                             pendingShortFromGood = false;
                         }
-                        else if (AllowMidBarGradientEntry)
+                        else
                         {
-                            // All conditions met except gradient - wait for mid-bar cross
-                            waitingForLongGradient = true;
+                            // Check gradient filter: skip longs if EMA gradient is below threshold
+                            bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
+                            if (!skipDueToGradient)
+                            {
+                                // Don't re-enter if already long - check both actual and intended position
+                                if (Position.MarketPosition != MarketPosition.Long && intendedPosition != MarketPosition.Long)
+                                {
+                                    CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (fresh signal), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                    ApplyStopLoss("BarsOnTheFlowLong");
+                                    lastEntryBarIndex = CurrentBar;
+                                    lastEntryDirection = MarketPosition.Long;
+                                    intendedPosition = MarketPosition.Long;
+                                    placedEntry = true;
+                                    pendingLongFromBad = false;
+                                    pendingShortFromGood = false;
+                                }
+                                else
+                                {
+                                    Print($"[Entry Skip] Bar {CurrentBar}: Already LONG (actual={Position.MarketPosition}, intended={intendedPosition}), not re-entering");
+                                }
+                            }
+                            else if (AllowMidBarGradientEntry)
+                            {
+                                // All conditions met except gradient - wait for mid-bar cross
+                                waitingForLongGradient = true;
+                            }
                         }
                     }
                 }
@@ -663,23 +876,35 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (AvoidShortsOnGoodCandle && prevGood)
                         {
                             // Don't reverse if we would avoid shorts on good candles
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendDown break - exiting LONG (no reverse due to good candle)");
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidShortsOnGoodCandle");
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                         }
                         else
                         {
                             // ReverseOnTrendBreak overrides gradient filter
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendDown break - exiting LONG and REVERSING to SHORT");
                             Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to short! (gradient filter overridden)");
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
-                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                            ApplyStopLoss("BarsOnTheFlowShort");
-                            lastEntryBarIndex = CurrentBar;
-                            lastEntryDirection = MarketPosition.Short;
-                            placedEntry = true;
+                            if (intendedPosition != MarketPosition.Short)
+                            {
+                                PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (reverse from long), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                // Don't apply stop loss during reversal - let NT handle the transition
+                                lastEntryBarIndex = CurrentBar;
+                                lastEntryDirection = MarketPosition.Short;
+                                intendedPosition = MarketPosition.Short;
+                                placedEntry = true;
+                            }
+                            else
+                            {
+                                PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Short, skipping TrendDown reversal", "DEBUG");
+                            }
                         }
                     }
                     else
                     {
+                        Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendDown break - exiting LONG (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         Print($"[Reverse Debug] Bar {CurrentBar}: Not reversing - ReverseOnTrendBreak={ReverseOnTrendBreak}, allowShortThisBar={allowShortThisBar}");
                         ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                     }
@@ -689,28 +914,49 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (AvoidShortsOnGoodCandle && prevGood)
                     {
+                        Print($"[Entry Block] Bar {CurrentBar}: Deferring SHORT - bar closed GOOD (O:{prevOpen:F2}, C:{prevClose:F2})");
                         pendingShortFromGood = true;
                         pendingLongFromBad = false;
                     }
                     else if (allowShortThisBar)
                     {
-                        // Check gradient filter: skip shorts if EMA gradient is above threshold
-                        bool skipDueToGradient = GradientFilterEnabled && !double.IsNaN(lastFastEmaGradDeg) && lastFastEmaGradDeg > SkipShortsAboveGradient;
-                        if (!skipDueToGradient)
+                        // Double-check: don't enter short if bar just closed good
+                        if (AvoidShortsOnGoodCandle && prevGood)
                         {
-                            CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                            ApplyStopLoss("BarsOnTheFlowShort");
-                            lastEntryBarIndex = CurrentBar;
-                            lastEntryDirection = MarketPosition.Short;
-                            placedEntry = true;
-                            pendingShortFromGood = false;
+                            Print($"[Entry Block] Bar {CurrentBar}: BLOCKED SHORT - bar closed GOOD despite allowShortThisBar=true (O:{prevOpen:F2}, C:{prevClose:F2})");
+                            pendingShortFromGood = true;
                             pendingLongFromBad = false;
                         }
-                        else if (AllowMidBarGradientEntry)
+                        else
                         {
-                            // All conditions met except gradient - wait for mid-bar cross
-                            waitingForShortGradient = true;
+                            // Check gradient filter: skip shorts if EMA gradient is above threshold
+                            bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
+                            if (!skipDueToGradient)
+                            {
+                                // Don't re-enter if already short - check both actual and intended position
+                                if (Position.MarketPosition != MarketPosition.Short && intendedPosition != MarketPosition.Short)
+                                {
+                                    CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (fresh signal), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                                    EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                    ApplyStopLoss("BarsOnTheFlowShort");
+                                    lastEntryBarIndex = CurrentBar;
+                                    lastEntryDirection = MarketPosition.Short;
+                                    intendedPosition = MarketPosition.Short;
+                                    placedEntry = true;
+                                    pendingShortFromGood = false;
+                                    pendingLongFromBad = false;
+                                }
+                                else
+                                {
+                                    Print($"[Entry Skip] Bar {CurrentBar}: Already SHORT (actual={Position.MarketPosition}, intended={intendedPosition}), not re-entering");
+                                }
+                            }
+                            else if (AllowMidBarGradientEntry)
+                            {
+                                // All conditions met except gradient - wait for mid-bar cross
+                                waitingForShortGradient = true;
+                            }
                         }
                     }
                 }
@@ -734,23 +980,35 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (AvoidShortsOnGoodCandle && prevGood)
                         {
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG (no reverse due to good candle)");
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidShortsOnGoodCandle");
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                         }
                         else
                         {
                             // ReverseOnTrendBreak overrides gradient filter
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG and REVERSING to SHORT");
                             Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to short! (gradient filter overridden)");
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
-                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                            ApplyStopLoss("BarsOnTheFlowShort");
-                            lastEntryBarIndex = CurrentBar;
-                            lastEntryDirection = MarketPosition.Short;
-                            placedEntry = true;
+                            if (intendedPosition != MarketPosition.Short)
+                            {
+                                PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (ExitOnTrendBreak reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                // Don't apply stop loss during reversal - let NT handle the transition
+                                lastEntryBarIndex = CurrentBar;
+                                lastEntryDirection = MarketPosition.Short;
+                                intendedPosition = MarketPosition.Short;
+                                placedEntry = true;
+                            }
+                            else
+                            {
+                                PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Short, skipping ExitOnTrendBreak reversal", "DEBUG");
+                            }
                         }
                     }
                     else
                     {
+                        Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         Print($"[Reverse Debug] Bar {CurrentBar}: Just exiting, no reversal");
                         ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                     }
@@ -775,23 +1033,35 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         if (AvoidLongsOnBadCandle && prevBad)
                         {
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT (no reverse due to bad candle)");
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidLongsOnBadCandle");
                             ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
                         }
                         else
                         {
                             // ReverseOnTrendBreak overrides gradient filter
+                            Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT and REVERSING to LONG");
                             Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to long! (gradient filter overridden)");
                             ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
-                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                            ApplyStopLoss("BarsOnTheFlowLong");
-                            lastEntryBarIndex = CurrentBar;
-                            lastEntryDirection = MarketPosition.Long;
-                            placedEntry = true;
+                            if (intendedPosition != MarketPosition.Long)
+                            {
+                                PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (ExitOnTrendBreak reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                // Don't apply stop loss during reversal - let NT handle the transition
+                                lastEntryBarIndex = CurrentBar;
+                                lastEntryDirection = MarketPosition.Long;
+                                intendedPosition = MarketPosition.Long;
+                                placedEntry = true;
+                            }
+                            else
+                            {
+                                PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Long, skipping ExitOnTrendBreak reversal", "DEBUG");
+                            }
                         }
                     }
                     else
                     {
+                        Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         Print($"[Reverse Debug] Bar {CurrentBar}: Just exiting, no reversal");
                         ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
                     }
@@ -812,13 +1082,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Draw gradient label on the PREVIOUS bar (barsAgo=1) since we calculate slope from bar N-1 to N
                 // The gradient at bar 156 should show the slope INTO bar 156, so label goes on bar 156 (which is barsAgo=1 when CurrentBar=157)
                 string gradTag = "FastGradLabel_" + (CurrentBar - 1);
-                double gradY = High[1] + (10 * TickSize); // above the previous bar
+                double gradY = High[1] + (18 * TickSize); // above the previous bar, higher to avoid overlap with bar number
                 string gradText = lastFastEmaGradDeg.ToString("F1");
                 Draw.Text(this, gradTag, gradText, 1, gradY, Brushes.Black); // barsAgo = 1
             }
 
             // Write a per-bar snapshot even when no orders fire
             LogBarSnapshot(1, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+            
+            // Log opportunity analysis
+            if (EnableOpportunityLog && opportunityLogInitialized)
+            {
+                LogOpportunityAnalysis(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown, placedEntry);
+            }
             
             // Debug output for mid-bar gradient waiting
             if (waitingForLongGradient)
@@ -860,6 +1136,27 @@ namespace NinjaTrader.NinjaScript.Strategies
             var action = order.OrderAction;
             bool isEntry = action == OrderAction.Buy || action == OrderAction.SellShort;
             bool isExit = action == OrderAction.Sell || action == OrderAction.BuyToCover;
+
+            // Reset intendedPosition when exits fill
+            if (isExit)
+            {
+                Print($"[EXIT_FILL_DEBUG] Bar {CurrentBar}: Exit filled - {action}, resetting intendedPosition from {intendedPosition} to Flat");
+                intendedPosition = MarketPosition.Flat;
+            }
+            // Update intendedPosition when entries fill
+            else if (isEntry)
+            {
+                if (action == OrderAction.Buy)
+                {
+                    Print($"[ENTRY_FILL_DEBUG] Bar {CurrentBar}: Long entry filled, setting intendedPosition=Long");
+                    intendedPosition = MarketPosition.Long;
+                }
+                else if (action == OrderAction.SellShort)
+                {
+                    Print($"[ENTRY_FILL_DEBUG] Bar {CurrentBar}: Short entry filled, setting intendedPosition=Short");
+                    intendedPosition = MarketPosition.Short;
+                }
+            }
 
             string reason = GetOrderReason(order, isEntry, isExit);
 
@@ -927,6 +1224,232 @@ namespace NinjaTrader.NinjaScript.Strategies
             });
         }
 
+        private void LogStrategyParameters()
+        {
+            try
+            {
+                if (logWriter == null)
+                    return;
+                
+                // Log header with timestamp
+                logWriter.WriteLine($"# BarsOnTheFlow Strategy Parameters - Run Started: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                logWriter.WriteLine($"# Instrument: {Instrument.FullName}");
+                logWriter.WriteLine("#");
+                
+                // Core parameters
+                logWriter.WriteLine($"# Contracts={Contracts}");
+                logWriter.WriteLine($"# ExitOnTrendBreak={ExitOnTrendBreak}");
+                logWriter.WriteLine($"# ExitOnRetrace={ExitOnRetrace}");
+                logWriter.WriteLine($"# TrendRetraceFraction={TrendRetraceFraction:F2}");
+                logWriter.WriteLine($"# EnableTrendOverlay={EnableTrendOverlay}");
+                logWriter.WriteLine($"# EnableShorts={EnableShorts}");
+                logWriter.WriteLine($"# AvoidShortsOnGoodCandle={AvoidShortsOnGoodCandle}");
+                logWriter.WriteLine($"# AvoidLongsOnBadCandle={AvoidLongsOnBadCandle}");
+                
+                // EMA and gradient parameters
+                logWriter.WriteLine($"# FastEmaPeriod={FastEmaPeriod}");
+                logWriter.WriteLine($"# FastGradLookbackBars={FastGradLookbackBars}");
+                logWriter.WriteLine($"# UseChartScaledFastGradDeg={UseChartScaledFastGradDeg}");
+                
+                // Gradient filter parameters
+                logWriter.WriteLine($"# GradientFilterEnabled={GradientFilterEnabled}");
+                logWriter.WriteLine($"# SkipShortsAboveGradient={SkipShortsAboveGradient:F2}");
+                logWriter.WriteLine($"# SkipLongsBelowGradient={SkipLongsBelowGradient:F2}");
+                
+                // Entry/Exit parameters
+                logWriter.WriteLine($"# MinConsecutiveBars={MinConsecutiveBars}");
+                logWriter.WriteLine($"# ReverseOnTrendBreak={ReverseOnTrendBreak}");
+                logWriter.WriteLine($"# ExitIfEntryBarOpposite={ExitIfEntryBarOpposite}");
+                logWriter.WriteLine($"# StopLossPoints={StopLossPoints}");
+                logWriter.WriteLine($"# UseTrailingStop={UseTrailingStop}");
+                logWriter.WriteLine($"# UseDynamicStopLoss={UseDynamicStopLoss}");
+                logWriter.WriteLine($"# DynamicStopLookback={DynamicStopLookback}");
+                logWriter.WriteLine($"# DynamicStopMultiplier={DynamicStopMultiplier}");
+                
+                // Mid-bar parameters
+                logWriter.WriteLine($"# AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
+                logWriter.WriteLine($"# AllowMidBarGradientExit={AllowMidBarGradientExit}");
+                
+                // Debug/Display parameters
+                logWriter.WriteLine($"# ShowBarIndexLabels={ShowBarIndexLabels}");
+                logWriter.WriteLine($"# ShowFastGradLabels={ShowFastGradLabels}");
+                logWriter.WriteLine($"# EnableFastGradDebug={EnableFastGradDebug}");
+                logWriter.WriteLine($"# EnableDashboardDiagnostics={EnableDashboardDiagnostics}");
+                logWriter.WriteLine($"# DashboardBaseUrl={DashboardBaseUrl}");
+                
+                logWriter.WriteLine("#");
+                logWriter.WriteLine("# --- End Parameters ---");
+                logWriter.WriteLine("#");
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to log parameters: {ex.Message}");
+            }
+        }
+
+        private void WriteParametersJsonFile()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(logFilePath))
+                    return;
+
+                // Derive JSON filename from CSV: BarsOnTheFlow_MNQZ24_2024-12-13_12-30-45-123.csv
+                // becomes: BarsOnTheFlow_MNQZ24_2024-12-13_12-30-45-123_params.json
+                string jsonPath = Path.Combine(
+                    Path.GetDirectoryName(logFilePath),
+                    Path.GetFileNameWithoutExtension(logFilePath) + "_params.json"
+                );
+
+                // Build JSON with all parameters
+                var paramsDict = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    // Core parameters
+                    { "Contracts", Contracts },
+                    { "ExitOnTrendBreak", ExitOnTrendBreak },
+                    { "ExitOnRetrace", ExitOnRetrace },
+                    { "TrendRetraceFraction", TrendRetraceFraction },
+                    { "EnableTrendOverlay", EnableTrendOverlay },
+                    { "EnableShorts", EnableShorts },
+                    { "AvoidShortsOnGoodCandle", AvoidShortsOnGoodCandle },
+                    { "AvoidLongsOnBadCandle", AvoidLongsOnBadCandle },
+                    
+                    // EMA and gradient parameters
+                    { "FastEmaPeriod", FastEmaPeriod },
+                    { "FastGradLookbackBars", FastGradLookbackBars },
+                    { "UseChartScaledFastGradDeg", UseChartScaledFastGradDeg },
+                    
+                    // Gradient filter parameters
+                    { "GradientFilterEnabled", GradientFilterEnabled },
+                    { "SkipShortsAboveGradient", SkipShortsAboveGradient },
+                    { "SkipLongsBelowGradient", SkipLongsBelowGradient },
+                    
+                    // Entry/Exit parameters
+                    { "TrendLookbackBars", TrendLookbackBars },
+                    { "MinConsecutiveBars", MinConsecutiveBars },
+                    { "UsePnLTiebreaker", UsePnLTiebreaker },
+                    { "ReverseOnTrendBreak", ReverseOnTrendBreak },
+                    { "ExitIfEntryBarOpposite", ExitIfEntryBarOpposite },
+                    { "StopLossPoints", StopLossPoints },
+                    { "UseTrailingStop", UseTrailingStop },
+                    { "UseDynamicStopLoss", UseDynamicStopLoss },
+                    { "DynamicStopLookback", DynamicStopLookback },
+                    { "DynamicStopMultiplier", DynamicStopMultiplier },
+                    
+                    // Mid-bar parameters
+                    { "AllowMidBarGradientEntry", AllowMidBarGradientEntry },
+                    { "AllowMidBarGradientExit", AllowMidBarGradientExit },
+                    
+                    // Debug/Display parameters
+                    { "ShowBarIndexLabels", ShowBarIndexLabels },
+                    { "ShowFastGradLabels", ShowFastGradLabels },
+                    { "EnableFastGradDebug", EnableFastGradDebug },
+                    { "EnableDashboardDiagnostics", EnableDashboardDiagnostics },
+                    { "DashboardBaseUrl", DashboardBaseUrl },
+                    { "EnableOpportunityLog", EnableOpportunityLog },
+                    
+                    // Metadata
+                    { "Instrument", Instrument.FullName },
+                    { "StartTime", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") }
+                };
+
+                // Serialize to JSON using simple manual approach (no external dependencies)
+                var json = new System.Text.StringBuilder();
+                json.AppendLine("{");
+                
+                var items = new System.Collections.Generic.List<string>();
+                foreach (var kvp in paramsDict)
+                {
+                    string value;
+                    if (kvp.Value is bool)
+                        value = kvp.Value.ToString().ToLower();
+                    else if (kvp.Value is string)
+                        value = "\"" + kvp.Value.ToString().Replace("\"", "\\\"") + "\"";
+                    else
+                        value = kvp.Value.ToString();
+                    
+                    items.Add($"  \"{kvp.Key}\": {value}");
+                }
+                
+                json.Append(string.Join(",\n", items));
+                json.AppendLine("\n}");
+
+                // Write to file
+                File.WriteAllText(jsonPath, json.ToString());
+                Print($"[BarsOnTheFlow] Parameters written to: {jsonPath}");
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to write parameters JSON: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Exports current strategy state to a JSON file for external API queries.
+        /// This allows external tools (like Copilot) to query strategy state without asking the user.
+        /// </summary>
+        private void ExportStrategyState()
+        {
+            try
+            {
+                string stateDir = Path.Combine(NinjaTrader.Core.Globals.UserDataDir, "bin", "Custom", "strategy_state");
+                Directory.CreateDirectory(stateDir);
+                string statePath = Path.Combine(stateDir, "BarsOnTheFlow_state.json");
+
+                var state = new System.Text.StringBuilder();
+                state.AppendLine("{");
+                state.AppendLine($"  \"timestamp\": \"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\",");
+                state.AppendLine($"  \"strategyName\": \"BarsOnTheFlow\",");
+                state.AppendLine($"  \"isRunning\": true,");
+                state.AppendLine($"  \"currentBar\": {CurrentBar},");
+                state.AppendLine($"  \"contracts\": {Contracts},");
+                state.AppendLine($"  \"positionMarketPosition\": \"{Position.MarketPosition}\",");
+                state.AppendLine($"  \"positionQuantity\": {Position.Quantity},");
+                state.AppendLine($"  \"intendedPosition\": \"{intendedPosition}\",");
+                state.AppendLine($"  \"stopLossPoints\": {StopLossPoints},");
+                state.AppendLine($"  \"useTrailingStop\": {UseTrailingStop.ToString().ToLower()},");
+                state.AppendLine($"  \"useDynamicStopLoss\": {UseDynamicStopLoss.ToString().ToLower()},");
+                state.AppendLine($"  \"dynamicStopLookback\": {DynamicStopLookback},");
+                state.AppendLine($"  \"dynamicStopMultiplier\": {DynamicStopMultiplier},");
+                
+                // Calculate and export the actual dynamic stop loss value
+                int calcStopTicks = CalculateStopLossTicks();
+                double calcStopPoints = calcStopTicks / 4.0;
+                state.AppendLine($"  \"calculatedStopTicks\": {calcStopTicks},");
+                state.AppendLine($"  \"calculatedStopPoints\": {calcStopPoints:F2},");
+                
+                state.AppendLine($"  \"enableShorts\": {EnableShorts.ToString().ToLower()},");
+                state.AppendLine($"  \"avoidLongsOnBadCandle\": {AvoidLongsOnBadCandle.ToString().ToLower()},");
+                state.AppendLine($"  \"avoidShortsOnGoodCandle\": {AvoidShortsOnGoodCandle.ToString().ToLower()},");
+                state.AppendLine($"  \"exitOnTrendBreak\": {ExitOnTrendBreak.ToString().ToLower()},");
+                state.AppendLine($"  \"reverseOnTrendBreak\": {ReverseOnTrendBreak.ToString().ToLower()},");
+                state.AppendLine($"  \"fastEmaPeriod\": {FastEmaPeriod},");
+                state.AppendLine($"  \"skipLongsBelowGradient\": {SkipLongsBelowGradient},");
+                state.AppendLine($"  \"skipShortsAboveGradient\": {SkipShortsAboveGradient},");
+                state.AppendLine($"  \"pendingLongFromBad\": {pendingLongFromBad.ToString().ToLower()},");
+                state.AppendLine($"  \"pendingShortFromGood\": {pendingShortFromGood.ToString().ToLower()}");
+                state.AppendLine("}");
+
+                File.WriteAllText(statePath, state.ToString());
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to export strategy state: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Updates the strategy state file - call periodically or on significant events
+        /// </summary>
+        private void UpdateStrategyState()
+        {
+            // Only update every 10 bars to avoid excessive I/O
+            if (CurrentBar % 10 == 0)
+            {
+                ExportStrategyState();
+            }
+        }
+
         private void InitializeLog()
         {
             if (logInitialized)
@@ -942,8 +1465,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                 logFilePath = Path.Combine(logDir, $"BarsOnTheFlow_{Instrument.FullName}_{ts}.csv");
                 logWriter = new StreamWriter(logFilePath, false) { AutoFlush = true };
                 logInitialized = true;
-                // CSV header
+                
+                // CSV header (parameters now logged to separate JSON file)
                 logWriter.WriteLine("timestamp,bar,direction,open,high,low,close,openFinal,highFinal,lowFinal,closeFinal,candleType,fastEma,fastEmaGradDeg,volume,bodyPct,upperWick,lowerWick,action,orderName,quantity,price,pnl,reason,prevOpen,prevClose,prevCandleType,allowLongThisBar,allowShortThisBar,trendUpAtDecision,trendDownAtDecision,decisionBarIndex,pendingShortFromGood,pendingLongFromBad,barPattern");
+                
+                // Write parameters to separate JSON file for dashboard
+                WriteParametersJsonFile();
+                
+                // Initialize opportunity analysis log
+                if (EnableOpportunityLog)
+                {
+                    InitializeOpportunityLog(logDir, ts);
+                }
+                
+                // Initialize output window log
+                InitializeOutputLog(logDir, ts);
             }
             catch (Exception ex)
             {
@@ -951,6 +1487,86 @@ namespace NinjaTrader.NinjaScript.Strategies
                 logWriter = null;
                 logInitialized = false;
             }
+        }
+
+        private void InitializeOpportunityLog(string logDir, string ts)
+        {
+            if (opportunityLogInitialized)
+                return;
+
+            try
+            {
+                opportunityLogPath = Path.Combine(logDir, $"BarsOnTheFlow_Opportunities_{Instrument.FullName}_{ts}.csv");
+                opportunityLogWriter = new StreamWriter(opportunityLogPath, false) { AutoFlush = true };
+                opportunityLogInitialized = true;
+                
+                // CSV header for opportunity analysis
+                opportunityLogWriter.WriteLine("timestamp,bar,open,high,low,close,candleType,volume,fastEma,fastEmaGradDeg," +
+                    "trendUpSignal,trendDownSignal,goodCount,badCount,netPnl,barPattern," +
+                    "currentPosition,entryBar,entryPrice,unrealizedPnL," +
+                    "allowLongThisBar,allowShortThisBar," +
+                    "gradientFilterLong,gradientFilterShort,gradientValue,gradientLongThreshold,gradientShortThreshold," +
+                    "pendingLongFromBad,pendingShortFromGood," +
+                    "actionTaken,blockReason,opportunityType");
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to initialize opportunity log: {ex.Message}");
+                opportunityLogWriter = null;
+                opportunityLogInitialized = false;
+            }
+        }
+
+        private void InitializeOutputLog(string logDir, string ts)
+        {
+            if (outputLogInitialized)
+                return;
+
+            try
+            {
+                outputLogPath = Path.Combine(logDir, $"BarsOnTheFlow_OutputWindow_{Instrument.FullName}_{ts}.csv");
+                outputLogWriter = new StreamWriter(outputLogPath, false) { AutoFlush = true };
+                outputLogInitialized = true;
+                
+                // CSV header for output window log
+                outputLogWriter.WriteLine("timestamp,bar,logType,message");
+                LogToOutput("INFO", "Output window logging initialized");
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to initialize output log: {ex.Message}");
+                outputLogWriter = null;
+                outputLogInitialized = false;
+            }
+        }
+        
+        private void LogToOutput(string logType, string message)
+        {
+            if (!outputLogInitialized || outputLogWriter == null)
+                return;
+                
+            try
+            {
+                string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff");
+                int bar = CurrentBar >= 0 ? CurrentBar : -1;
+                string escapedMessage = message.Replace("\"", "\"\""); // Escape quotes for CSV
+                outputLogWriter.WriteLine($"{timestamp},{bar},{logType},\"{escapedMessage}\"");
+            }
+            catch { }
+        }
+        
+        // Wrapper for Print() that also logs to output file
+        private void PrintAndLog(string message, string logType = "INFO")
+        {
+            base.Print(message);  // Call base Print to avoid infinite recursion
+            LogToOutput(logType, message);
+        }
+        
+        // Override Print to automatically log all messages
+        protected new void Print(string message)
+        {
+            base.Print(message);
+            LogToOutput("INFO", message);
         }
 
         private void EnsureFastGradDebugWriter()
@@ -1138,12 +1754,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private string GetBarSequencePattern()
         {
-            if (recentGood.Count < MinConsecutiveBars)
+            // Use TrendLookbackBars to show the full lookback window analyzed for the trend
+            int lookback = Math.Min(TrendLookbackBars, recentGood.Count);
+            if (lookback < 1)
                 return string.Empty;
 
-            // Take only the bars used for the trend (MinConsecutiveBars)
+            // Take the last 'lookback' bars (the window we analyzed for trend detection)
             var allBars = recentGood.ToArray();
-            var bars = allBars.Skip(Math.Max(0, allBars.Length - MinConsecutiveBars)).ToList();
+            var bars = allBars.Skip(Math.Max(0, allBars.Length - lookback)).ToList();
             
             // Count consecutive goods and bads for compact notation
             var result = new System.Text.StringBuilder();
@@ -1172,60 +1790,52 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private bool IsTrendUp()
         {
-            if (recentGood.Count < MinConsecutiveBars || recentPnl.Count < MinConsecutiveBars)
+            // Ensure we have enough data in the lookback window
+            int lookback = Math.Min(TrendLookbackBars, recentGood.Count);
+            if (lookback < MinConsecutiveBars)
                 return false;
 
-            // Only check the last MinConsecutiveBars items
-            var lastBars = recentGood.ToArray().Skip(Math.Max(0, recentGood.Count - MinConsecutiveBars)).ToArray();
-            var lastPnls = recentPnl.ToArray().Skip(Math.Max(0, recentPnl.Count - MinConsecutiveBars)).ToArray();
+            // Get the last 'lookback' bars
+            var lastBars = recentGood.ToArray().Skip(Math.Max(0, recentGood.Count - lookback)).ToArray();
+            var lastPnls = recentPnl.ToArray().Skip(Math.Max(0, recentPnl.Count - lookback)).ToArray();
             
             int goodCount = lastBars.Count(g => g);
             double netPnl = lastPnls.Sum();
             
-            if (MinConsecutiveBars == 3)
-            {
-                // 3-bar mode: need all 3 good bars (no PnL tiebreaker)
-                return goodCount == 3;
-            }
-            else if (MinConsecutiveBars == 4)
-            {
-                // 4-bar mode: need 4 consecutive OR 3 good + positive PnL
-                return goodCount == 4 || (goodCount == 3 && netPnl > 0);
-            }
-            else // MinConsecutiveBars == 5
-            {
-                // 5-bar mode: need 5 consecutive OR 4 good + positive PnL OR 3 good + strong positive PnL
-                return goodCount == 5 || (goodCount == 4 && netPnl > 0) || (goodCount == 3 && netPnl > 0);
-            }
+            // Primary condition: minimum consecutive bars met
+            if (goodCount >= MinConsecutiveBars)
+                return true;
+            
+            // Secondary condition: PnL tiebreaker (if enabled and we're close to minimum)
+            if (UsePnLTiebreaker && goodCount >= (MinConsecutiveBars - 1) && netPnl > 0)
+                return true;
+            
+            return false;
         }
 
         private bool IsTrendDown()
         {
-            if (recentGood.Count < MinConsecutiveBars || recentPnl.Count < MinConsecutiveBars)
+            // Ensure we have enough data in the lookback window
+            int lookback = Math.Min(TrendLookbackBars, recentGood.Count);
+            if (lookback < MinConsecutiveBars)
                 return false;
 
-            // Only check the last MinConsecutiveBars items
-            var lastBars = recentGood.ToArray().Skip(Math.Max(0, recentGood.Count - MinConsecutiveBars)).ToArray();
-            var lastPnls = recentPnl.ToArray().Skip(Math.Max(0, recentPnl.Count - MinConsecutiveBars)).ToArray();
+            // Get the last 'lookback' bars
+            var lastBars = recentGood.ToArray().Skip(Math.Max(0, recentGood.Count - lookback)).ToArray();
+            var lastPnls = recentPnl.ToArray().Skip(Math.Max(0, recentPnl.Count - lookback)).ToArray();
             
             int badCount = lastBars.Count(g => !g);
             double netPnl = lastPnls.Sum();
             
-            if (MinConsecutiveBars == 3)
-            {
-                // 3-bar mode: need all 3 bad bars (no PnL tiebreaker)
-                return badCount == 3;
-            }
-            else if (MinConsecutiveBars == 4)
-            {
-                // 4-bar mode: need 4 consecutive OR 3 bad + negative PnL
-                return badCount == 4 || (badCount == 3 && netPnl < 0);
-            }
-            else // MinConsecutiveBars == 5
-            {
-                // 5-bar mode: need 5 consecutive OR 4 bad + negative PnL OR 3 bad + strong negative PnL
-                return badCount == 5 || (badCount == 4 && netPnl < 0) || (badCount == 3 && netPnl < 0);
-            }
+            // Primary condition: minimum consecutive bars met
+            if (badCount >= MinConsecutiveBars)
+                return true;
+            
+            // Secondary condition: PnL tiebreaker (if enabled and we're close to minimum)
+            if (UsePnLTiebreaker && badCount >= (MinConsecutiveBars - 1) && netPnl < 0)
+                return true;
+            
+            return false;
         }
 
         private void UpdateTrendLifecycle(MarketPosition currentPos)
@@ -1399,15 +2009,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             try
             {
-                // Create main container grid
+                // Create main container grid with 2 rows
                 barNavPanel = new System.Windows.Controls.Grid
                 {
                     HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
                     VerticalAlignment = System.Windows.VerticalAlignment.Top,
                     Margin = new System.Windows.Thickness(0, 10, 100, 0), // Offset left by 100px
                     Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(230, 30, 30, 30)),
-                    Width = 180,
-                    Height = 35
+                    Width = 240
                 };
 
                 // Add rounded corners
@@ -1420,10 +2029,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                     BlurRadius = 5
                 };
 
-                // Create column definitions
+                // Create row definitions
+                barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+                barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+
+                // Create column definitions for first row (bar navigation)
                 barNavPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star) });
                 barNavPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = System.Windows.GridLength.Auto });
 
+                // ===== ROW 0: BAR NAVIGATION =====
+                
                 // Create TextBox for bar number input
                 barNavTextBox = new System.Windows.Controls.TextBox
                 {
@@ -1442,6 +2057,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     AcceptsReturn = false
                 };
                 System.Windows.Controls.Grid.SetColumn(barNavTextBox, 0);
+                System.Windows.Controls.Grid.SetRow(barNavTextBox, 0);
                 
                 // Give the textbox focus when clicked
                 barNavTextBox.GotFocus += (sender, e) =>
@@ -1469,13 +2085,86 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ToolTip = "Navigate to bar"
                 };
                 System.Windows.Controls.Grid.SetColumn(barNavButton, 1);
+                System.Windows.Controls.Grid.SetRow(barNavButton, 0);
 
                 // Handle button click
                 barNavButton.Click += (sender, e) => NavigateToBar();
 
-                // Add controls to panel
+                // ===== ROW 1: STOP LOSS CONTROLS =====
+                
+                // Create a horizontal StackPanel for stop loss controls
+                var stopLossPanel = new System.Windows.Controls.StackPanel
+                {
+                    Orientation = System.Windows.Controls.Orientation.Horizontal,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    Margin = new System.Windows.Thickness(5, 0, 5, 5)
+                };
+                System.Windows.Controls.Grid.SetColumn(stopLossPanel, 0);
+                System.Windows.Controls.Grid.SetRow(stopLossPanel, 1);
+                System.Windows.Controls.Grid.SetColumnSpan(stopLossPanel, 2); // Span both columns
+                
+                // Create minus button
+                stopLossMinusButton = new System.Windows.Controls.Button
+                {
+                    Content = "−",
+                    FontSize = 16,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 30,
+                    Height = 30,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 38, 38)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Decrease stop loss by 5 points"
+                };
+                stopLossMinusButton.Click += (sender, e) => AdjustStopLoss(-5);
+                
+                // Create stop loss display textbox
+                stopLossTextBox = new System.Windows.Controls.TextBox
+                {
+                    Text = StopLossPoints.ToString(),
+                    FontSize = 13,
+                    FontWeight = System.Windows.FontWeights.SemiBold,
+                    VerticalContentAlignment = System.Windows.VerticalAlignment.Center,
+                    HorizontalContentAlignment = System.Windows.HorizontalAlignment.Center,
+                    Padding = new System.Windows.Thickness(6, 5, 6, 5),
+                    Margin = new System.Windows.Thickness(3, 0, 3, 0),
+                    Width = 55,
+                    Height = 30,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(40, 40, 40)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
+                    BorderThickness = new System.Windows.Thickness(1),
+                    ToolTip = "Current stop loss in points",
+                    IsReadOnly = true,
+                    Focusable = false
+                };
+                
+                // Create plus button
+                stopLossPlusButton = new System.Windows.Controls.Button
+                {
+                    Content = "+",
+                    FontSize = 16,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 30,
+                    Height = 30,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Increase stop loss by 5 points"
+                };
+                stopLossPlusButton.Click += (sender, e) => AdjustStopLoss(5);
+                
+                // Add controls to stop loss panel
+                stopLossPanel.Children.Add(stopLossMinusButton);
+                stopLossPanel.Children.Add(stopLossTextBox);
+                stopLossPanel.Children.Add(stopLossPlusButton);
+
+                // Add all controls to main panel
                 barNavPanel.Children.Add(barNavTextBox);
                 barNavPanel.Children.Add(barNavButton);
+                barNavPanel.Children.Add(stopLossPanel);
 
                 // Add panel to chart
                 if (ChartControl.Parent is System.Windows.Controls.Grid)
@@ -1487,6 +2176,54 @@ namespace NinjaTrader.NinjaScript.Strategies
             catch (Exception ex)
             {
                 Print($"[BarsOnTheFlow] Failed to create bar navigation panel: {ex.Message}");
+            }
+        }
+
+        private void AdjustStopLoss(int delta)
+        {
+            try
+            {
+                // Update the stop loss value
+                int newStopLoss = Math.Max(0, StopLossPoints + delta);
+                StopLossPoints = newStopLoss;
+                
+                // Update the display
+                if (stopLossTextBox != null)
+                {
+                    ChartControl.Dispatcher.InvokeAsync(() =>
+                    {
+                        stopLossTextBox.Text = newStopLoss.ToString();
+                    });
+                }
+                
+                // Update stop loss for any active position
+                if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    string orderName = Position.MarketPosition == MarketPosition.Long ? "BarsOnTheFlowLong" : "BarsOnTheFlowShort";
+                    if (newStopLoss > 0)
+                    {
+                        if (UseTrailingStop)
+                        {
+                            SetTrailStop(orderName, CalculationMode.Ticks, newStopLoss * 4, false);
+                            Print($"[Stop Loss] Updated active {Position.MarketPosition} position trailing stop to {newStopLoss} points");
+                        }
+                        else
+                        {
+                            SetStopLoss(orderName, CalculationMode.Ticks, newStopLoss * 4, false);
+                            Print($"[Stop Loss] Updated active {Position.MarketPosition} position stop loss to {newStopLoss} points");
+                        }
+                    }
+                    else
+                    {
+                        Print($"[Stop Loss] Warning: Stop loss disabled (0 points) - existing stop not removed");
+                    }
+                }
+                
+                Print($"[Stop Loss] Adjusted to {newStopLoss} points (change: {(delta > 0 ? "+" : "")}{delta})");
+            }
+            catch (Exception ex)
+            {
+                Print($"[Stop Loss] Failed to adjust stop loss: {ex.Message}");
             }
         }
 
@@ -1631,8 +2368,202 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void ApplyStopLoss(string orderName)
         {
-            if (StopLossPoints > 0)
-                SetStopLoss(orderName, CalculationMode.Ticks, StopLossPoints * 4, false);
+            int stopLossTicks = CalculateStopLossTicks();
+            Print($"[ApplyStopLoss] Called for {orderName}, StopLossTicks={stopLossTicks}, Position={Position.MarketPosition}, UseTrailingStop={UseTrailingStop}, UseDynamicStopLoss={UseDynamicStopLoss}");
+            
+            if (stopLossTicks > 0 && Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (UseTrailingStop)
+                {
+                    SetTrailStop(orderName, CalculationMode.Ticks, stopLossTicks, false);
+                    Print($"[ApplyStopLoss] Set TRAILING stop loss: {stopLossTicks / 4.0:F2} points ({stopLossTicks} ticks)");
+                }
+                else
+                {
+                    SetStopLoss(orderName, CalculationMode.Ticks, stopLossTicks, false);
+                    Print($"[ApplyStopLoss] Set STATIC stop loss: {stopLossTicks / 4.0:F2} points ({stopLossTicks} ticks)");
+                }
+            }
+            else
+            {
+                Print($"[ApplyStopLoss] NOT setting stop loss - StopLossTicks={stopLossTicks}, Position={Position.MarketPosition}");
+            }
+        }
+
+        // Cache for volume-aware stop to avoid repeated API calls
+        private int cachedVolumeAwareStopTicks = 0;
+        private int cachedVolumeAwareStopHour = -1;
+        private DateTime cachedVolumeAwareStopTime = DateTime.MinValue;
+
+        private int CalculateStopLossTicks()
+        {
+            if (!UseDynamicStopLoss || CurrentBar < DynamicStopLookback)
+            {
+                // Use fixed stop loss
+                return StopLossPoints * 4; // Convert points to ticks
+            }
+
+            // Try volume-aware stop from API first
+            if (UseVolumeAwareStop)
+            {
+                int volumeAwareStop = GetVolumeAwareStopTicks();
+                if (volumeAwareStop > 0)
+                {
+                    // Apply multiplier
+                    int adjustedStop = (int)Math.Round(volumeAwareStop * DynamicStopMultiplier);
+                    Print($"[DynamicStopLoss] Volume-aware stop: {volumeAwareStop} ticks * {DynamicStopMultiplier} = {adjustedStop} ticks");
+                    return Math.Max(adjustedStop, 4); // Minimum 1 point
+                }
+            }
+
+            // Fallback: Calculate average range of recent candles
+            double totalRange = 0;
+            int barsToCheck = Math.Min(DynamicStopLookback, CurrentBar);
+            
+            for (int i = 1; i <= barsToCheck; i++)
+            {
+                double candleRange = High[i] - Low[i];
+                totalRange += candleRange;
+            }
+
+            double averageRange = totalRange / barsToCheck;
+            double stopLossPrice = averageRange * DynamicStopMultiplier;
+            
+            // Convert price to ticks (4 ticks per point for MNQ)
+            int stopLossTicks = (int)Math.Round(stopLossPrice * 4);
+            
+            Print($"[DynamicStopLoss] Fallback: Avg range of last {barsToCheck} bars: {averageRange:F2}, Multiplier: {DynamicStopMultiplier}, Stop: {stopLossPrice:F2} ({stopLossTicks} ticks)");
+            
+            return Math.Max(stopLossTicks, 4); // Minimum 1 point (4 ticks)
+        }
+
+        private int GetVolumeAwareStopTicks()
+        {
+            try
+            {
+                // Cache for 1 minute per hour to avoid spamming API
+                int currentHour = Time[0].Hour;
+                if (cachedVolumeAwareStopTicks > 0 && 
+                    cachedVolumeAwareStopHour == currentHour &&
+                    (DateTime.Now - cachedVolumeAwareStopTime).TotalMinutes < 1)
+                {
+                    return cachedVolumeAwareStopTicks;
+                }
+
+                EnsureHttpClient();
+                
+                // Get current volume from the last completed bar
+                long currentVolume = (long)Volume[1];
+                
+                string url = $"http://localhost:51888/api/volatility/recommended-stop?hour={currentHour}&volume={currentVolume}&symbol=MNQ";
+                
+                var task = sharedClient.GetStringAsync(url);
+                if (!task.Wait(200)) // 200ms timeout
+                {
+                    Print("[VolumeAwareStop] API timeout");
+                    return 0;
+                }
+                
+                string json = task.Result;
+                
+                // Simple JSON parsing (avoiding Newtonsoft dependency)
+                // Look for "recommended_stop_ticks": N
+                int startIdx = json.IndexOf("\"recommended_stop_ticks\":");
+                if (startIdx < 0) return 0;
+                
+                startIdx += "\"recommended_stop_ticks\":".Length;
+                int endIdx = json.IndexOfAny(new[] { ',', '}' }, startIdx);
+                if (endIdx < 0) return 0;
+                
+                string ticksStr = json.Substring(startIdx, endIdx - startIdx).Trim();
+                if (int.TryParse(ticksStr, out int ticks))
+                {
+                    // Extract volume condition for logging
+                    string volumeCondition = "NORMAL";
+                    int vcStart = json.IndexOf("\"volume_condition\":\"");
+                    if (vcStart >= 0)
+                    {
+                        vcStart += "\"volume_condition\":\"".Length;
+                        int vcEnd = json.IndexOf("\"", vcStart);
+                        if (vcEnd > vcStart)
+                            volumeCondition = json.Substring(vcStart, vcEnd - vcStart);
+                    }
+                    
+                    // Extract confidence
+                    string confidence = "UNKNOWN";
+                    int confStart = json.IndexOf("\"confidence\":\"");
+                    if (confStart >= 0)
+                    {
+                        confStart += "\"confidence\":\"".Length;
+                        int confEnd = json.IndexOf("\"", confStart);
+                        if (confEnd > confStart)
+                            confidence = json.Substring(confStart, confEnd - confStart);
+                    }
+                    
+                    Print($"[VolumeAwareStop] Hour={currentHour}, Volume={currentVolume}, Condition={volumeCondition}, Confidence={confidence}, Stop={ticks} ticks");
+                    
+                    // Cache the result
+                    cachedVolumeAwareStopTicks = ticks;
+                    cachedVolumeAwareStopHour = currentHour;
+                    cachedVolumeAwareStopTime = DateTime.Now;
+                    
+                    return ticks;
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[VolumeAwareStop] Error: {ex.Message}");
+            }
+            
+            return 0;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private bool ShouldSkipLongDueToGradient(double gradDeg)
+        {
+            return GradientFilterEnabled && !double.IsNaN(gradDeg) && gradDeg < SkipLongsBelowGradient;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private bool ShouldSkipShortDueToGradient(double gradDeg)
+        {
+            return GradientFilterEnabled && !double.IsNaN(gradDeg) && gradDeg > SkipShortsAboveGradient;
+        }
+
+        // Rate limit bar sample recording
+        private int lastRecordedBarSample = -1;
+
+        private void RecordBarSample()
+        {
+            // Only record once per bar
+            if (CurrentBar == lastRecordedBarSample) return;
+            lastRecordedBarSample = CurrentBar;
+
+            try
+            {
+                EnsureHttpClient();
+                
+                // Fire and forget - don't wait for response
+                var content = new StringContent(
+                    $"{{\"timestamp\":\"{Time[1]:yyyy-MM-dd HH:mm:ss}\"," +
+                    $"\"bar_index\":{CurrentBar}," +
+                    $"\"symbol\":\"MNQ\"," +
+                    $"\"open\":{Open[1]}," +
+                    $"\"high\":{High[1]}," +
+                    $"\"low\":{Low[1]}," +
+                    $"\"close\":{Close[1]}," +
+                    $"\"volume\":{(long)Volume[1]}," +
+                    $"\"direction\":\"{Position.MarketPosition}\"," +
+                    $"\"in_trade\":{(Position.MarketPosition != MarketPosition.Flat).ToString().ToLower()}}}",
+                    System.Text.Encoding.UTF8, "application/json");
+                
+                // Fire and forget with no wait
+                sharedClient.PostAsync("http://localhost:51888/api/volatility/record-bar", content);
+            }
+            catch
+            {
+                // Silently ignore - recording bar samples is optional
+            }
         }
 
         private void EnsureHttpClient()
@@ -1763,20 +2694,38 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (waitingForLongGradient && currentGradDeg >= SkipLongsBelowGradient)
             {
                 Print($"[MidBar Entry] Bar {CurrentBar}: Long gradient crossed! {currentGradDeg:F2}° >= {SkipLongsBelowGradient:F2}°");
-                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                ApplyStopLoss("BarsOnTheFlowLong");
-                lastEntryBarIndex = CurrentBar;
-                lastEntryDirection = MarketPosition.Long;
+                if (intendedPosition != MarketPosition.Long)
+                {
+                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (mid-bar gradient), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                    ApplyStopLoss("BarsOnTheFlowLong");
+                    lastEntryBarIndex = CurrentBar;
+                    lastEntryDirection = MarketPosition.Long;
+                    intendedPosition = MarketPosition.Long;
+                }
+                else
+                {
+                    PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Long, skipping mid-bar gradient entry", "DEBUG");
+                }
                 waitingForLongGradient = false;
             }
             // Check if gradient now meets threshold for short entry
             else if (waitingForShortGradient && currentGradDeg <= SkipShortsAboveGradient)
             {
                 Print($"[MidBar Entry] Bar {CurrentBar}: Short gradient crossed! {currentGradDeg:F2}° <= {SkipShortsAboveGradient:F2}°");
-                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                ApplyStopLoss("BarsOnTheFlowShort");
-                lastEntryBarIndex = CurrentBar;
-                lastEntryDirection = MarketPosition.Short;
+                if (intendedPosition != MarketPosition.Short)
+                {
+                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (mid-bar gradient), CurrentPos={Position.Quantity}, Contracts={Contracts}");
+                    EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                    ApplyStopLoss("BarsOnTheFlowShort");
+                    lastEntryBarIndex = CurrentBar;
+                    lastEntryDirection = MarketPosition.Short;
+                    intendedPosition = MarketPosition.Short;
+                }
+                else
+                {
+                    PrintAndLog($"[Entry Skip] Bar {CurrentBar}: Already intendedPosition=Short, skipping mid-bar gradient short entry", "DEBUG");
+                }
                 waitingForShortGradient = false;
             }
         }
@@ -1846,6 +2795,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Exit long if gradient drops below threshold (and we were waiting for it)
             if (waitingToExitLongOnGradient && Position.MarketPosition == MarketPosition.Long && currentGradDeg < SkipLongsBelowGradient)
             {
+                Print($"[EXIT_DEBUG] Bar {CurrentBar}: waitingToExitLongOnGradient resolving - gradient dropped {currentGradDeg:F2}° < {SkipLongsBelowGradient:F2}° - Exiting LONG");
                 Print($"[MidBar Exit] Bar {CurrentBar}: Long gradient dropped! {currentGradDeg:F2}° < {SkipLongsBelowGradient:F2}° - Exiting");
                 ExitLong("BarsOnTheFlowGradExit", "BarsOnTheFlowLong");
                 waitingToExitLongOnGradient = false;
@@ -1853,6 +2803,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Exit short if gradient rises above threshold (and we were waiting for it)
             else if (waitingToExitShortOnGradient && Position.MarketPosition == MarketPosition.Short && currentGradDeg > SkipShortsAboveGradient)
             {
+                Print($"[EXIT_DEBUG] Bar {CurrentBar}: waitingToExitShortOnGradient resolving - gradient rose {currentGradDeg:F2}° > {SkipShortsAboveGradient:F2}° - Exiting SHORT");
                 Print($"[MidBar Exit] Bar {CurrentBar}: Short gradient rose! {currentGradDeg:F2}° > {SkipShortsAboveGradient:F2}° - Exiting");
                 ExitShort("BarsOnTheFlowGradExitS", "BarsOnTheFlowShort");
                 waitingToExitShortOnGradient = false;
@@ -1951,6 +2902,141 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             return angleDeg;
+        }
+
+        private void LogOpportunityAnalysis(double prevOpen, double prevClose, bool allowLongThisBar, bool allowShortThisBar, 
+            bool trendUp, bool trendDown, bool placedEntry)
+        {
+            try
+            {
+                if (opportunityLogWriter == null || CurrentBar < 1)
+                    return;
+
+                // Bar context
+                string timestamp = Time[1].ToString("yyyy-MM-dd HH:mm:ss.fff");
+                int bar = CurrentBar - 1;
+                double open = Open[1];
+                double high = High[1];
+                double low = Low[1];
+                double close = Close[1];
+                string candleType = GetCandleType(open, close);
+                double volume = Volume[1];
+
+                // EMA state
+                double emaVal = fastEma != null && CurrentBar >= 1 ? fastEma[1] : double.NaN;
+                double gradDeg = lastFastEmaGradDeg;
+
+                // Pattern state
+                int goodCount = recentGood.Count >= MinConsecutiveBars ? recentGood.Count(g => g) : 0;
+                int badCount = recentGood.Count >= MinConsecutiveBars ? recentGood.Count(g => !g) : 0;
+                double netPnl = recentPnl.Count >= MinConsecutiveBars ? recentPnl.Sum() : 0;
+                string barPattern = GetBarSequencePattern();
+
+                // Position state
+                string currentPos = Position.MarketPosition.ToString();
+                int entryBarNum = lastEntryBarIndex;
+                double entryPx = Position.MarketPosition != MarketPosition.Flat ? Position.AveragePrice : double.NaN;
+                double unrealizedPnl = Position.MarketPosition != MarketPosition.Flat ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency, close) : 0;
+
+                // Filter results
+                bool gradFilterBlocksLong = GradientFilterEnabled && ShouldSkipLongDueToGradient(gradDeg);
+                bool gradFilterBlocksShort = GradientFilterEnabled && ShouldSkipShortDueToGradient(gradDeg);
+
+                // Determine action and block reason
+                string actionTaken = "";
+                string blockReason = "";
+                string opportunityType = "";
+
+                if (placedEntry)
+                {
+                    actionTaken = Position.MarketPosition == MarketPosition.Long ? "ENTERED_LONG" : "ENTERED_SHORT";
+                    opportunityType = "TAKEN";
+                }
+                else if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    actionTaken = "ALREADY_IN_POSITION";
+                    blockReason = $"Already {Position.MarketPosition}";
+                    opportunityType = trendUp || trendDown ? "BLOCKED" : "NONE";
+                }
+                else if (trendUp)
+                {
+                    opportunityType = "LONG_SIGNAL";
+                    if (!allowLongThisBar)
+                    {
+                        actionTaken = "SKIPPED_LONG";
+                        blockReason = "AvoidLongsOnBadCandle";
+                    }
+                    else if (gradFilterBlocksLong)
+                    {
+                        actionTaken = "SKIPPED_LONG";
+                        blockReason = $"GradientFilter ({gradDeg:F2}° < {SkipLongsBelowGradient:F2}°)";
+                    }
+                    else if (pendingLongFromBad)
+                    {
+                        actionTaken = "DEFERRED_LONG";
+                        blockReason = "Waiting for good candle confirmation";
+                    }
+                    else
+                    {
+                        actionTaken = "MISSED_LONG";
+                        blockReason = "Unknown - should have entered";
+                    }
+                }
+                else if (trendDown)
+                {
+                    opportunityType = "SHORT_SIGNAL";
+                    if (!allowShortThisBar)
+                    {
+                        actionTaken = "SKIPPED_SHORT";
+                        blockReason = "AvoidShortsOnGoodCandle";
+                    }
+                    else if (gradFilterBlocksShort)
+                    {
+                        actionTaken = "SKIPPED_SHORT";
+                        blockReason = $"GradientFilter ({gradDeg:F2}° > {SkipShortsAboveGradient:F2}°)";
+                    }
+                    else if (pendingShortFromGood)
+                    {
+                        actionTaken = "DEFERRED_SHORT";
+                        blockReason = "Waiting for bad candle confirmation";
+                    }
+                    else
+                    {
+                        actionTaken = "MISSED_SHORT";
+                        blockReason = "Unknown - should have entered";
+                    }
+                }
+                else
+                {
+                    actionTaken = "NO_SIGNAL";
+                    opportunityType = "NONE";
+                    blockReason = $"Trend requirements not met (G:{goodCount}/B:{badCount}, PnL:{netPnl:F2})";
+                }
+
+                // Write CSV line
+                string line = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                    "{0},{1},{2:F4},{3:F4},{4:F4},{5:F4},{6},{7},{8},{9:F2}," +
+                    "{10},{11},{12},{13},{14:F2},{15}," +
+                    "{16},{17},{18},{19:F2}," +
+                    "{20},{21}," +
+                    "{22},{23},{24:F2},{25:F2},{26:F2}," +
+                    "{27},{28}," +
+                    "{29},{30},{31}",
+                    timestamp, bar, open, high, low, close, candleType, volume, 
+                    double.IsNaN(emaVal) ? "" : emaVal.ToString("F4"), gradDeg,
+                    trendUp, trendDown, goodCount, badCount, netPnl, barPattern,
+                    currentPos, entryBarNum, double.IsNaN(entryPx) ? "" : entryPx.ToString("F4"), unrealizedPnl,
+                    allowLongThisBar, allowShortThisBar,
+                    gradFilterBlocksLong, gradFilterBlocksShort, gradDeg, SkipLongsBelowGradient, SkipShortsAboveGradient,
+                    pendingLongFromBad, pendingShortFromGood,
+                    actionTaken, blockReason, opportunityType);
+
+                opportunityLogWriter.WriteLine(line);
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Error logging opportunity analysis: {ex.Message}");
+            }
         }
     }
 }

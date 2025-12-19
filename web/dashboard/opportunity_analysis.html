@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opportunity Analysis - Streak Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e27;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f3a 0%, #2d3561 100%);
+            padding: 25px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            color: #60a5fa;
+            margin-bottom: 15px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #9ca3af;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 12px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .control-group input, .control-group select {
+            background: #1a1f3a;
+            border: 1px solid #374151;
+            border-radius: 5px;
+            padding: 8px 12px;
+            color: #e0e0e0;
+            font-size: 14px;
+        }
+
+        .control-group input:focus, .control-group select:focus {
+            outline: none;
+            border-color: #60a5fa;
+        }
+
+        button {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #1a1f3a;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #e0e0e0;
+        }
+
+        .stat-value.success {
+            color: #10b981;
+        }
+
+        .stat-value.danger {
+            color: #ef4444;
+        }
+
+        .stat-value.warning {
+            color: #f59e0b;
+        }
+
+        .table-container {
+            background: #1a1f3a;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-x: auto;
+            max-height: 600px;
+            overflow-y: auto;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #0f172a;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #9ca3af;
+            font-weight: 600;
+            border-bottom: 2px solid #374151;
+            background: #0f172a;
+        }
+
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 13px;
+        }
+
+        tbody tr {
+            transition: background 0.2s;
+        }
+
+        tbody tr:hover {
+            background: rgba(96, 165, 250, 0.1);
+        }
+
+        .streak-caught {
+            background: rgba(16, 185, 129, 0.15);
+            border-left: 3px solid #10b981;
+        }
+
+        .streak-missed {
+            background: rgba(239, 68, 68, 0.15);
+            border-left: 3px solid #ef4444;
+        }
+
+        .streak-partial {
+            background: rgba(245, 158, 11, 0.15);
+            border-left: 3px solid #f59e0b;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+
+        .spinner {
+            border: 3px solid #374151;
+            border-top: 3px solid #60a5fa;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+
+        .legend-box {
+            width: 30px;
+            height: 20px;
+            border-radius: 4px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-long {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .badge-short {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .badge-missed {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .file-selector {
+            background: #1a1f3a;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .file-option {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .file-option:hover {
+            background: rgba(96, 165, 250, 0.1);
+        }
+
+        .file-option input[type="radio"] {
+            margin-right: 10px;
+        }
+
+        .file-option.selected {
+            background: rgba(59, 130, 246, 0.2);
+            border-left: 3px solid #3b82f6;
+        }
+
+        .optimize-section {
+            background: #1a1f3a;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            border-left: 4px solid #10b981;
+        }
+
+        .optimize-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .btn-optimize {
+            background: #10b981;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-optimize:hover {
+            background: #059669;
+        }
+
+        .btn-optimize:disabled {
+            background: #374151;
+            cursor: not-allowed;
+        }
+
+        .optimization-status {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 5px;
+            font-size: 12px;
+            color: #10b981;
+            display: none;
+        }
+
+        .pnl-positive {
+            color: #10b981;
+            font-weight: 600;
+        }
+
+        .pnl-negative {
+            color: #ef4444;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎯 Opportunity Analysis - Streak Detection</h1>
+        <p class="subtitle">Analyze directional streaks (like BarsOnTheFlow's 5-bar patterns) to find caught vs missed opportunities across different timeframes</p>
+        
+        <div class="file-selector" id="file-selector">
+            <label style="font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 10px;">Select Opportunity Log File</label>
+            <div id="file-options">Loading files...</div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <label title="Minimum number of consecutive bars moving in same direction">Min Streak Length</label>
+                <input type="number" id="min-streak" value="5" step="1" min="3" max="10">
+            </div>
+            <div class="control-group">
+                <label title="Maximum number of bars to scan for streaks">Max Streak Length</label>
+                <input type="number" id="max-streak" value="8" step="1" min="3" max="20">
+            </div>
+            <div class="control-group">
+                <label title="Minimum gradient threshold for longs (degrees)">Long Gradient Threshold</label>
+                <input type="number" id="long-grad-thresh" value="7.0" step="0.5">
+            </div>
+            <div class="control-group">
+                <label title="Maximum gradient threshold for shorts (degrees, negative)">Short Gradient Threshold</label>
+                <input type="number" id="short-grad-thresh" value="-7.0" step="0.5">
+            </div>
+            <div class="control-group">
+                <label title="Minimum net price movement (points) to consider a streak valid">Min Net Movement (pts)</label>
+                <input type="number" id="min-movement" value="5.0" step="0.5" min="0">
+            </div>
+            <div class="control-group">
+                <label title="Allowed ratio of counter-trend bars (e.g., 0.2 = 1 bad in 5)">Max Counter-Trend Ratio</label>
+                <input type="number" id="counter-ratio" value="0.2" step="0.1" min="0" max="0.5">
+            </div>
+            <div class="control-group">
+                <label title="Type of streaks to analyze">Streak Type</label>
+                <select id="streak-type">
+                    <option value="both">Both (Longs & Shorts)</option>
+                    <option value="long">Longs Only</option>
+                    <option value="short">Shorts Only</option>
+                </select>
+            </div>
+            <div class="control-group" style="align-self: end;">
+                <button onclick="analyzeStreaks()">🔍 Analyze Streaks</button>
+            </div>
+        </div>
+
+        <div class="optimize-section">
+            <h3 style="margin: 0 0 5px 0; color: #10b981; font-size: 14px;">🎯 Parameter Optimization</h3>
+            <p style="margin: 0 0 10px 0; font-size: 12px; color: #9ca3af;">Automatically find best parameters for maximum PnL</p>
+            <div class="optimize-buttons">
+                <button class="btn-optimize" onclick="optimizeForMaxPnL()">💰 Optimize for Max Total PnL</button>
+                <button class="btn-optimize" onclick="optimizeForCatchRate()">✅ Optimize for Best Catch Rate</button>
+                <button class="btn-optimize" onclick="optimizeForLeastMissed()">📉 Minimize Missed PnL</button>
+                <button class="btn-optimize" onclick="quickScanParameters()">⚡ Quick Scan (Fast)</button>
+            </div>
+            <div id="optimization-status" class="optimization-status"></div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(16, 185, 129, 0.2); border-left: 3px solid #10b981;"></div>
+                <span>Caught (Entered)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(239, 68, 68, 0.2); border-left: 3px solid #ef4444;"></div>
+                <span>Missed (Not Entered)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: rgba(245, 158, 11, 0.2); border-left: 3px solid #f59e0b;"></div>
+                <span>Partial (Entered Late)</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-card">
+            <div class="stat-label">Total Streaks Found</div>
+            <div class="stat-value" id="stat-total">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Caught (Entered)</div>
+            <div class="stat-value success" id="stat-caught">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Missed Completely</div>
+            <div class="stat-value danger" id="stat-missed">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Partial Entry</div>
+            <div class="stat-value warning" id="stat-partial">-</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #10b981;">
+            <div class="stat-label">Total Realized PnL</div>
+            <div class="stat-value" id="stat-total-pnl">-</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #ef4444;">
+            <div class="stat-label">Missed PnL</div>
+            <div class="stat-value danger" id="stat-missed-pnl">-</div>
+        </div>
+        <div class="stat-card" style="border-left-color: #60a5fa;">
+            <div class="stat-label">Potential Total PnL</div>
+            <div class="stat-value" id="stat-potential-pnl">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Catch Rate</div>
+            <div class="stat-value" id="stat-catch-rate">-</div>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Select a file and click Analyze Streaks...</p>
+        </div>
+        <table id="data-table" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Streak #</th>
+                    <th>Direction</th>
+                    <th>Start Bar</th>
+                    <th>End Bar</th>
+                    <th>Length</th>
+                    <th>Net Movement</th>
+                    <th>Entry Status</th>
+                    <th>Entry Bar</th>
+                    <th>Missed Points</th>
+                    <th>Avg Gradient</th>
+                    <th>Block Reason</th>
+                    <th>Pattern</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        let selectedFile = null;
+        let streakResults = [];
+
+        const BASE_URL = window.location.origin;
+
+        async function loadFiles() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/opportunity-files`);
+                const data = await response.json();
+                
+                const fileOptions = document.getElementById('file-options');
+                if (data.files && data.files.length > 0) {
+                    fileOptions.innerHTML = data.files.map((file, idx) => `
+                        <div class="file-option ${idx === 0 ? 'selected' : ''}" onclick="selectFile('${file.filename}', this)">
+                            <input type="radio" name="file" ${idx === 0 ? 'checked' : ''}>
+                            <div>
+                                <div style="color: #e0e0e0; font-weight: 600;">${file.filename}</div>
+                                <div style="color: #9ca3af; font-size: 11px;">${file.bars} bars • ${file.timestamp}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                    selectedFile = data.files[0].filename;
+                } else {
+                    fileOptions.innerHTML = '<p style="color: #9ca3af;">No opportunity log files found. Run strategy with EnableOpportunityLog=true</p>';
+                }
+            } catch (error) {
+                console.error('Error loading files:', error);
+                document.getElementById('file-options').innerHTML = '<p style="color: #ef4444;">Error loading files</p>';
+            }
+        }
+
+        function selectFile(filename, element) {
+            selectedFile = filename;
+            document.querySelectorAll('.file-option').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+        }
+
+        async function analyzeStreaks() {
+            if (!selectedFile) {
+                alert('Please select a file first');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('data-table').style.display = 'none';
+
+            const params = {
+                filename: selectedFile,
+                min_streak: parseInt(document.getElementById('min-streak').value),
+                max_streak: parseInt(document.getElementById('max-streak').value),
+                long_gradient_threshold: parseFloat(document.getElementById('long-grad-thresh').value),
+                short_gradient_threshold: parseFloat(document.getElementById('short-grad-thresh').value),
+                min_movement: parseFloat(document.getElementById('min-movement').value),
+                counter_ratio: parseFloat(document.getElementById('counter-ratio').value),
+                streak_type: document.getElementById('streak-type').value
+            };
+
+            try {
+                const response = await fetch(`${BASE_URL}/api/analyze-streaks`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(params)
+                });
+
+                const data = await response.json();
+                streakResults = data.streaks || [];
+                
+                updateStats(data.stats);
+                renderTable(streakResults);
+
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('data-table').style.display = 'table';
+            } catch (error) {
+                console.error('Error analyzing streaks:', error);
+                document.getElementById('loading').innerHTML = '<p style="color: #ef4444;">Error analyzing streaks</p>';
+            }
+        }
+
+        function updateStats(stats) {
+            document.getElementById('stat-total').textContent = stats.total_streaks || 0;
+            document.getElementById('stat-caught').textContent = stats.caught || 0;
+            document.getElementById('stat-missed').textContent = stats.missed || 0;
+            document.getElementById('stat-partial').textContent = stats.partial || 0;
+            
+            // Calculate PnL values
+            const totalPnl = stats.total_pnl || 0;
+            const missedPnl = stats.missed_pnl || 0;
+            const potentialPnl = totalPnl + missedPnl;
+            
+            // Format PnL with color
+            const totalPnlEl = document.getElementById('stat-total-pnl');
+            totalPnlEl.textContent = `$${totalPnl.toFixed(2)}`;
+            totalPnlEl.className = `stat-value ${totalPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            
+            const missedPnlEl = document.getElementById('stat-missed-pnl');
+            missedPnlEl.textContent = `$${missedPnl.toFixed(2)}`;
+            
+            const potentialPnlEl = document.getElementById('stat-potential-pnl');
+            potentialPnlEl.textContent = `$${potentialPnl.toFixed(2)}`;
+            potentialPnlEl.className = `stat-value ${potentialPnl >= 0 ? 'pnl-positive' : 'pnl-negative'}`;
+            
+            const catchRate = stats.total_streaks > 0 ? (stats.caught / stats.total_streaks * 100).toFixed(1) : 0;
+            document.getElementById('stat-catch-rate').textContent = `${catchRate}%`;
+        }
+
+        function calculatePnL(streaks) {
+            let totalPnl = 0;
+            let missedPnl = 0;
+            
+            for (const streak of streaks) {
+                if (streak.status === 'caught') {
+                    // Full profit captured
+                    totalPnl += streak.net_movement;
+                } else if (streak.status === 'partial') {
+                    // Partial profit (caught - missed)
+                    const caughtPnl = streak.net_movement - streak.missed_points;
+                    totalPnl += caughtPnl;
+                    missedPnl += streak.missed_points;
+                } else if (streak.status === 'missed') {
+                    // All profit missed
+                    missedPnl += streak.net_movement;
+                }
+            }
+            
+            return { totalPnl, missedPnl, potentialPnl: totalPnl + missedPnl };
+        }
+
+        async function optimizeForMaxPnL() {
+            await runOptimization('max_pnl');
+        }
+
+        async function optimizeForCatchRate() {
+            await runOptimization('catch_rate');
+        }
+
+        async function optimizeForLeastMissed() {
+            await runOptimization('least_missed');
+        }
+
+        async function quickScanParameters() {
+            await runOptimization('quick_scan');
+        }
+
+        async function runOptimization(mode) {
+            if (!selectedFile) {
+                alert('Please select a file first');
+                return;
+            }
+
+            const statusEl = document.getElementById('optimization-status');
+            statusEl.style.display = 'block';
+            statusEl.textContent = '🔄 Optimizing parameters...';
+            
+            // Disable all optimize buttons
+            document.querySelectorAll('.btn-optimize').forEach(btn => btn.disabled = true);
+
+            const ranges = mode === 'quick_scan' ? {
+                min_streak: [4, 5, 6],
+                max_streak: [7, 8, 9],
+                long_gradient: [5.0, 7.0, 9.0],
+                short_gradient: [-9.0, -7.0, -5.0],
+                min_movement: [3.0, 5.0, 7.0],
+                counter_ratio: [0.1, 0.2, 0.3]
+            } : {
+                min_streak: [3, 4, 5, 6, 7],
+                max_streak: [6, 7, 8, 9, 10],
+                long_gradient: [3.0, 5.0, 7.0, 9.0, 11.0],
+                short_gradient: [-11.0, -9.0, -7.0, -5.0, -3.0],
+                min_movement: [2.0, 3.0, 5.0, 7.0, 10.0],
+                counter_ratio: [0.0, 0.1, 0.2, 0.3, 0.4]
+            };
+
+            let bestResult = null;
+            let bestScore = -Infinity;
+            let tested = 0;
+            
+            // Calculate actual valid combinations (maxStreak must be > minStreak)
+            let totalCombinations = 0;
+            for (const minStreak of ranges.min_streak) {
+                for (const maxStreak of ranges.max_streak) {
+                    if (maxStreak > minStreak) {
+                        totalCombinations++;
+                    }
+                }
+            }
+            totalCombinations *= ranges.long_gradient.length * ranges.short_gradient.length * 
+                                ranges.min_movement.length * ranges.counter_ratio.length;
+
+            try {
+                for (const minStreak of ranges.min_streak) {
+                    for (const maxStreak of ranges.max_streak) {
+                        if (maxStreak <= minStreak) continue;
+                        
+                        for (const longGrad of ranges.long_gradient) {
+                            for (const shortGrad of ranges.short_gradient) {
+                                for (const minMove of ranges.min_movement) {
+                                    for (const counterRatio of ranges.counter_ratio) {
+                                        tested++;
+                                        
+                                        if (tested % 5 === 0 || tested === totalCombinations) {
+                                            statusEl.textContent = `🔄 Testing... ${tested}/${totalCombinations} (${(tested/totalCombinations*100).toFixed(0)}%)`;
+                                            await new Promise(resolve => setTimeout(resolve, 0)); // Allow UI update
+                                        }
+
+                                        const params = {
+                                            filename: selectedFile,
+                                            min_streak: minStreak,
+                                            max_streak: maxStreak,
+                                            long_gradient_threshold: longGrad,
+                                            short_gradient_threshold: shortGrad,
+                                            min_movement: minMove,
+                                            counter_ratio: counterRatio,
+                                            streak_type: document.getElementById('streak-type').value
+                                        };
+
+                                        const response = await fetch(`${BASE_URL}/api/analyze-streaks`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(params)
+                                        });
+
+                                        const data = await response.json();
+                                        const pnl = calculatePnL(data.streaks || []);
+                                        
+                                        let score;
+                                        if (mode === 'max_pnl') {
+                                            score = pnl.totalPnl;
+                                        } else if (mode === 'catch_rate') {
+                                            const catchRate = data.stats.total_streaks > 0 ? 
+                                                data.stats.caught / data.stats.total_streaks : 0;
+                                            score = catchRate * 1000 + pnl.totalPnl; // Weight catch rate heavily
+                                        } else if (mode === 'least_missed') {
+                                            score = -pnl.missedPnl; // Negative because we want to minimize
+                                        } else {
+                                            score = pnl.potentialPnl; // Quick scan: potential
+                                        }
+
+                                        if (score > bestScore) {
+                                            bestScore = score;
+                                            bestResult = { params, data, pnl };
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (bestResult) {
+                    // Apply best parameters
+                    document.getElementById('min-streak').value = bestResult.params.min_streak;
+                    document.getElementById('max-streak').value = bestResult.params.max_streak;
+                    document.getElementById('long-grad-thresh').value = bestResult.params.long_gradient_threshold;
+                    document.getElementById('short-grad-thresh').value = bestResult.params.short_gradient_threshold;
+                    document.getElementById('min-movement').value = bestResult.params.min_movement;
+                    document.getElementById('counter-ratio').value = bestResult.params.counter_ratio;
+
+                    // Update display
+                    streakResults = bestResult.data.streaks || [];
+                    updateStats(bestResult.data.stats);
+                    renderTable(streakResults);
+
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('data-table').style.display = 'table';
+
+                    statusEl.style.color = '#10b981';
+                    statusEl.textContent = `✅ Optimization complete! Best Total PnL: $${bestResult.pnl.totalPnl.toFixed(2)} | ` +
+                                          `Potential: $${bestResult.pnl.potentialPnl.toFixed(2)} | ` +
+                                          `Tested ${tested} combinations`;
+                }
+            } catch (error) {
+                console.error('Optimization error:', error);
+                statusEl.style.color = '#ef4444';
+                statusEl.textContent = `❌ Error: ${error.message}`;
+            } finally {
+                // Re-enable buttons
+                document.querySelectorAll('.btn-optimize').forEach(btn => btn.disabled = false);
+            }
+        }
+
+        function renderTable(streaks) {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = streaks.map((streak, idx) => {
+                const statusClass = streak.status === 'caught' ? 'streak-caught' : 
+                                   streak.status === 'missed' ? 'streak-missed' : 'streak-partial';
+                const directionBadge = streak.direction === 'LONG' ? 'badge-long' : 'badge-short';
+                const statusBadge = streak.status === 'caught' ? 'success' : 
+                                   streak.status === 'missed' ? 'danger' : 'warning';
+
+                return `
+                    <tr class="${statusClass}">
+                        <td>${idx + 1}</td>
+                        <td><span class="badge ${directionBadge}">${streak.direction}</span></td>
+                        <td>${streak.start_bar}</td>
+                        <td>${streak.end_bar}</td>
+                        <td>${streak.length}</td>
+                        <td>${streak.net_movement.toFixed(2)}</td>
+                        <td><span class="badge" style="background: rgba(${streak.status === 'caught' ? '16,185,129' : streak.status === 'missed' ? '239,68,68' : '245,158,11'},0.2); color: ${streak.status === 'caught' ? '#10b981' : streak.status === 'missed' ? '#ef4444' : '#f59e0b'};">${streak.status.toUpperCase()}</span></td>
+                        <td>${streak.entry_bar >= 0 ? streak.entry_bar : '-'}</td>
+                        <td>${streak.missed_points >= 0 ? streak.missed_points.toFixed(2) : '-'}</td>
+                        <td>${streak.avg_gradient.toFixed(2)}°</td>
+                        <td style="font-size: 11px; color: #9ca3af;">${streak.block_reason || '-'}</td>
+                        <td style="font-size: 11px;">${streak.pattern || '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Load files on page load
+        loadFiles();
+    </script>
+</body>
+</html>
