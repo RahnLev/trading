@@ -345,12 +345,90 @@
             color: #ef4444;
             font-weight: 600;
         }
+
+        .comparison-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .settings-card {
+            background: #1a1f3a;
+            border: 2px solid #374151;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .settings-card h3 {
+            margin: 0 0 15px 0;
+            font-size: 16px;
+            color: #60a5fa;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .settings-card.suggested {
+            border-color: #10b981;
+        }
+
+        .settings-card.suggested h3 {
+            color: #10b981;
+        }
+
+        .param-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #374151;
+            font-size: 13px;
+        }
+
+        .param-row:last-child {
+            border-bottom: none;
+        }
+
+        .param-label {
+            color: #9ca3af;
+        }
+
+        .param-value {
+            color: #e0e0e0;
+            font-weight: 600;
+        }
+
+        .param-value.changed {
+            color: #10b981;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1>🎯 Opportunity Analysis - Streak Detection</h1>
-        <p class="subtitle">Analyze directional streaks (like BarsOnTheFlow's 5-bar patterns) to find caught vs missed opportunities across different timeframes</p>
+        <p class="subtitle">Analyze directional streaks to optimize TrendLookbackBars, MinMatchingBars, and break-even parameters</p>
+        
+        <!-- Current vs Suggested Comparison -->
+        <div class="comparison-section" id="comparison-section" style="display: none;">
+            <div class="settings-card">
+                <h3>📊 Current Strategy Settings</h3>
+                <div id="current-params">
+                    <div class="param-row"><div class="param-label">TrendLookbackBars</div><div class="param-value" id="current-lookback">-</div></div>
+                    <div class="param-row"><div class="param-label">MinMatchingBars</div><div class="param-value" id="current-matching">-</div></div>
+                    <div class="param-row"><div class="param-label">Use Break-Even</div><div class="param-value" id="current-breakeven">-</div></div>
+                    <div class="param-row"><div class="param-label">Break-Even Trigger</div><div class="param-value" id="current-be-trigger">-</div></div>
+                    <div class="param-row"><div class="param-label">Break-Even Offset</div><div class="param-value" id="current-be-offset">-</div></div>
+                    <div class="param-row"><div class="param-label">Skip Longs Below Gradient</div><div class="param-value" id="current-long-grad">-</div></div>
+                    <div class="param-row"><div class="param-label">Skip Shorts Above Gradient</div><div class="param-value" id="current-short-grad">-</div></div>
+                </div>
+            </div>
+            <div class="settings-card suggested">
+                <h3>✨ Suggested Parameters (from optimization)</h3>
+                <div id="suggested-params">
+                    <p style="color: #9ca3af; font-size: 13px; margin: 0;">Run optimization to see suggestions</p>
+                </div>
+            </div>
+        </div>
         
         <div class="file-selector" id="file-selector">
             <label style="font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 10px;">Select Opportunity Log File</label>
@@ -359,28 +437,32 @@
 
         <div class="controls">
             <div class="control-group">
-                <label title="Minimum number of consecutive bars moving in same direction">Min Streak Length</label>
+                <label title="Number of recent bars to analyze (maps to TrendLookbackBars)">Lookback Window (Bars)</label>
                 <input type="number" id="min-streak" value="5" step="1" min="3" max="10">
             </div>
             <div class="control-group">
-                <label title="Maximum number of bars to scan for streaks">Max Streak Length</label>
-                <input type="number" id="max-streak" value="8" step="1" min="3" max="20">
+                <label title="Minimum matching bars required in window (maps to MinMatchingBars)">Min Matching Bars</label>
+                <input type="number" id="max-streak" value="3" step="1" min="2" max="10">
             </div>
             <div class="control-group">
-                <label title="Minimum gradient threshold for longs (degrees)">Long Gradient Threshold</label>
+                <label title="Skip longs below this gradient (SkipLongsBelowGradient)">Long Gradient Threshold (°)</label>
                 <input type="number" id="long-grad-thresh" value="7.0" step="0.5">
             </div>
             <div class="control-group">
-                <label title="Maximum gradient threshold for shorts (degrees, negative)">Short Gradient Threshold</label>
+                <label title="Skip shorts above this gradient (SkipShortsAboveGradient)">Short Gradient Threshold (°)</label>
                 <input type="number" id="short-grad-thresh" value="-7.0" step="0.5">
             </div>
             <div class="control-group">
-                <label title="Minimum net price movement (points) to consider a streak valid">Min Net Movement (pts)</label>
+                <label title="Minimum net price movement to consider a streak valid">Min Net Movement (pts)</label>
                 <input type="number" id="min-movement" value="5.0" step="0.5" min="0">
             </div>
             <div class="control-group">
-                <label title="Allowed ratio of counter-trend bars (e.g., 0.2 = 1 bad in 5)">Max Counter-Trend Ratio</label>
-                <input type="number" id="counter-ratio" value="0.2" step="0.1" min="0" max="0.5">
+                <label title="Break-even trigger distance (0 = disabled)">Break-Even Trigger (pts)</label>
+                <input type="number" id="breakeven-trigger" value="5" step="1" min="0" max="50">
+            </div>
+            <div class="control-group">
+                <label title="Break-even offset from entry">Break-Even Offset (pts)</label>
+                <input type="number" id="breakeven-offset" value="2" step="1" min="0" max="20">
             </div>
             <div class="control-group">
                 <label title="Type of streaks to analyze">Streak Type</label>
@@ -488,8 +570,76 @@
     <script>
         let selectedFile = null;
         let streakResults = [];
+        let currentStrategySettings = null;
 
         const BASE_URL = window.location.origin;
+
+        async function loadCurrentSettings() {
+            try {
+                const response = await fetch(`${BASE_URL}/strategy/state?strategy=BarsOnTheFlow`);
+                if (response.ok) {
+                    currentStrategySettings = await response.json();
+                    updateCurrentParamsDisplay();
+                }
+            } catch (error) {
+                console.log('Could not load current strategy settings:', error);
+            }
+        }
+
+        function updateCurrentParamsDisplay() {
+            if (!currentStrategySettings) return;
+            
+            document.getElementById('current-lookback').textContent = currentStrategySettings.trendLookbackBars || '-';
+            document.getElementById('current-matching').textContent = currentStrategySettings.minMatchingBars || '-';
+            document.getElementById('current-breakeven').textContent = currentStrategySettings.useBreakEven ? 'Yes' : 'No';
+            document.getElementById('current-be-trigger').textContent = currentStrategySettings.breakEvenTrigger || '-';
+            document.getElementById('current-be-offset').textContent = currentStrategySettings.breakEvenOffset || '-';
+            document.getElementById('current-long-grad').textContent = currentStrategySettings.gradientThresholdSkipLongs || '-';
+            document.getElementById('current-short-grad').textContent = currentStrategySettings.gradientThresholdSkipShorts || '-';
+            
+            document.getElementById('comparison-section').style.display = 'grid';
+        }
+
+        function updateSuggestedParams(params, pnl) {
+            const container = document.getElementById('suggested-params');
+            const current = currentStrategySettings || {};
+            
+            const lookbackChanged = params.min_streak !== current.trendLookbackBars;
+            const matchingChanged = params.max_streak !== current.minMatchingBars;
+            const longGradChanged = params.long_gradient_threshold !== current.gradientThresholdSkipLongs;
+            const shortGradChanged = params.short_gradient_threshold !== current.gradientThresholdSkipShorts;
+            
+            container.innerHTML = `
+                <div class="param-row">
+                    <div class="param-label">TrendLookbackBars</div>
+                    <div class="param-value ${lookbackChanged ? 'changed' : ''}">${params.min_streak} ${lookbackChanged ? '⬆️' : ''}</div>
+                </div>
+                <div class="param-row">
+                    <div class="param-label">MinMatchingBars</div>
+                    <div class="param-value ${matchingChanged ? 'changed' : ''}">${params.max_streak} ${matchingChanged ? '⬆️' : ''}</div>
+                </div>
+                <div class="param-row">
+                    <div class="param-label">Skip Longs Below Gradient</div>
+                    <div class="param-value ${longGradChanged ? 'changed' : ''}">${params.long_gradient_threshold}° ${longGradChanged ? '⬆️' : ''}</div>
+                </div>
+                <div class="param-row">
+                    <div class="param-label">Skip Shorts Above Gradient</div>
+                    <div class="param-value ${shortGradChanged ? 'changed' : ''}">${params.short_gradient_threshold}° ${shortGradChanged ? '⬆️' : ''}</div>
+                </div>
+                <div class="param-row">
+                    <div class="param-label">Expected Total PnL</div>
+                    <div class="param-value" style="color: #10b981;">$${pnl.totalPnl.toFixed(2)}</div>
+                </div>
+                <div class="param-row">
+                    <div class="param-label">Expected Missed PnL</div>
+                    <div class="param-value" style="color: #ef4444;">$${pnl.missedPnl.toFixed(2)}</div>
+                </div>
+                <div class="param-row">
+                    <div class="param-label">Total Potential PnL</div>
+                    <div class="param-value">$${pnl.potentialPnl.toFixed(2)}</div>
+                </div>
+            `;
+        }
 
         async function loadFiles() {
             try {
@@ -539,7 +689,8 @@
                 long_gradient_threshold: parseFloat(document.getElementById('long-grad-thresh').value),
                 short_gradient_threshold: parseFloat(document.getElementById('short-grad-thresh').value),
                 min_movement: parseFloat(document.getElementById('min-movement').value),
-                counter_ratio: parseFloat(document.getElementById('counter-ratio').value),
+                breakeven_trigger: parseFloat(document.getElementById('breakeven-trigger').value),
+                breakeven_offset: parseFloat(document.getElementById('breakeven-offset').value),
                 streak_type: document.getElementById('streak-type').value
             };
 
@@ -553,16 +704,35 @@
                 });
 
                 const data = await response.json();
+                
+                // Check for error response
+                if (data.error) {
+                    console.error('API error:', data.error);
+                    document.getElementById('loading').innerHTML = `<p style="color: #ef4444;">Error: ${data.error}</p>`;
+                    return;
+                }
+                
                 streakResults = data.streaks || [];
                 
-                updateStats(data.stats);
+                // Ensure stats exists with default values
+                const stats = data.stats || {
+                    total_streaks: 0,
+                    caught: 0,
+                    missed: 0,
+                    partial: 0,
+                    total_pnl: 0,
+                    missed_pnl: 0,
+                    potential_pnl: 0
+                };
+                
+                updateStats(stats);
                 renderTable(streakResults);
 
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('data-table').style.display = 'table';
             } catch (error) {
                 console.error('Error analyzing streaks:', error);
-                document.getElementById('loading').innerHTML = '<p style="color: #ef4444;">Error analyzing streaks</p>';
+                document.getElementById('loading').innerHTML = `<p style="color: #ef4444;">Error analyzing streaks: ${error.message}</p>`;
             }
         }
 
@@ -646,45 +816,45 @@
 
             const ranges = mode === 'quick_scan' ? {
                 min_streak: [4, 5, 6],
-                max_streak: [7, 8, 9],
+                max_streak: [2, 3, 4],
                 long_gradient: [5.0, 7.0, 9.0],
                 short_gradient: [-9.0, -7.0, -5.0],
                 min_movement: [3.0, 5.0, 7.0],
-                counter_ratio: [0.1, 0.2, 0.3]
+                breakeven_trigger: [0, 5, 8]
             } : {
                 min_streak: [3, 4, 5, 6, 7],
-                max_streak: [6, 7, 8, 9, 10],
+                max_streak: [2, 3, 4, 5],
                 long_gradient: [3.0, 5.0, 7.0, 9.0, 11.0],
                 short_gradient: [-11.0, -9.0, -7.0, -5.0, -3.0],
                 min_movement: [2.0, 3.0, 5.0, 7.0, 10.0],
-                counter_ratio: [0.0, 0.1, 0.2, 0.3, 0.4]
+                breakeven_trigger: [0, 3, 5, 7, 10]
             };
 
             let bestResult = null;
             let bestScore = -Infinity;
             let tested = 0;
             
-            // Calculate actual valid combinations (maxStreak must be > minStreak)
+            // Calculate total combinations
             let totalCombinations = 0;
             for (const minStreak of ranges.min_streak) {
                 for (const maxStreak of ranges.max_streak) {
-                    if (maxStreak > minStreak) {
+                    if (maxStreak <= minStreak) {
                         totalCombinations++;
                     }
                 }
             }
             totalCombinations *= ranges.long_gradient.length * ranges.short_gradient.length * 
-                                ranges.min_movement.length * ranges.counter_ratio.length;
+                                ranges.min_movement.length * ranges.breakeven_trigger.length;
 
             try {
                 for (const minStreak of ranges.min_streak) {
                     for (const maxStreak of ranges.max_streak) {
-                        if (maxStreak <= minStreak) continue;
+                        if (maxStreak <= minStreak) continue; // Skip invalid combinations (maxStreak must be > minStreak)
                         
                         for (const longGrad of ranges.long_gradient) {
                             for (const shortGrad of ranges.short_gradient) {
                                 for (const minMove of ranges.min_movement) {
-                                    for (const counterRatio of ranges.counter_ratio) {
+                                    for (const beTrigg of ranges.breakeven_trigger) {
                                         tested++;
                                         
                                         if (tested % 5 === 0 || tested === totalCombinations) {
@@ -699,7 +869,8 @@
                                             long_gradient_threshold: longGrad,
                                             short_gradient_threshold: shortGrad,
                                             min_movement: minMove,
-                                            counter_ratio: counterRatio,
+                                            breakeven_trigger: beTrigg,
+                                            breakeven_offset: parseFloat(document.getElementById('breakeven-offset').value),
                                             streak_type: document.getElementById('streak-type').value
                                         };
 
@@ -743,12 +914,14 @@
                     document.getElementById('long-grad-thresh').value = bestResult.params.long_gradient_threshold;
                     document.getElementById('short-grad-thresh').value = bestResult.params.short_gradient_threshold;
                     document.getElementById('min-movement').value = bestResult.params.min_movement;
-                    document.getElementById('counter-ratio').value = bestResult.params.counter_ratio;
 
                     // Update display
                     streakResults = bestResult.data.streaks || [];
                     updateStats(bestResult.data.stats);
                     renderTable(streakResults);
+                    
+                    // Show suggested parameters comparison
+                    updateSuggestedParams(bestResult.params, bestResult.pnl);
 
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('data-table').style.display = 'table';
@@ -796,8 +969,9 @@
             }).join('');
         }
 
-        // Load files on page load
+        // Load files and current settings on page load
         loadFiles();
+        loadCurrentSettings();
     </script>
 </body>
 </html>

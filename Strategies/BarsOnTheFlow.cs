@@ -8,6 +8,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.NinjaScript;
@@ -107,11 +108,24 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "EnableDashboardDiagnostics", Order = 19, GroupName = "BarsOnTheFlow")]
-        public bool EnableDashboardDiagnostics { get; set; } = false; // when true, post compact diags (incl. gradient) to dashboard
+        public bool EnableDashboardDiagnostics { get; set; } = true; // when true, post compact diags (incl. gradient) to dashboard
 
         [NinjaScriptProperty]
         [Display(Name = "DashboardBaseUrl", Order = 20, GroupName = "BarsOnTheFlow")]
         public string DashboardBaseUrl { get; set; } = "http://localhost:51888";
+
+        [NinjaScriptProperty]
+        [Display(Name = "DashboardAsyncHistorical", Order = 20, GroupName = "BarsOnTheFlow", Description = "If true, dashboard posts run async even during historical playback (faster but may miss late bars). If false, historical runs sync (slower but complete).")]
+        public bool DashboardAsyncHistorical { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(0, 60)]
+        [Display(Name = "StateUpdateIntervalSeconds", Order = 20, GroupName = "BarsOnTheFlow", Description = "How often to post state updates (0 = bar close only, 1-60 = update every N seconds on each tick). Lower values = more responsive but more server load.")]
+        public int StateUpdateIntervalSeconds { get; set; } = 0; // 0 = bar close only (default)
+
+        [NinjaScriptProperty]
+        [Display(Name = "StateUpdateOnPriceChange", Order = 20, GroupName = "BarsOnTheFlow", Description = "If true, post state update whenever the price changes (efficient, only updates when needed).")]
+        public bool StateUpdateOnPriceChange { get; set; } = false; // update on price change
 
         [NinjaScriptProperty]
         [Display(Name = "GradientFilterEnabled", Order = 21, GroupName = "BarsOnTheFlow")]
@@ -136,11 +150,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(2, 10)]
-        [Display(Name = "MinConsecutiveBars", Order = 26, GroupName = "BarsOnTheFlow", Description = "Minimum number of good/bad bars required within the lookback window to trigger a trend (2-10).")]
-        public int MinConsecutiveBars { get; set; } = 3; // minimum matching bars required
+        [Display(Name = "MinMatchingBars", Order = 26, GroupName = "BarsOnTheFlow", Description = "Minimum number of matching good/bad bars required within the lookback window to trigger a trend (2-10).")]
+        public int MinMatchingBars { get; set; } = 3; // minimum matching bars required
 
         [NinjaScriptProperty]
-        [Display(Name = "UsePnLTiebreaker", Order = 27, GroupName = "BarsOnTheFlow", Description = "When enabled, allows trend entry when minimum bars not met but net PnL supports the direction. When disabled, strictly requires minimum consecutive bars.")]
+        [Display(Name = "UsePnLTiebreaker", Order = 27, GroupName = "BarsOnTheFlow", Description = "When enabled, allows trend entry when minimum bars not met but net PnL supports the direction. When disabled, strictly requires minimum matching bars.")]
         public bool UsePnLTiebreaker { get; set; } = false; // PnL tiebreaker for marginal patterns
 
         [NinjaScriptProperty]
@@ -182,10 +196,26 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "EnableOpportunityLog", Order = 36, GroupName = "BarsOnTheFlow")]
         public bool EnableOpportunityLog { get; set; } = true; // log every bar with opportunity analysis
 
+        [NinjaScriptProperty]
+        [Display(Name = "UseBreakEven", Order = 37, GroupName = "BarsOnTheFlow", Description = "Move stop to break-even (or better) after reaching profit target.")]
+        public bool UseBreakEven { get; set; } = true; // enable break-even stop
+
+        [NinjaScriptProperty]
+        [Range(1, 50)]
+        [Display(Name = "BreakEvenTrigger", Order = 38, GroupName = "BarsOnTheFlow", Description = "Points of profit required to activate break-even stop (e.g., 5 = activate after 5 points profit).")]
+        public int BreakEvenTrigger { get; set; } = 5; // profit points needed to trigger break-even
+
+        [NinjaScriptProperty]
+        [Range(0, 20)]
+        [Display(Name = "BreakEvenOffset", Order = 39, GroupName = "BarsOnTheFlow", Description = "Points above entry to place break-even stop (e.g., 2 = stop at entry+2 points for small profit lock).")]
+        public int BreakEvenOffset { get; set; } = 2; // points above entry for break-even stop
+
         private readonly Queue<bool> recentGood = new Queue<bool>(10);
         private readonly Queue<double> recentPnl = new Queue<double>(10);
 
         private double lastFastEmaSlope = double.NaN;
+        private DateTime lastStateUpdateTime = DateTime.MinValue; // for throttling state updates
+        private double lastStateUpdatePrice = double.NaN; // for price-change updates
 
         // Optional bar index labels (copied from BareOhlcLogger)
         private bool showBarIndexLabels = true;
@@ -197,6 +227,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private StreamWriter logWriter;
         private string logFilePath;
         private bool logInitialized;
+
+        // Dashboard post diagnostics (limit noise to first success/failure)
+        private bool dashboardPostLoggedSuccess;
+        private bool dashboardPostLoggedFailure;
         
         // Opportunity analysis logging
         private StreamWriter opportunityLogWriter;
@@ -229,6 +263,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         
         // Track intended position to avoid re-entry with UniqueEntries mode
         private MarketPosition intendedPosition = MarketPosition.Flat;
+
+        // Track break-even activation
+        private bool breakEvenActivated = false;
+        private double breakEvenEntryPrice = double.NaN;
 
         private double lastFastEmaGradDeg = double.NaN;
 
@@ -420,14 +458,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                     CheckMidBarGradientEntry();
                 if (AllowMidBarGradientExit)
                     CheckMidBarGradientExit();
+            }
+
+            // Tick-based state update (throttled by StateUpdateIntervalSeconds or on price change)
+            if (!IsFirstTickOfBar && EnableDashboardDiagnostics)
+            {
+                bool shouldUpdate = false;
+                
+                // Time-based update
+                if (StateUpdateIntervalSeconds > 0 && (DateTime.Now - lastStateUpdateTime).TotalSeconds >= StateUpdateIntervalSeconds)
+                    shouldUpdate = true;
+                
+                // Price-change update (only if price actually changed)
+                if (StateUpdateOnPriceChange && Close[0] != lastStateUpdatePrice)
+                    shouldUpdate = true;
+                
+                if (shouldUpdate)
+                {
+                    UpdateStrategyState();
+                    lastStateUpdateTime = DateTime.Now;
+                    lastStateUpdatePrice = Close[0];
+                }
                 return;
             }
 
             if (!IsFirstTickOfBar)
                 return; // only score once per bar using the just-closed bar
             
-            // Update strategy state for external API queries
+            // Update strategy state for external API queries (always on bar close)
             UpdateStrategyState();
+            lastStateUpdateTime = DateTime.Now;
+            lastStateUpdatePrice = Close[0];
             
             // Reset mid-bar gradient waiting flags at start of new bar
             waitingForLongGradient = false;
@@ -557,6 +618,38 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             MarketPosition currentPos = Position.MarketPosition;
+
+            // Break-even stop management
+            if (UseBreakEven && currentPos != MarketPosition.Flat && !breakEvenActivated)
+            {
+                double currentProfit = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points);
+                
+                if (currentProfit >= BreakEvenTrigger)
+                {
+                    // Calculate break-even stop level
+                    double entryPrice = Position.AveragePrice;
+                    double breakEvenStopPrice;
+                    string orderName;
+                    
+                    if (currentPos == MarketPosition.Long)
+                    {
+                        breakEvenStopPrice = entryPrice + BreakEvenOffset;
+                        orderName = "BarsOnTheFlowLong";
+                        SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
+                        Print($"[BREAKEVEN] Bar {CurrentBar}: LONG break-even activated! Entry={entryPrice:F2}, Profit={currentProfit:F2}, NewStop={breakEvenStopPrice:F2} (Entry+{BreakEvenOffset})");
+                    }
+                    else // Short
+                    {
+                        breakEvenStopPrice = entryPrice - BreakEvenOffset;
+                        orderName = "BarsOnTheFlowShort";
+                        SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
+                        Print($"[BREAKEVEN] Bar {CurrentBar}: SHORT break-even activated! Entry={entryPrice:F2}, Profit={currentProfit:F2}, NewStop={breakEvenStopPrice:F2} (Entry-{BreakEvenOffset})");
+                    }
+                    
+                    breakEvenActivated = true;
+                    breakEvenEntryPrice = entryPrice;
+                }
+            }
 
             // Handle pending exit decisions from previous bar
             if (pendingExitShortOnBad && currentPos == MarketPosition.Short)
@@ -1140,8 +1233,29 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Reset intendedPosition when exits fill
             if (isExit)
             {
+                // Check if this was a break-even stop exit
+                if (breakEvenActivated && (order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit))
+                {
+                    double exitPrice = execution.Price;
+                    double profitLocked = 0;
+                    
+                    if (order.OrderAction == OrderAction.Sell) // Long exit
+                    {
+                        profitLocked = (exitPrice - breakEvenEntryPrice) * Position.Quantity;
+                    }
+                    else if (order.OrderAction == OrderAction.BuyToCover) // Short exit
+                    {
+                        profitLocked = (breakEvenEntryPrice - exitPrice) * Position.Quantity;
+                    }
+                    
+                    Print($"[BREAKEVEN_EXIT] Bar {CurrentBar}: Break-even stop hit! Entry={breakEvenEntryPrice:F2}, Exit={exitPrice:F2}, Locked Profit={profitLocked:F2} points");
+                }
+                
                 Print($"[EXIT_FILL_DEBUG] Bar {CurrentBar}: Exit filled - {action}, resetting intendedPosition from {intendedPosition} to Flat");
                 intendedPosition = MarketPosition.Flat;
+                // Reset break-even tracking
+                breakEvenActivated = false;
+                breakEvenEntryPrice = double.NaN;
             }
             // Update intendedPosition when entries fill
             else if (isEntry)
@@ -1257,7 +1371,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 logWriter.WriteLine($"# SkipLongsBelowGradient={SkipLongsBelowGradient:F2}");
                 
                 // Entry/Exit parameters
-                logWriter.WriteLine($"# MinConsecutiveBars={MinConsecutiveBars}");
+                logWriter.WriteLine($"# MinMatchingBars={MinMatchingBars}");
                 logWriter.WriteLine($"# ReverseOnTrendBreak={ReverseOnTrendBreak}");
                 logWriter.WriteLine($"# ExitIfEntryBarOpposite={ExitIfEntryBarOpposite}");
                 logWriter.WriteLine($"# StopLossPoints={StopLossPoints}");
@@ -1326,7 +1440,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     
                     // Entry/Exit parameters
                     { "TrendLookbackBars", TrendLookbackBars },
-                    { "MinConsecutiveBars", MinConsecutiveBars },
+                    { "MinMatchingBars", MinMatchingBars },
                     { "UsePnLTiebreaker", UsePnLTiebreaker },
                     { "ReverseOnTrendBreak", ReverseOnTrendBreak },
                     { "ExitIfEntryBarOpposite", ExitIfEntryBarOpposite },
@@ -1346,6 +1460,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "EnableFastGradDebug", EnableFastGradDebug },
                     { "EnableDashboardDiagnostics", EnableDashboardDiagnostics },
                     { "DashboardBaseUrl", DashboardBaseUrl },
+                    { "DashboardAsyncHistorical", DashboardAsyncHistorical },
                     { "EnableOpportunityLog", EnableOpportunityLog },
                     
                     // Metadata
@@ -1403,6 +1518,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                 state.AppendLine($"  \"isRunning\": true,");
                 state.AppendLine($"  \"currentBar\": {CurrentBar},");
                 state.AppendLine($"  \"contracts\": {Contracts},");
+                state.AppendLine($"  \"contractsTrading\": {Position.Quantity},");
+                
+                // Also report account-level position
+                int accountQuantity = 0;
+                if (Account != null && Account.Positions != null)
+                {
+                    foreach (var pos in Account.Positions)
+                    {
+                        if (pos.Instrument == Instrument)
+                        {
+                            accountQuantity = pos.Quantity;
+                            break;
+                        }
+                    }
+                }
+                state.AppendLine($"  \"accountQuantity\": {accountQuantity},");
+                
                 state.AppendLine($"  \"positionMarketPosition\": \"{Position.MarketPosition}\",");
                 state.AppendLine($"  \"positionQuantity\": {Position.Quantity},");
                 state.AppendLine($"  \"intendedPosition\": \"{intendedPosition}\",");
@@ -1418,6 +1550,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 state.AppendLine($"  \"calculatedStopTicks\": {calcStopTicks},");
                 state.AppendLine($"  \"calculatedStopPoints\": {calcStopPoints:F2},");
                 
+                // Break-even settings
+                state.AppendLine($"  \"useBreakEven\": {UseBreakEven.ToString().ToLower()},");
+                state.AppendLine($"  \"breakEvenTrigger\": {BreakEvenTrigger},");
+                state.AppendLine($"  \"breakEvenOffset\": {BreakEvenOffset},");
+                state.AppendLine($"  \"breakEvenActivated\": {breakEvenActivated.ToString().ToLower()},");
+                
                 state.AppendLine($"  \"enableShorts\": {EnableShorts.ToString().ToLower()},");
                 state.AppendLine($"  \"avoidLongsOnBadCandle\": {AvoidLongsOnBadCandle.ToString().ToLower()},");
                 state.AppendLine($"  \"avoidShortsOnGoodCandle\": {AvoidShortsOnGoodCandle.ToString().ToLower()},");
@@ -1426,6 +1564,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 state.AppendLine($"  \"fastEmaPeriod\": {FastEmaPeriod},");
                 state.AppendLine($"  \"skipLongsBelowGradient\": {SkipLongsBelowGradient},");
                 state.AppendLine($"  \"skipShortsAboveGradient\": {SkipShortsAboveGradient},");
+                state.AppendLine($"  \"trendLookbackBars\": {TrendLookbackBars},");
+                state.AppendLine($"  \"minMatchingBars\": {MinMatchingBars},");
+                state.AppendLine($"  \"usePnLTiebreaker\": {UsePnLTiebreaker.ToString().ToLower()},");
                 state.AppendLine($"  \"pendingLongFromBad\": {pendingLongFromBad.ToString().ToLower()},");
                 state.AppendLine($"  \"pendingShortFromGood\": {pendingShortFromGood.ToString().ToLower()}");
                 state.AppendLine("}");
@@ -1443,11 +1584,203 @@ namespace NinjaTrader.NinjaScript.Strategies
         /// </summary>
         private void UpdateStrategyState()
         {
-            // Only update every 10 bars to avoid excessive I/O
+            // Send state to server on each bar for real-time monitoring
+            if (EnableDashboardDiagnostics)
+            {
+                // Build JSON on main thread (safe access to NinjaTrader objects)
+                string jsonPayload = BuildStrategyStateJson();
+                string url = DashboardBaseUrl.TrimEnd('/') + "/state";
+                
+                bool useAsync = State != State.Historical || DashboardAsyncHistorical;
+
+                if (useAsync)
+                {
+                    // Async fire-and-forget to avoid blocking (fast, may miss late bars in historical)
+                    Task.Run(() => SendJsonToServer(jsonPayload, url));
+                }
+                else
+                {
+                    // Synchronous during historical when completeness is required
+                    SendJsonToServer(jsonPayload, url);
+                }
+            }
+            
+            // Keep file backup every 10 bars to avoid excessive I/O
             if (CurrentBar % 10 == 0)
             {
                 ExportStrategyState();
             }
+        }
+
+        /// <summary>
+        /// Sends a pre-built JSON string to the server.
+        /// Called on background thread via Task.Run.
+        /// </summary>
+        private void SendJsonToServer(string json, string url)
+        {
+            try
+            {
+                EnsureHttpClient();
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+                // Use ConfigureAwait(false) to avoid sync-context deadlocks
+                var response = sharedClient
+                    .SendAsync(request, HttpCompletionOption.ResponseHeadersRead)
+                    .ConfigureAwait(false)
+                    .GetAwaiter()
+                    .GetResult();
+                if (!dashboardPostLoggedSuccess)
+                {
+                    dashboardPostLoggedSuccess = true;
+                    Print($"[Dashboard] POST succeeded: {(int)response.StatusCode} {response.StatusCode} (bar {CurrentBar})");
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!dashboardPostLoggedFailure)
+                {
+                    dashboardPostLoggedFailure = true;
+                    var baseEx = ex.GetBaseException();
+                    Print($"[Dashboard] POST failed: {baseEx.Message} (url={url}, bar={CurrentBar})");
+                    Print($"[Dashboard] Detail: {baseEx}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Builds the strategy state JSON string on the main thread.
+        /// This ensures thread-safe access to all NinjaTrader objects.
+        /// </summary>
+        private string BuildStrategyStateJson()
+        {
+            // Use previous bar's final data (index [1])
+            int barIdx = CurrentBar - 1;
+            DateTime barTime = Time[1];
+            double barOpen = Open[1];
+            double barHigh = High[1];
+            double barLow = Low[1];
+            double barClose = Close[1];
+            double barVolume = Volume[1];
+
+            // Calculate dynamic stop loss
+            int calcStopTicks = CalculateStopLossTicks();
+            double calcStopPoints = calcStopTicks / 4.0;
+
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            var json = new StringBuilder();
+            json.Append("{");
+            json.Append("\"timestamp\":\"").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).Append("\",");
+            json.Append("\"strategyName\":\"BarsOnTheFlow\",");
+            json.Append("\"isRunning\":true,");
+            json.Append("\"enableDashboardDiagnostics\":").Append(EnableDashboardDiagnostics ? "true" : "false").Append(',');
+            
+            // Previous bar's final OHLC
+            json.Append("\"barIndex\":").Append(barIdx).Append(',');
+            json.Append("\"barTime\":\"").Append(barTime.ToString("o")).Append("\",");
+            json.Append("\"open\":").Append(barOpen.ToString(ci)).Append(',');
+            json.Append("\"high\":").Append(barHigh.ToString(ci)).Append(',');
+            json.Append("\"low\":").Append(barLow.ToString(ci)).Append(',');
+            json.Append("\"close\":").Append(barClose.ToString(ci)).Append(',');
+            json.Append("\"volume\":").Append(barVolume.ToString(ci)).Append(',');
+            
+            // Current bar index
+            json.Append("\"currentBar\":").Append(CurrentBar).Append(',');
+            
+            // Position state
+            json.Append("\"contracts\":").Append(Contracts).Append(',');
+            json.Append("\"contractsTrading\":").Append(Position.Quantity).Append(',');
+            
+            // Also report account-level position for this instrument
+            int accountQuantity = 0;
+            if (Account != null && Account.Positions != null)
+            {
+                foreach (var pos in Account.Positions)
+                {
+                    if (pos.Instrument == Instrument)
+                    {
+                        accountQuantity = pos.Quantity;
+                        break;
+                    }
+                }
+            }
+            json.Append("\"accountQuantity\":").Append(accountQuantity).Append(',');
+            
+            json.Append("\"positionMarketPosition\":\"").Append(Position.MarketPosition).Append("\",");
+            json.Append("\"positionQuantity\":").Append(Position.Quantity).Append(',');
+            json.Append("\"positionAveragePrice\":").Append(Position.AveragePrice.ToString(ci)).Append(',');
+            json.Append("\"intendedPosition\":\"").Append(intendedPosition).Append("\",");
+            
+            // Stop loss configuration
+            json.Append("\"stopLossPoints\":").Append(StopLossPoints).Append(',');
+            json.Append("\"calculatedStopTicks\":").Append(calcStopTicks).Append(',');
+            json.Append("\"calculatedStopPoints\":").Append(calcStopPoints.ToString("F2", ci)).Append(',');
+            json.Append("\"useTrailingStop\":").Append(UseTrailingStop ? "true" : "false").Append(',');
+            json.Append("\"useDynamicStopLoss\":").Append(UseDynamicStopLoss ? "true" : "false").Append(',');
+            json.Append("\"lookback\":").Append(DynamicStopLookback).Append(',');
+            json.Append("\"multiplier\":").Append(DynamicStopMultiplier.ToString(ci)).Append(',');
+            
+            // Break-even configuration
+            json.Append("\"useBreakEven\":").Append(UseBreakEven ? "true" : "false").Append(',');
+            json.Append("\"breakEvenTrigger\":").Append(BreakEvenTrigger).Append(',');
+            json.Append("\"breakEvenOffset\":").Append(BreakEvenOffset).Append(',');
+            json.Append("\"breakEvenActivated\":").Append(breakEvenActivated ? "true" : "false").Append(',');
+            
+            // Strategy parameters
+            json.Append("\"enableShorts\":").Append(EnableShorts ? "true" : "false").Append(',');
+            json.Append("\"avoidLongsOnBadCandle\":").Append(AvoidLongsOnBadCandle ? "true" : "false").Append(',');
+            json.Append("\"avoidShortsOnGoodCandle\":").Append(AvoidShortsOnGoodCandle ? "true" : "false").Append(',');
+            json.Append("\"exitOnTrendBreak\":").Append(ExitOnTrendBreak ? "true" : "false").Append(',');
+            json.Append("\"reverseOnTrendBreak\":").Append(ReverseOnTrendBreak ? "true" : "false").Append(',');
+            json.Append("\"fastEmaPeriod\":").Append(FastEmaPeriod).Append(',');
+            json.Append("\"gradientThresholdSkipLongs\":").Append(SkipLongsBelowGradient.ToString(ci)).Append(',');
+            json.Append("\"gradientThresholdSkipShorts\":").Append(SkipShortsAboveGradient.ToString(ci)).Append(',');
+            json.Append("\"gradientFilterEnabled\":").Append(GradientFilterEnabled ? "true" : "false").Append(',');
+            
+            // Trend parameters
+            json.Append("\"trendLookbackBars\":").Append(TrendLookbackBars).Append(',');
+            json.Append("\"minMatchingBars\":").Append(MinMatchingBars).Append(',');
+            json.Append("\"usePnLTiebreaker\":").Append(UsePnLTiebreaker ? "true" : "false").Append(',');
+            
+            // Pending signals
+            json.Append("\"pendingLongFromBad\":").Append(pendingLongFromBad ? "true" : "false").Append(',');
+            json.Append("\"pendingShortFromGood\":").Append(pendingShortFromGood ? "true" : "false").Append(',');
+            
+            // Entry tracking
+            json.Append("\"lastEntryBarIndex\":").Append(lastEntryBarIndex).Append(',');
+            json.Append("\"lastEntryDirection\":\"").Append(lastEntryDirection).Append("\",");
+            
+            // Performance metrics (real-time)
+            double unrealizedPnL = 0;
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                unrealizedPnL = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points);
+            }
+            
+            double realizedPnL = 0;
+            int totalTrades = 0;
+            int winningTrades = 0;
+            int losingTrades = 0;
+            double winRate = 0;
+            
+            if (SystemPerformance != null && SystemPerformance.AllTrades.Count > 0)
+            {
+                realizedPnL = SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit;
+                totalTrades = SystemPerformance.AllTrades.Count;
+                winningTrades = SystemPerformance.AllTrades.WinningTrades.Count;
+                losingTrades = SystemPerformance.AllTrades.LosingTrades.Count;
+                winRate = totalTrades > 0 ? (winningTrades * 100.0 / totalTrades) : 0;
+            }
+            
+            json.Append("\"unrealizedPnL\":").Append(unrealizedPnL.ToString(ci)).Append(',');
+            json.Append("\"realizedPnL\":").Append(realizedPnL.ToString(ci)).Append(',');
+            json.Append("\"totalTradesCount\":").Append(totalTrades).Append(',');
+            json.Append("\"winningTradesCount\":").Append(winningTrades).Append(',');
+            json.Append("\"losingTradesCount\":").Append(losingTrades).Append(',');
+            json.Append("\"winRate\":").Append(winRate.ToString("F2", ci));
+            
+            json.Append("}");
+
+            return json.ToString();
         }
 
         private void InitializeLog()
@@ -1718,6 +2051,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (isExit)
             {
+                // Check if this is a break-even stop exit
+                if (breakEvenActivated && (order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit))
+                {
+                    return "BreakEvenStop";
+                }
+                
                 if (order.Name == "BarsOnTheFlowRetrace" || order.Name == "BarsOnTheFlowRetraceS")
                     return "Retrace";
                 if (order.Name == "BarsOnTheFlowExit" || order.Name == "BarsOnTheFlowExitS")
@@ -1792,7 +2131,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             // Ensure we have enough data in the lookback window
             int lookback = Math.Min(TrendLookbackBars, recentGood.Count);
-            if (lookback < MinConsecutiveBars)
+            if (lookback < MinMatchingBars)
                 return false;
 
             // Get the last 'lookback' bars
@@ -1802,12 +2141,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             int goodCount = lastBars.Count(g => g);
             double netPnl = lastPnls.Sum();
             
-            // Primary condition: minimum consecutive bars met
-            if (goodCount >= MinConsecutiveBars)
+            // Primary condition: minimum matching bars met
+            if (goodCount >= MinMatchingBars)
                 return true;
             
             // Secondary condition: PnL tiebreaker (if enabled and we're close to minimum)
-            if (UsePnLTiebreaker && goodCount >= (MinConsecutiveBars - 1) && netPnl > 0)
+            if (UsePnLTiebreaker && goodCount >= (MinMatchingBars - 1) && netPnl > 0)
                 return true;
             
             return false;
@@ -1817,7 +2156,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             // Ensure we have enough data in the lookback window
             int lookback = Math.Min(TrendLookbackBars, recentGood.Count);
-            if (lookback < MinConsecutiveBars)
+            if (lookback < MinMatchingBars)
                 return false;
 
             // Get the last 'lookback' bars
@@ -1827,12 +2166,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             int badCount = lastBars.Count(g => !g);
             double netPnl = lastPnls.Sum();
             
-            // Primary condition: minimum consecutive bars met
-            if (badCount >= MinConsecutiveBars)
+            // Primary condition: minimum matching bars met
+            if (badCount >= MinMatchingBars)
                 return true;
             
             // Secondary condition: PnL tiebreaker (if enabled and we're close to minimum)
-            if (UsePnLTiebreaker && badCount >= (MinConsecutiveBars - 1) && netPnl < 0)
+            if (UsePnLTiebreaker && badCount >= (MinMatchingBars - 1) && netPnl < 0)
                 return true;
             
             return false;
@@ -2576,7 +2915,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (sharedClient == null)
                 {
                     sharedClient = new HttpClient();
-                    sharedClient.Timeout = TimeSpan.FromMilliseconds(300);
+                    sharedClient.Timeout = TimeSpan.FromSeconds(30); // 30 second timeout for state posts during historical
                     sharedClient.DefaultRequestHeaders.ConnectionClose = false;
                 }
             }
@@ -2927,9 +3266,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double gradDeg = lastFastEmaGradDeg;
 
                 // Pattern state
-                int goodCount = recentGood.Count >= MinConsecutiveBars ? recentGood.Count(g => g) : 0;
-                int badCount = recentGood.Count >= MinConsecutiveBars ? recentGood.Count(g => !g) : 0;
-                double netPnl = recentPnl.Count >= MinConsecutiveBars ? recentPnl.Sum() : 0;
+                int goodCount = recentGood.Count >= MinMatchingBars ? recentGood.Count(g => g) : 0;
+                int badCount = recentGood.Count >= MinMatchingBars ? recentGood.Count(g => !g) : 0;
+                double netPnl = recentPnl.Count >= MinMatchingBars ? recentPnl.Sum() : 0;
                 string barPattern = GetBarSequencePattern();
 
                 // Position state

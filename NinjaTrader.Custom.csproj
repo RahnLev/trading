@@ -252,7 +252,6 @@
     <Compile Include="Indicators\%40ZLEMA.cs" />
     <Compile Include="Indicators\%40BuySellPressure.cs" />
     <Compile Include="Indicators\%40ZigZag.cs" />
-    <Compile Include="AssemblyInfo.cs" />
     <Compile Include="MarketAnalyzerColumns\%40AskPrice.cs" />
     <Compile Include="MarketAnalyzerColumns\%40AskSize.cs" />
     <Compile Include="MarketAnalyzerColumns\%40AverageDailyVolume.cs" />
@@ -363,7 +362,6 @@
     <Compile Include="SuperDomColumns\%40Recent.cs" />
     <Compile Include="SuperDomColumns\%40Volume.cs" />
     <Compile Include="SuperDomColumns\%40PullingStacking.cs" />
-    <Compile Include="Strategies\BarsOnTheFlow.cs" />
     <Compile Include="Strategies\OpenAISTR.cs" />
     <Compile Include="Strategies\%40%40DepthPeekExample.cs" />
     <Compile Include="Strategies\CBASSuperTrendStrategy.cs" />
@@ -419,6 +417,7 @@
     <Compile Include="obj\Debug\ko-KR\NinjaTrader.Custom.resources.cs" />
     <Compile Include="obj\Debug\it-IT\NinjaTrader.Custom.resources.cs" />
     -->
+    <Compile Include="Strategies\BarsOnTheFlow.cs" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Update="Resource.resx">

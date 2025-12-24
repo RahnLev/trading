@@ -8,7 +8,8 @@ import re
 from datetime import datetime
 from typing import List, Dict, Any
 from collections import deque
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from starlette.requests import ClientDisconnect
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +25,15 @@ app.add_middleware(
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
 )
+
+# Serve monitor.html at root
+@app.get('/')
+async def serve_monitor():
+    try:
+        with open('monitor.html', 'r', encoding='utf-8') as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse('<h1>Monitor page not found</h1><p>Create monitor.html in the dashboard directory.</p>', status_code=404)
 ws_clients: List[WebSocket] = []
 
 async def ws_broadcast(message: Dict[str, Any]):
@@ -108,7 +118,9 @@ def parse_bool(val):
 # --- SQLite configuration with connection pooling ---
 USE_SQLITE = True
 DB_PATH = os.path.join(os.path.dirname(__file__), 'dashboard.db')
+BARS_DB_PATH = os.path.join(os.path.dirname(__file__), 'bars.db')
 _db_connection = None
+_bars_db_connection = None
 
 def get_db_connection():
     """Get or create persistent database connection with optimizations."""
@@ -123,6 +135,17 @@ def get_db_connection():
         _db_connection.execute('PRAGMA synchronous=NORMAL')
         print('[DB] Connection pool initialized with WAL mode')
     return _db_connection
+
+def get_bars_db_connection():
+    """Get or create persistent bars database connection."""
+    global _bars_db_connection
+    if _bars_db_connection is None:
+        _bars_db_connection = sqlite3.connect(BARS_DB_PATH, check_same_thread=False, timeout=10.0)
+        _bars_db_connection.execute('PRAGMA journal_mode=WAL')
+        _bars_db_connection.execute('PRAGMA cache_size=-10000')
+        _bars_db_connection.execute('PRAGMA synchronous=NORMAL')
+        print('[BARS_DB] Connection pool initialized with WAL mode')
+    return _bars_db_connection
 
 def init_db():
     if not USE_SQLITE:
@@ -272,6 +295,109 @@ def init_db():
     conn.commit()
     # Don't close - keep persistent connection
 
+def init_bars_db():
+    """Initialize bars.db with BarsOnTheFlowStateAndBar table."""
+    if not USE_SQLITE:
+        return
+    try:
+        conn = get_bars_db_connection()
+        cur = conn.cursor()
+        
+        # Main table combining strategy state + bar OHLC
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS BarsOnTheFlowStateAndBar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            receivedTs REAL NOT NULL,
+            strategyName TEXT,
+            enableDashboardDiagnostics INTEGER,
+            
+            -- Bar identification
+            barIndex INTEGER NOT NULL,
+            barTime TEXT,
+            currentBar INTEGER,
+            
+            -- Previous bar OHLC (final data)
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            volume REAL,
+            candleType TEXT,
+            
+            -- Position state
+            positionMarketPosition TEXT,
+            positionQuantity INTEGER,
+            positionAveragePrice REAL,
+            intendedPosition TEXT,
+            lastEntryBarIndex INTEGER,
+            lastEntryDirection TEXT,
+            
+            -- Stop loss configuration
+            stopLossPoints INTEGER,
+            calculatedStopTicks INTEGER,
+            calculatedStopPoints REAL,
+            useTrailingStop INTEGER,
+            useDynamicStopLoss INTEGER,
+            lookback INTEGER,
+            multiplier REAL,
+            
+            -- Break-even configuration
+            useBreakEven INTEGER,
+            breakEvenTrigger INTEGER,
+            breakEvenOffset INTEGER,
+            breakEvenActivated INTEGER,
+            
+            -- Strategy parameters
+            contracts INTEGER,
+            enableShorts INTEGER,
+            avoidLongsOnBadCandle INTEGER,
+            avoidShortsOnGoodCandle INTEGER,
+            exitOnTrendBreak INTEGER,
+            reverseOnTrendBreak INTEGER,
+            fastEmaPeriod INTEGER,
+            gradientThresholdSkipLongs REAL,
+            gradientThresholdSkipShorts REAL,
+            gradientFilterEnabled INTEGER,
+            
+            -- Trend parameters
+            trendLookbackBars INTEGER,
+            minMatchingBars INTEGER,
+            usePnLTiebreaker INTEGER,
+            
+            -- Pending signals
+            pendingLongFromBad INTEGER,
+            pendingShortFromGood INTEGER,
+            
+            -- Performance metrics (real-time)
+            unrealizedPnL REAL,
+            realizedPnL REAL,
+            totalTradesCount INTEGER,
+            winningTradesCount INTEGER,
+            losingTradesCount INTEGER,
+            winRate REAL,
+            
+            -- Full state JSON for reference
+            stateJson TEXT,
+            
+            created_at TEXT DEFAULT (datetime('now')),
+            
+            -- Prevent duplicate bars: unique constraint on strategy + barIndex
+            UNIQUE(strategyName, barIndex)
+        )
+        """)
+        
+        # Indexes for common queries
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_botf_bar ON BarsOnTheFlowStateAndBar(barIndex)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_botf_ts ON BarsOnTheFlowStateAndBar(receivedTs DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_botf_position ON BarsOnTheFlowStateAndBar(positionMarketPosition)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_botf_currentbar ON BarsOnTheFlowStateAndBar(currentBar)")
+        
+        conn.commit()
+        print('[BARS_DB] BarsOnTheFlowStateAndBar table initialized')
+    except Exception as ex:
+        print(f'[BARS_DB] Initialization error: {ex}')
+
 def ensure_db_columns():
     if not USE_SQLITE:
         return
@@ -340,6 +466,7 @@ def db_query_one(sql: str, params=()):
     return row
 
 init_db()
+init_bars_db()
 ensure_db_columns()
 
 # --- Trade performance tracking for exit optimization ---
@@ -576,6 +703,10 @@ bar_cache: deque[Dict[str, Any]] = deque(maxlen=BAR_CACHE_MAX)
 # --- Log entry cache for tracking actual strategy decisions ---
 LOG_CACHE_MAX = 1000  # Keep last 1000 log entries (entry/exit/filter decisions)
 log_cache: deque[Dict[str, Any]] = deque(maxlen=LOG_CACHE_MAX)
+
+# --- Strategy state cache (one entry per strategy) ---
+# Stores current strategy state for real-time monitoring
+strategy_state_cache: Dict[str, Dict[str, Any]] = {}
 
 # Strategy log folder (CSV + .log) used by the bar report endpoint
 # Path is relative to the Custom folder (two levels up from web/dashboard, then into strategy_logs)
@@ -817,6 +948,7 @@ static_dir = os.path.join(os.path.dirname(__file__), 'static')
 app.mount('/static', StaticFiles(directory=static_dir), name='static')
 
 @app.get('/', response_class=HTMLResponse)
+@app.get('/index.html', response_class=HTMLResponse)
 def index():
     # Read index.html on each request so HTML/CSS updates without server restart
     index_path = os.path.join(static_dir, 'index.html')
@@ -872,6 +1004,16 @@ def bar_flow_report_page():
             return f.read()
     except Exception as e:
         return HTMLResponse(f'<h1>Bar Flow Report Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
+@app.get('/strategy_state.html', response_class=HTMLResponse)
+@app.get('/strategy_state', response_class=HTMLResponse)
+def strategy_state_page():
+    page_path = os.path.join(os.path.dirname(static_dir), 'strategy_state.html')
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return HTMLResponse(f'<h1>Strategy State Page Not Found</h1><p>Error: {e}</p>', status_code=404)
 
 @app.get('/candles.html', response_class=HTMLResponse)
 @app.get('/candles', response_class=HTMLResponse)
@@ -1320,6 +1462,9 @@ async def receive_diag(request: Request):
     # Accept either a single dict or a list of dicts (batched)
     try:
         payload = await request.json()
+    except ClientDisconnect:
+        # client closed early; treat as best-effort
+        return JSONResponse({"status": "client_disconnected"}, status_code=499)
     except Exception:
         text = await request.body()
         try:
@@ -1431,6 +1576,306 @@ async def receive_diag(request: Request):
             print(f"[DIAG] Error processing item: {ex}")
     
     return JSONResponse({"status": "ok", "count": len(items)})
+
+# --- Strategy State Endpoints ---
+@app.post('/state')
+async def receive_state(request: Request):
+    """Receive strategy state updates and cache them for real-time monitoring."""
+    try:
+        payload = await request.json()
+    except Exception:
+        text = await request.body()
+        try:
+            payload = json.loads(text)
+        except Exception:
+            print("[STATE] Failed to parse JSON from request body")
+            return JSONResponse({"error": "invalid_json"}, status_code=400)
+    
+    try:
+        # Enrich with server timestamp
+        payload["receivedTs"] = time.time()
+        payload["receivedAt"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Get strategy name (default to BarsOnTheFlow if not provided)
+        strategy_name = payload.get("strategyName", "BarsOnTheFlow")
+        bar_idx = payload.get("barIndex", "?")
+        
+        print(f"[STATE] Received bar {bar_idx} from {strategy_name}")
+        
+        # Cache the state (overwrites previous state for this strategy)
+        strategy_state_cache[strategy_name] = payload
+        
+        # Log every state update for debugging
+        bar = payload.get("currentBar", "?")
+        position = payload.get("positionMarketPosition", "?")
+        print(f"[STATE] {strategy_name} bar={bar} position={position} receivedAt={payload['receivedAt']}")
+        
+        # Broadcast to WebSocket clients
+        try:
+            await ws_broadcast({
+                'type': 'state',
+                'strategy': strategy_name,
+                'data': payload
+            })
+        except Exception as _ex_ws:
+            pass
+        
+        # Persist to bars.db for historical analysis (fire-and-forget, don't block response)
+        if strategy_name == "BarsOnTheFlow":
+            # Run DB insert in background thread to avoid blocking the HTTP response
+            import threading
+            db_thread = threading.Thread(target=_save_state_to_db, args=(payload, strategy_name), daemon=True)
+            db_thread.start()
+            print(f"[STATE] Started background save thread for bar {bar_idx}")
+        
+        return JSONResponse({"status": "ok", "strategy": strategy_name})
+    
+    except Exception as ex:
+        print(f"[STATE] Error processing state: {ex}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(ex)}, status_code=500)
+    
+    except Exception as ex:
+        print(f"[STATE] Error processing state: {ex}")
+        return JSONResponse({"error": str(ex)}, status_code=500)
+
+def _save_state_to_db(payload: dict, strategy_name: str):
+    """Save state to database in background thread."""
+    try:
+        bar_idx = payload.get('barIndex', '?')
+        print(f"[BG_SAVE] Starting save for bar {bar_idx}")
+        
+        # Determine candle type
+        candle_type = "flat"
+        if payload.get('open') and payload.get('close'):
+            if payload['close'] > payload['open']:
+                candle_type = "good"
+            elif payload['close'] < payload['open']:
+                candle_type = "bad"
+        
+        conn = get_bars_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            INSERT OR REPLACE INTO BarsOnTheFlowStateAndBar (
+                timestamp, receivedTs, strategyName, enableDashboardDiagnostics,
+                barIndex, barTime, currentBar,
+                open, high, low, close, volume, candleType,
+                positionMarketPosition, positionQuantity, positionAveragePrice,
+                intendedPosition, lastEntryBarIndex, lastEntryDirection,
+                stopLossPoints, calculatedStopTicks, calculatedStopPoints,
+                useTrailingStop, useDynamicStopLoss, lookback, multiplier,
+                contracts, enableShorts, avoidLongsOnBadCandle, avoidShortsOnGoodCandle,
+                exitOnTrendBreak, reverseOnTrendBreak, fastEmaPeriod,
+                gradientThresholdSkipLongs, gradientThresholdSkipShorts, gradientFilterEnabled,
+                trendLookbackBars, minMatchingBars, usePnLTiebreaker,
+                pendingLongFromBad, pendingShortFromGood,
+                unrealizedPnL, realizedPnL, totalTradesCount,
+                winningTradesCount, losingTradesCount, winRate,
+                stateJson
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        """, (
+            payload.get('timestamp'),
+            payload['receivedTs'],
+            strategy_name,
+            1 if payload.get('enableDashboardDiagnostics') else 0,
+            payload.get('barIndex'),
+            payload.get('barTime'),
+            payload.get('currentBar'),
+            payload.get('open'),
+            payload.get('high'),
+            payload.get('low'),
+            payload.get('close'),
+            payload.get('volume'),
+            candle_type,
+            payload.get('positionMarketPosition'),
+            payload.get('positionQuantity'),
+            payload.get('positionAveragePrice'),
+            payload.get('intendedPosition'),
+            payload.get('lastEntryBarIndex'),
+            payload.get('lastEntryDirection'),
+            payload.get('stopLossPoints'),
+            payload.get('calculatedStopTicks'),
+            payload.get('calculatedStopPoints'),
+            1 if payload.get('useTrailingStop') else 0,
+            1 if payload.get('useDynamicStopLoss') else 0,
+            payload.get('lookback'),
+            payload.get('multiplier'),
+            payload.get('contracts'),
+            1 if payload.get('enableShorts') else 0,
+            1 if payload.get('avoidLongsOnBadCandle') else 0,
+            1 if payload.get('avoidShortsOnGoodCandle') else 0,
+            1 if payload.get('exitOnTrendBreak') else 0,
+            1 if payload.get('reverseOnTrendBreak') else 0,
+            payload.get('fastEmaPeriod'),
+            payload.get('gradientThresholdSkipLongs'),
+            payload.get('gradientThresholdSkipShorts'),
+            1 if payload.get('gradientFilterEnabled') else 0,
+            payload.get('trendLookbackBars'),
+            payload.get('minMatchingBars'),
+            1 if payload.get('usePnLTiebreaker') else 0,
+            1 if payload.get('pendingLongFromBad') else 0,
+            1 if payload.get('pendingShortFromGood') else 0,
+            payload.get('unrealizedPnL'),
+            payload.get('realizedPnL'),
+            payload.get('totalTradesCount'),
+            payload.get('winningTradesCount'),
+            payload.get('losingTradesCount'),
+            payload.get('winRate'),
+            json.dumps(payload)
+        ))
+        conn.commit()
+        # Don't close global connection - keep it open for reuse
+        print(f"[BG_SAVE] Saved bar {bar_idx} successfully")
+    except Exception as db_ex:
+        print(f"[BG_SAVE] Error saving bar: {db_ex}")
+        import traceback
+        traceback.print_exc()
+
+@app.get('/strategy/state')
+async def get_strategy_state(strategy: str = "BarsOnTheFlow"):
+    """Get the current cached state for a specific strategy."""
+    state = strategy_state_cache.get(strategy)
+    if state:
+        return JSONResponse(state)
+    else:
+        return JSONResponse({"error": "no_state_cached", "strategy": strategy}, status_code=404)
+
+@app.get('/strategies')
+async def list_strategies():
+    """List all strategies that have sent state updates."""
+    strategies = []
+    for name, state in strategy_state_cache.items():
+        strategies.append({
+            "name": name,
+            "isRunning": state.get("isRunning", False),
+            "currentBar": state.get("currentBar", 0),
+            "position": state.get("positionMarketPosition", "Unknown"),
+            "lastUpdate": state.get("receivedAt", "Never")
+        })
+    return JSONResponse({"strategies": strategies, "count": len(strategies)})
+
+@app.get('/api/bars/state-history')
+async def get_state_history(limit: int = 100, strategy: str = "BarsOnTheFlow"):
+    """Get historical strategy state + bar data from bars.db."""
+    try:
+        conn = get_bars_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT 
+                id, timestamp, receivedTs, barIndex, barTime, currentBar,
+                open, high, low, close, volume, candleType,
+                positionMarketPosition, positionQuantity, positionAveragePrice,
+                intendedPosition, lastEntryBarIndex, lastEntryDirection,
+                stopLossPoints, calculatedStopTicks, calculatedStopPoints,
+                contracts, pendingLongFromBad, pendingShortFromGood
+            FROM BarsOnTheFlowStateAndBar
+            WHERE strategyName = ?
+            ORDER BY receivedTs DESC
+            LIMIT ?
+        """, (strategy, limit))
+        
+        rows = cur.fetchall()
+        results = []
+        for row in rows:
+            results.append({
+                "id": row[0],
+                "timestamp": row[1],
+                "receivedTs": row[2],
+                "barIndex": row[3],
+                "barTime": row[4],
+                "currentBar": row[5],
+                "open": row[6],
+                "high": row[7],
+                "low": row[8],
+                "close": row[9],
+                "volume": row[10],
+                "candleType": row[11],
+                "positionMarketPosition": row[12],
+                "positionQuantity": row[13],
+                "positionAveragePrice": row[14],
+                "intendedPosition": row[15],
+                "lastEntryBarIndex": row[16],
+                "lastEntryDirection": row[17],
+                "stopLossPoints": row[18],
+                "calculatedStopTicks": row[19],
+                "calculatedStopPoints": row[20],
+                "contracts": row[21],
+                "pendingLongFromBad": bool(row[22]),
+                "pendingShortFromGood": bool(row[23])
+            })
+        
+        return JSONResponse({"data": results, "count": len(results)})
+    
+    except Exception as ex:
+        return JSONResponse({"error": str(ex)}, status_code=500)
+
+@app.get('/api/bars/gaps')
+async def get_bar_gaps(strategy: str = "BarsOnTheFlow"):
+    """Identify missing bars (gaps) in the recorded sequence."""
+    try:
+        conn = get_bars_db_connection()
+        cur = conn.cursor()
+        
+        # Get min and max barIndex
+        cur.execute("""
+            SELECT MIN(barIndex), MAX(barIndex), COUNT(*)
+            FROM BarsOnTheFlowStateAndBar
+            WHERE strategyName = ?
+        """, (strategy,))
+        
+        row = cur.fetchone()
+        if not row or row[0] is None:
+            return JSONResponse({"gaps": [], "message": "No data found"})
+        
+        min_bar, max_bar, count = row
+        expected_count = max_bar - min_bar + 1
+        missing_count = expected_count - count
+        
+        if missing_count == 0:
+            return JSONResponse({
+                "gaps": [],
+                "minBar": min_bar,
+                "maxBar": max_bar,
+                "recorded": count,
+                "expected": expected_count,
+                "message": "No gaps - sequence is complete"
+            })
+        
+        # Find actual gaps
+        cur.execute("""
+            WITH RECURSIVE seq(n) AS (
+                SELECT ? UNION ALL
+                SELECT n + 1 FROM seq WHERE n < ?
+            )
+            SELECT seq.n as missing_bar
+            FROM seq
+            LEFT JOIN BarsOnTheFlowStateAndBar b
+                ON b.barIndex = seq.n AND b.strategyName = ?
+            WHERE b.barIndex IS NULL
+            ORDER BY seq.n
+            LIMIT 1000
+        """, (min_bar, max_bar, strategy))
+        
+        gaps = [{"barIndex": row[0]} for row in cur.fetchall()]
+        
+        return JSONResponse({
+            "gaps": gaps,
+            "gapCount": len(gaps),
+            "minBar": min_bar,
+            "maxBar": max_bar,
+            "recorded": count,
+            "expected": expected_count,
+            "missing": missing_count
+        })
+    
+    except Exception as ex:
+        return JSONResponse({"error": str(ex)}, status_code=500)
 
 # --- Small helpers to re-use apply/recalculate logic for WebSocket ---
 def _recalculate_direct() -> Dict[str, Any]:
@@ -1700,6 +2145,152 @@ def bars_latest(limit: int = 50):
                 print('[BARS] classification join error:', ex)
     return JSONResponse({'bars': bars, 'count': len(bars)})
 
+@app.get('/api/monitor/stats')
+async def get_monitor_stats():
+    """Get database statistics for monitoring."""
+    try:
+        # Use bars.db, not dashboard.db
+        conn = get_bars_db_connection()
+        cur = conn.cursor()
+        
+        # Check if table exists
+        table_check = cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='BarsOnTheFlowStateAndBar'"
+        ).fetchone()
+        
+        if not table_check:
+            return JSONResponse({
+                'status': 'ok',
+                'row_count': 0,
+                'min_index': 0,
+                'max_index': 0,
+                'expected_count': 0,
+                'gaps': 0,
+                'latest_bars': [],
+                'message': 'No data yet - waiting for strategy to start',
+                'ts': time.time()
+            })
+        
+        # Row count
+        count_result = cur.execute('SELECT COUNT(*) FROM BarsOnTheFlowStateAndBar').fetchone()
+        row_count = count_result[0] if count_result else 0
+        
+        if row_count == 0:
+            return JSONResponse({
+                'status': 'ok',
+                'row_count': 0,
+                'min_index': 0,
+                'max_index': 0,
+                'expected_count': 0,
+                'gaps': 0,
+                'latest_bars': [],
+                'message': 'Waiting for first bar...',
+                'ts': time.time()
+            })
+        
+        # Min, max, expected count
+        range_result = cur.execute('SELECT MIN(barIndex), MAX(barIndex) FROM BarsOnTheFlowStateAndBar').fetchone()
+        min_idx = range_result[0] if range_result and range_result[0] is not None else 0
+        max_idx = range_result[1] if range_result and range_result[1] is not None else 0
+        expected_count = (max_idx - min_idx + 1) if max_idx >= min_idx else 0
+        gaps = expected_count - row_count if expected_count > 0 else 0
+
+        # Latest stop/exit settings from the newest bar
+        latest_stop = {
+            'useTrailingStop': None,
+            'useDynamicStopLoss': None,
+            'lookback': None,
+            'multiplier': None,
+            'stopLossPoints': None,
+            'calculatedStopPoints': None
+        }
+        try:
+            stop_row = cur.execute(
+                '''SELECT useTrailingStop, useDynamicStopLoss, lookback, multiplier,
+                          stopLossPoints, calculatedStopPoints
+                   FROM BarsOnTheFlowStateAndBar
+                   ORDER BY barIndex DESC
+                   LIMIT 1'''
+            ).fetchone()
+            if stop_row:
+                latest_stop = {
+                    'useTrailingStop': bool(stop_row[0]) if stop_row[0] is not None else None,
+                    'useDynamicStopLoss': bool(stop_row[1]) if stop_row[1] is not None else None,
+                    'lookback': stop_row[2],
+                    'multiplier': stop_row[3],
+                    'stopLossPoints': stop_row[4],
+                    'calculatedStopPoints': stop_row[5]
+                }
+        except Exception as _stop_err:
+            pass
+        
+        # Latest 5 bars - fetch all data while connection is open
+        latest_bars = []
+        try:
+            # Try with available columns; receivedTs always exists
+            rows = cur.execute(
+                '''SELECT barIndex, positionMarketPosition, realizedPnL, winRate, receivedTs
+                   FROM BarsOnTheFlowStateAndBar 
+                   ORDER BY barIndex DESC LIMIT 5'''
+            ).fetchall()
+            latest_bars = [(row[0], row[1], row[2], row[3], row[4]) for row in rows]
+        except Exception as query_err:
+            # If that fails, try a simpler query
+            try:
+                rows = cur.execute(
+                    'SELECT barIndex, positionMarketPosition, realizedPnL, winRate FROM BarsOnTheFlowStateAndBar ORDER BY barIndex DESC LIMIT 5'
+                ).fetchall()
+                latest_bars = [(row[0], row[1], row[2], row[3], None) for row in rows]
+            except:
+                pass  # Table exists but columns may differ, just return stats without latest bars
+        
+        # Don't close global connection - keep it open for reuse
+        
+        # Now build response
+        response_bars = []
+        for row in latest_bars:
+            ts_val = ''
+            try:
+                if len(row) > 4 and row[4] is not None:
+                    ts_val = datetime.fromtimestamp(row[4]).strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                ts_val = ''
+
+            response_bars.append({
+                'barIndex': row[0],
+                'position': row[1] or 'Flat',
+                'realizedPnL': round(row[2], 2) if row[2] else 0,
+                'winRate': round(row[3], 2) if row[3] else 0,
+                'timestamp': ts_val
+            })
+        
+        return JSONResponse({
+            'status': 'ok',
+            'row_count': row_count,
+            'min_index': min_idx,
+            'max_index': max_idx,
+            'expected_count': expected_count,
+            'gaps': gaps,
+            'latest_bars': response_bars,
+            'latest_stop': latest_stop,
+            'ts': time.time()
+        })
+    except Exception as e:
+        print(f"[MONITOR] Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({
+            'status': 'ok',
+            'row_count': 0,
+            'min_index': 0,
+            'max_index': 0,
+            'expected_count': 0,
+            'gaps': 0,
+            'latest_bars': [],
+            'message': f'Data pending: {str(e)}',
+            'ts': time.time()
+        })
+
 @app.post('/log')
 async def post_log(request: Request):
     """Receive log entries from strategy (entry/exit/filter decisions)."""
@@ -1715,6 +2306,9 @@ async def post_log(request: Request):
         }
         log_cache.append(log_entry)
         return JSONResponse({'status': 'ok', 'cached': len(log_cache)})
+    except ClientDisconnect:
+        # Client closed connection early; treat as best-effort
+        return JSONResponse({"status": "client_disconnected"}, status_code=499)
     except Exception as e:
         print(f'[LOG] Error: {e}')
         return JSONResponse({'status': 'error', 'message': str(e)}, status_code=500)
@@ -3140,7 +3734,8 @@ async def analyze_streaks(request: Request):
         long_gradient_threshold = params.get('long_gradient_threshold', 7.0)
         short_gradient_threshold = params.get('short_gradient_threshold', -7.0)
         min_movement = params.get('min_movement', 5.0)
-        counter_ratio = params.get('counter_ratio', 0.2)
+        breakeven_trigger = params.get('breakeven_trigger', 0)
+        breakeven_offset = params.get('breakeven_offset', 2)
         streak_type = params.get('streak_type', 'both')
         
         if not filename:
@@ -3176,7 +3771,8 @@ async def analyze_streaks(request: Request):
         
         # Find streaks
         streaks = find_streaks(bars, min_streak, max_streak, long_gradient_threshold, 
-                               short_gradient_threshold, min_movement, counter_ratio, streak_type)
+                               short_gradient_threshold, min_movement, breakeven_trigger, 
+                               breakeven_offset, streak_type)
         
         # Calculate statistics
         total = len(streaks)
@@ -3186,21 +3782,43 @@ async def analyze_streaks(request: Request):
         avg_length = sum(s['length'] for s in streaks) / total if total > 0 else 0
         avg_missed_points = sum(s['missed_points'] for s in streaks if s['missed_points'] > 0) / missed if missed > 0 else 0
         
-        # Calculate PnL
+        # Calculate PnL with break-even awareness
         total_pnl = 0.0
         missed_pnl = 0.0
+        breakeven_locked_pnl = 0.0
+        
         for streak in streaks:
             if streak['status'] == 'caught':
-                # Full profit captured
-                total_pnl += streak['net_movement']
+                # Check if break-even would have triggered
+                if breakeven_trigger > 0 and abs(streak['net_movement']) >= breakeven_trigger:
+                    # Break-even triggered - lock in partial profit
+                    locked_profit = breakeven_offset  # e.g., entry + 2 points
+                    remaining_profit = abs(streak['net_movement']) - locked_profit
+                    total_pnl += locked_profit
+                    breakeven_locked_pnl += locked_profit
+                    
+                    # Remaining profit would be captured if streak continued favorably
+                    # But for conservative estimate, we only count locked profit
+                    missed_pnl += remaining_profit
+                else:
+                    # No break-even or didn't hit trigger - full profit captured
+                    total_pnl += abs(streak['net_movement'])
             elif streak['status'] == 'partial':
                 # Partial profit (net movement - missed points)
-                caught_pnl = streak['net_movement'] - streak['missed_points']
-                total_pnl += caught_pnl
-                missed_pnl += streak['missed_points']
+                caught_pnl = abs(streak['net_movement']) - streak['missed_points']
+                
+                # Check if break-even would have triggered on the caught portion
+                if breakeven_trigger > 0 and caught_pnl >= breakeven_trigger:
+                    locked_profit = breakeven_offset
+                    total_pnl += locked_profit
+                    breakeven_locked_pnl += locked_profit
+                    missed_pnl += (caught_pnl - locked_profit) + streak['missed_points']
+                else:
+                    total_pnl += caught_pnl
+                    missed_pnl += streak['missed_points']
             elif streak['status'] == 'missed':
                 # All profit missed
-                missed_pnl += streak['net_movement']
+                missed_pnl += abs(streak['net_movement'])
         
         potential_pnl = total_pnl + missed_pnl
         
@@ -3214,7 +3832,9 @@ async def analyze_streaks(request: Request):
             'total_bars': len(bars),
             'total_pnl': total_pnl,
             'missed_pnl': missed_pnl,
-            'potential_pnl': potential_pnl
+            'potential_pnl': potential_pnl,
+            'breakeven_locked_pnl': breakeven_locked_pnl,
+            'breakeven_enabled': breakeven_trigger > 0
         }
         
         return JSONResponse({
@@ -3230,15 +3850,16 @@ async def analyze_streaks(request: Request):
         return JSONResponse({'error': str(ex)}, status_code=500)
 
 def find_streaks(bars, min_streak, max_streak, long_grad_thresh, short_grad_thresh, 
-                 min_movement, counter_ratio, streak_type):
+                 min_movement, breakeven_trigger, breakeven_offset, streak_type):
     """
     Find directional streaks in the bar data similar to BarsOnTheFlow's 5-bar patterns.
     
-    A streak is a sequence of bars with consistent overall direction (net positive/negative movement)
-    allowing for some counter-trend bars based on counter_ratio.
+    A streak is a sequence of bars with consistent overall direction (net positive/negative movement).
+    Break-even logic: if movement >= breakeven_trigger, only breakeven_offset profit is locked.
     """
     streaks = []
     i = 0
+    counter_ratio = 0.4  # Allow up to 40% counter-trend bars in a streak
     
     while i < len(bars) - min_streak + 1:
         # Try to find a streak starting at bar i

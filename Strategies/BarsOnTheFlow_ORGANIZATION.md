@@ -345,3 +345,488 @@ Consider making these features toggleable:
 ---
 
 *Last Updated: December 19, 2024*
+
+---
+
+## 🗄️ SQLite DATABASES
+
+> **Full Schema:** See [DATABASE_SCHEMA.md](../web/dashboard/DATABASE_SCHEMA.md) for complete column definitions.
+
+| Database | Tables | Used By | Integration |
+|----------|--------|---------|-------------|
+| [volatility.db](../web/dashboard/DATABASE_SCHEMA.md#volatilitydb) | 3 | BarsOnTheFlow | `UseVolumeAwareStop` (default: true) |
+| [dashboard.db](../web/dashboard/DATABASE_SCHEMA.md#dashboarddb) | 12 | BarsOnTheFlow | `EnableDashboardDiagnostics` (default: false) |
+| [bars.db](../web/dashboard/DATABASE_SCHEMA.md#barsdb) | 0 | Reserved | — |
+
+### Quick Reference
+
+**volatility.db** - Volume-aware stop loss system
+- `bar_samples` - Individual bar data → `RecordBarSample()`
+- `volatility_stats` - Hourly aggregated stats
+- `stop_loss_recommendations` - Pre-computed stops → `GetVolumeAwareStopTicks()`
+
+**dashboard.db** - Live diagnostics & analytics
+- `diags` - Bar-by-bar snapshots → `SendDashboardDiag()`
+- `trades` - Completed trade records
+- `entry_blocks` - Blocked entries for analysis
+- `suggestions` - AI parameter tuning
+
+---
+
+## 📊 LIVE BAR DATA FEED (`/bars/latest`)
+
+**Endpoint:** `GET /bars/latest?limit=50`  
+**Storage:** In-memory cache only (NOT persisted to database)  
+**Cache Size:** 1200 bars max (rolling deque - oldest bars auto-deleted)
+
+### Data Fields Per Bar
+
+The server's `_normalize_bar()` function accepts 50+ fields from multiple strategies. Fields are marked by source:
+- 🟢 **BarsOnTheFlow** - Sent by BarsOnTheFlow
+- 🔵 **GradientSlopeStrategy** - Sent by GradientSlopeStrategy (lines 3000-3104)
+- ⚪ **Server** - Added by server
+
+| Field | Source | Type | Description |
+|-------|--------|------|-------------|
+| **Bar Identification** | | | |
+| `barIndex`    | 🟢🔵 | int | NinjaTrader bar index |
+| `ts`          | ⚪ | float | Unix timestamp when received (server) |
+| `localTime`   | 🟢🔵 | string | Strategy's local time (YYYY-MM-DD HH:mm:ss) |
+| **OHLC Data** | | | |
+| `open`        | 🟢🔵 | float | Bar open price |
+| `high`        | 🟢🔵 | float | Bar high price |
+| `low`         | 🟢🔵 | float | Bar low price |
+| `close`       | 🟢🔵 | float | Bar close price |
+| **EMA & Gradient** | | | |
+| `fastEMA`     | 🟢🔵 | float | Fast EMA value |
+| `fastGrad`    | 🟢🔵 | float | Fast EMA gradient (slope) |
+| `fastGradDeg` | 🟢 | float | Fast EMA gradient in degrees |
+| `slowEMA`     | 🔵 | float | Slow EMA value |
+| `slowGrad`    | 🔵 | float | Slow EMA gradient (slope) |
+| `accel`       | 🔵 | float | Gradient acceleration |
+| `gradStab`    | 🔵 | float | Gradient stability metric |
+| **Technical Indicators** | | | |
+| `adx`         | 🔵 | float | ADX value |
+| `atr`         | 🔵 | float | ATR value |
+| `rsi`         | 🔵 | float | RSI value |
+| `bandwidth`   | 🔵 | float | Bandwidth (EMA spread) |
+| `unrealized`  | 🔵 | float | Unrealized P&L |
+| **Trend & Position** | | | |
+| `trendSide`   | 🔵 | string | "BULL" or "BEAR" |
+| `signal`      | 🔵 | string | "LONG", "SHORT", or "FLAT" |
+| `myPosition`  | 🔵 | string | Current position |
+| `trendStartBar`       | 🔵 | int | Bar where trend started |
+| `barsInSignal`        | 🔵 | int | Bars in current signal |
+| **Entry Eligibility** | | | |
+| `signalEligibleLong`  | 🔵 | bool | Long signal eligible |
+| `signalEligibleShort` | 🔵 | bool | Short signal eligible |
+| `streakLong`          | 🔵 | int | Consecutive long-favoring bars |
+| `streakShort`         | 🔵 | int | Consecutive short-favoring bars |
+| `entryLongReady`      | 🔵 | bool | All long filters passed |
+| `entryShortReady`     | 🔵 | bool | All short filters passed |
+| `entryDelayMet`       | 🔵 | bool | Entry delay requirement met |
+| `canEnterLong`        | 🔵 | bool | Can enter long now |
+| `canEnterShort`       | 🔵 | bool | Can enter short now |
+| **Price vs EMA Filters** | | | |
+| `priceAboveEMAs`      | 🔵 | bool | Price above both EMAs |
+| `priceBelowEMAs`      | 🔵 | bool | Price below both EMAs |
+| `gradDirLongOk`       | 🔵 | bool | Gradient direction OK for long |
+| `gradDirShortOk`      | 🔵 | bool | Gradient direction OK for short |
+| `fastStrongForEntryLong`  | 🔵 | bool | Fast gradient strong enough (long) |
+| `fastStrongForEntryShort` | 🔵 | bool | Fast gradient strong enough (short) |
+| **Filter Status** | | | |
+| `notOverextended`         | 🔵 | bool | Not overextended filter |
+| `adxOk`                   | 🔵 | bool | ADX filter passed |
+| `gradStabOk`              | 🔵 | bool | Gradient stability OK |
+| `bandwidthOk`             | 🔵 | bool | Bandwidth within range |
+| `accelAlignOkLong`        | 🔵 | bool | Acceleration aligned (long) |
+| `accelAlignOkShort`       | 🔵 | bool | Acceleration aligned (short) |
+| `atrOk`                   | 🔵 | bool | ATR within limits |
+| `rsiOk`                   | 🔵 | bool | RSI within limits |
+| **Threshold Snapshots** | | | |
+| `entryGradThrLong`        | 🔵 | float | Entry gradient threshold (long) |
+| `entryGradThrShort`       | 🔵 | float | Entry gradient threshold (short) |
+| `maxEntryFastGradAbs`     | 🔵 | float | Max allowed gradient for entry |
+| `minAdxForEntry`          | 🔵 | float | Minimum ADX required |
+| `maxGradientStabilityForEntry` | 🔵 | float | Max gradient stability allowed |
+| `minBandwidthForEntry`    | 🔵 | float | Min bandwidth required |
+| `maxBandwidthForEntry`    | 🔵 | float | Max bandwidth allowed |
+| `maxATRForEntry`          | 🔵 | float | Max ATR allowed |
+| `minRSIForEntry`          | 🔵 | float | Min RSI required |
+| `maxRSIForEntry`          | 🔵 | float | Max RSI allowed |
+| `entryBarDelay`           | 🔵 | int | Entry delay in bars |
+| **BarsOnTheFlow Specific** | | | |
+| `allowLongThisBar`        | 🟢 | bool | Whether long entry allowed this bar |
+| `allowShortThisBar`       | 🟢 | bool | Whether short entry allowed this bar |
+| **Blockers** | | | |
+| `blockersLong`            | 🔵 | array | List of long entry blockers |
+| `blockersShort`           | 🔵 | array | List of short entry blockers |
+| **Classification (Joined)** | | | |
+| `isBad`                   | ⚪ | int | 1 if bar classified as "bad" (from dashboard.db) |
+| `badReason`               | ⚪ | string | Classification reason (from dashboard.db) |
+
+### What Each Strategy Sends
+
+**BarsOnTheFlow** (`SendDashboardDiag()` - lines 2585-2624):
+- barIndex, time, OHLC (open/high/low/close)
+- fastEMA, fastGrad, fastGradDeg
+- allowLongThisBar, allowShortThisBar
+- **Total: 11 fields**
+
+**GradientSlopeStrategy** (`StreamCompactDiagnosis()` - lines 3000-3104):
+- All BarsOnTheFlow fields PLUS:
+- slowEMA, slowGrad, accel, gradStab
+- adx, atr, rsi, bandwidth, signal, trendSide, trendStartBar
+- Entry readiness: signalEligibleLong/Short, streakLong/Short, entryLongReady/ShortReady
+- Filter status: 15+ boolean flags
+- Threshold snapshots: 10+ current values
+- blockersLong, blockersShort arrays
+- **Total: 50+ fields**
+
+### Storage Details
+
+**In-Memory Cache:**
+- Data structure: `deque[Dict[str, Any]]` (Python)
+- Max size: 1200 bars
+- Behavior: Oldest bars auto-deleted when limit reached
+- Lifetime: Cleared when server restarts
+- Purpose: Fast queries for live dashboards
+
+**NOT Stored in Database:**
+- ❌ bars.db is EMPTY (reserved for future use)
+- ❌ No persistence across server restarts
+- ✅ Only `bar_samples` in volatility.db (different data set)
+- ✅ Only `diags` in dashboard.db (if `EnableDashboardDiagnostics = true`)
+
+**Data Flow:**
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Strategy → Server → Cache                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  BarsOnTheFlow (11 fields)                                          │
+│     └─ SendDashboardDiag()                                          │
+│        lines 2585-2624                                              │
+│           │                                                          │
+│           │ POST /diag                                              │
+│           │                                                          │
+│           ▼                                                          │
+│     ┌─────────────────────┐                                         │
+│     │ server.py           │                                         │
+│     │ receive_diag()      │                                         │
+│     │ lines 1319-1405     │                                         │
+│     └─────────────────────┘                                         │
+│           │                                                          │
+│           ├─► diags.append(p)         [line 1348]                   │
+│           │   └─ Raw diagnostic list (MAX_DIAGS = 10,000)           │
+│           │                                                          │
+│           └─► bar_cache.append(       [line 1350]                   │
+│                 _normalize_bar(p))                                  │
+│               └─ Normalized bar cache (BAR_CACHE_MAX = 1,200)       │
+│                                                                      │
+│  GradientSlopeStrategy (50+ fields)                                 │
+│     └─ StreamCompactDiagnosis()                                     │
+│        lines 3000-3104                                              │
+│           │                                                          │
+│           │ POST /diag (batched, 20 bars at a time)                │
+│           │                                                          │
+│           └──────────────────┘ (same flow as above)                 │
+│                                                                      │
+│                                                                      │
+│  Frontend/API Queries:                                              │
+│                                                                      │
+│     GET /bars/latest?limit=50                                       │
+│        └─ Returns last N bars from bar_cache                        │
+│           [server.py lines 1677-1703]                               │
+│                                                                      │
+│     GET /diags?since=<timestamp>                                    │
+│        └─ Returns raw diagnostics from diags list                   │
+│           [server.py lines 1285-1316]                               │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Points:**
+1. **Strategies do NOT post directly to `/bars/latest`** - they post to `/diag`
+2. **Server's `/diag` endpoint populates TWO caches:**
+   - `diags` list - Raw diagnostic data (10,000 max)
+   - `bar_cache` deque - Normalized bar data (1,200 max) via `_normalize_bar()`
+3. **`/bars/latest` reads from `bar_cache`** (line 1682 in server.py)
+4. **No database persistence** - all in-memory, cleared on server restart
+5. **GradientSlopeStrategy batches** - sends 20 bars at once, flushes every 1 second
+
+**Server Code References:**
+- `/diag` endpoint: [server.py](../web/dashboard/server.py#L1319-1405)
+- `_normalize_bar()`: [server.py](../web/dashboard/server.py#L617-680)
+- `/bars/latest` endpoint: [server.py](../web/dashboard/server.py#L1677-1703)
+- `bar_cache` definition: [server.py](../web/dashboard/server.py#L574)
+
+---
+
+## 📁 STRATEGY STATE FILE (`BarsOnTheFlow_state.json`)
+
+**Location:** `strategy_state/BarsOnTheFlow_state.json`  
+**Update Frequency:** Every 10 bars  
+**Purpose:** Persist strategy configuration, position state, and parameters  
+**Code:** [BarsOnTheFlow.cs](BarsOnTheFlow.cs#L1391-1441) - `ExportStrategyState()` method
+
+### State File Fields (24 Total)
+
+All 24 fields in `BarsOnTheFlow_state.json` are **MISSING from `/bars/latest`** because they serve completely different purposes:
+- **state.json** = Strategy-level configuration & position state
+- **/bars/latest** = Bar-level diagnostics (OHLC, indicators, filters)
+
+| Field | Type | Category | Description |
+|-------|------|----------|-------------|
+| **Strategy Metadata** | | | |
+| `timestamp` | string | Metadata | Last export timestamp (ISO 8601) |
+| `strategyName` | string | Metadata | Strategy name ("BarsOnTheFlow") |
+| `isRunning` | bool | Status | Whether strategy is active |
+| `currentBar` | int | Status | Current bar index |
+| **Position State** | | | |
+| `contracts` | int | Position | Contract size |
+| `positionMarketPosition` | string | Position | Current position ("Flat", "Long", "Short") |
+| `positionQuantity` | int | Position | Position quantity |
+| `intendedPosition` | string | Position | Intended position (for unique entries) |
+| **Stop Loss Configuration** | | | |
+| `stopLossPoints` | float | Stop Loss | Fixed stop loss in points |
+| `calculatedStopTicks` | int | Stop Loss | Dynamic stop in ticks (if enabled) |
+| `calculatedStopPoints` | float | Stop Loss | Dynamic stop in points (if enabled) |
+| `useTrailingStop` | bool | Stop Loss | Trailing stop enabled |
+| `useDynamicStopLoss` | bool | Stop Loss | Dynamic stop enabled |
+| `lookback` | int | Stop Loss | Dynamic stop lookback period |
+| `multiplier` | float | Stop Loss | Dynamic stop multiplier |
+| **Strategy Parameters** | | | |
+| `enableShorts` | bool | Config | Short trades allowed |
+| `avoidLongsOnBadCandle` | bool | Config | Block longs on down-close bars |
+| `avoidShortsOnGoodCandle` | bool | Config | Block shorts on up-close bars |
+| `exitOnTrendBreak` | bool | Config | Exit when trend breaks |
+| `reverseOnTrendBreak` | bool | Config | Reverse on trend break |
+| `fastEmaPeriod` | int | Config | Fast EMA period |
+| `gradientThresholdSkipLongs` | float | Config | Min gradient for longs (SkipLongsBelowGradient) |
+| `gradientThresholdSkipShorts` | float | Config | Max gradient for shorts (SkipShortsAboveGradient) |
+| **Pending Signals** | | | |
+| `pendingLongFromBad` | bool | Signals | Deferred long entry (blocked by bad candle) |
+| `pendingShortFromGood` | bool | Signals | Deferred short entry (blocked by good candle) |
+
+### Comparison: state.json vs /bars/latest
+
+**Zero Field Overlap** - These are completely separate data sets:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                  BarsOnTheFlow_state.json (24 fields)                │
+│                  ────────────────────────────────────                │
+│  Strategy Configuration & Position State                            │
+│  • Updates: Every 10 bars                                           │
+│  • Persistence: File system (survives strategy restarts)            │
+│  • Purpose: Resume strategy with same config                        │
+│  • Fields: Metadata, position, stop loss, parameters, pending signals │
+│                                                                      │
+│  Examples:                                                           │
+│  - positionMarketPosition: "Long"                                   │
+│  - stopLossPoints: 20.0                                             │
+│  - enableShorts: true                                               │
+│  - pendingLongFromBad: false                                        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                   /bars/latest (11-50+ fields)                       │
+│                   ───────────────────────────                        │
+│  Bar-Level Diagnostics & Technical Indicators                       │
+│  • Updates: Every bar (real-time)                                   │
+│  • Persistence: In-memory only (cleared on server restart)          │
+│  • Purpose: Live monitoring, charting, analysis                     │
+│  • Fields: OHLC, EMA/gradient, indicators, filters, entry signals   │
+│                                                                      │
+│  Examples:                                                           │
+│  - close: 5123.50                                                   │
+│  - fastEMA: 5122.75                                                 │
+│  - allowLongThisBar: true                                           │
+│  - fastGradDeg: 12.3                                                │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Why No Overlap:**
+1. **state.json** tracks strategy-level state that persists between sessions
+2. **/bars/latest** tracks bar-level diagnostics that change every bar
+3. **state.json** is written by strategy to file system
+4. **/bars/latest** is populated by server from POST /diag endpoint
+5. **Different consumers**: state.json → strategy initialization, /bars/latest → dashboards/monitoring
+
+**Code References:**
+- State export: [BarsOnTheFlow.cs](BarsOnTheFlow.cs#L1391-1441) - `ExportStrategyState()`
+- State import: [BarsOnTheFlow.cs](BarsOnTheFlow.cs#L264) - `UpdateStrategyState()`
+- State streaming: [BarsOnTheFlow.cs](BarsOnTheFlow.cs#L1458-1577) - `SendStrategyState()` (NEW)
+- Trigger: [BarsOnTheFlow.cs](BarsOnTheFlow.cs#L430) - Called every bar
+- Server endpoint: [server.py](../web/dashboard/server.py#L1441-1507) - POST `/state`, GET `/strategy/state`
+- Web page: [strategy_state.html](../web/dashboard/strategy_state.html) - Real-time state monitor
+
+### NEW: Real-Time State Streaming (Replaces File Polling)
+
+**Previous Behavior:**
+- File written every 10 bars to `strategy_state/BarsOnTheFlow_state.json`
+- External tools had to poll file system for updates
+- ~10 bar delay for state changes
+
+**New Behavior (as of this implementation):**
+- State **streamed to server every bar** via POST `/state`
+- Cached in server memory (`strategy_state_cache`)
+- Web page polls GET `/strategy/state` every second
+- **Previous bar's final OHLC** included in state payload
+- File backup still written every 10 bars for persistence
+
+**State Streaming Payload (sent every bar):**
+```json
+{
+  "timestamp": "2025-12-21 10:30:45",
+  "strategyName": "BarsOnTheFlow",
+  "isRunning": true,
+  
+  "barIndex": 156,           // Previous bar (final data)
+  "barTime": "2025-12-21T10:30:00Z",
+  "open": 5120.25,
+  "high": 5125.50,
+  "low": 5119.75,
+  "close": 5123.50,
+  "volume": 1234,
+  
+  "currentBar": 157,         // Current bar being evaluated
+  
+  "positionMarketPosition": "Long",
+  "positionQuantity": 1,
+  "positionAveragePrice": 5115.00,
+  "intendedPosition": "Long",
+  
+  "stopLossPoints": 20,
+  "calculatedStopTicks": 16,
+  "calculatedStopPoints": 4.0,
+  "useTrailingStop": false,
+  "useDynamicStopLoss": false,
+  
+  "enableShorts": true,
+  "avoidLongsOnBadCandle": true,
+  "avoidShortsOnGoodCandle": true,
+  "exitOnTrendBreak": true,
+  "reverseOnTrendBreak": false,
+  "fastEmaPeriod": 10,
+  "gradientThresholdSkipLongs": 7.0,
+  "gradientThresholdSkipShorts": -7.0,
+  "gradientFilterEnabled": false,
+  
+  "trendLookbackBars": 5,
+  "minConsecutiveBars": 3,
+  "usePnLTiebreaker": false,
+  
+  "pendingLongFromBad": false,
+  "pendingShortFromGood": false,
+  
+  "lastEntryBarIndex": 150,
+  "lastEntryDirection": "Long"
+}
+```
+
+**Access Methods:**
+1. **Web UI:** [http://localhost:51888/strategy_state.html](http://localhost:51888/strategy_state.html)
+2. **API (Live):** `GET http://localhost:51888/strategy/state?strategy=BarsOnTheFlow`
+3. **API (Historical):** `GET http://localhost:51888/api/bars/state-history?limit=100&strategy=BarsOnTheFlow`
+4. **Database:** `bars.db` - `BarsOnTheFlowStateAndBar` table
+5. **File (backup):** `strategy_state/BarsOnTheFlow_state.json` (updated every 10 bars)
+
+**Persistence:**
+- **In-Memory Cache:** Latest state per strategy (real-time access)
+- **bars.db:** All state updates persisted to `BarsOnTheFlowStateAndBar` table every bar
+  - 54 columns capturing complete state + OHLC
+  - Indexed by barIndex, receivedTs, position, currentBar
+  - Survives server restarts
+  - Queryable via API for historical analysis
+- **File Backup:** JSON file written every 10 bars (legacy support)
+
+**Key Differences from /bars/latest:**
+- `/bars/latest` = Bar diagnostics (OHLC, indicators, filters) for last 1200 bars
+- `/strategy/state` = Strategy configuration + position state (single current snapshot)
+- `bars.db` = Complete state+bar history (persistent, unlimited retention)
+- State includes **previous bar's final OHLC** so external tools have complete bar data
+- State updates **every bar** (not just on position changes)
+
+---
+
+## 🌐 WEB PAGES (Dashboard)
+
+| File | URL | Purpose | Related Strategy |
+|------|-----|---------|------------------|
+| `web/dashboard/static/index.html` | `/` | Main dashboard home | BarsOnTheFlow |
+| `web/dashboard/strategy_state.html` | `/strategy_state.html` | **Real-time strategy state monitor** (NEW) | BarsOnTheFlow |
+| `web/dashboard/bar_report.html` | `/bar_report.html` | Bar-by-bar analysis report | BarsOnTheFlow |
+| `web/dashboard/botf_filter_analysis.html` | `/botf_filter_analysis.html` | BarsOnTheFlow filter analysis | BarsOnTheFlow |
+| `web/dashboard/opportunity_analysis.html` | `/opportunity_analysis.html` | Entry opportunity analysis | BarsOnTheFlow |
+| `web/dashboard/filter_analysis.html` | `/filter_analysis.html` | General filter analysis | BarsOnTheFlow |
+| `web/dashboard/candles.html` | `/candles.html` | Candle visualization (strategy-agnostic) | Any strategy |
+| `web/dashboard/candle-base.html` | `/candle-base.html` | Candle base template | BarsOnTheFlow |
+| `web/barFlowReport.html` | N/A (standalone) | Bar flow report viewer | BarsOnTheFlow |
+
+---
+
+## 🔗 DATA FLOW DIAGRAM
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                      BarsOnTheFlow Strategy                          │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌───────────────────┐     ┌───────────────────┐                   │
+│  │ RecordBarSample() │────▶│ POST /api/        │                   │
+│  │ (every bar)       │     │ volatility/       │                   │
+│  └───────────────────┘     │ record-bar        │                   │
+│                            └─────────┬─────────┘                   │
+│  ┌───────────────────┐               │                             │
+│  │ GetVolumeAware    │               ▼                             │
+│  │ StopTicks()       │◀─────┌───────────────────┐                  │
+│  └───────────────────┘      │  volatility.db    │                  │
+│           │                 │  ├─bar_samples    │                  │
+│           │                 │  ├─volatility_    │                  │
+│           │                 │  │  stats         │                  │
+│           │                 │  └─stop_loss_     │                  │
+│           ▼                 │    recommendations│                  │
+│  ┌───────────────────┐      └───────────────────┘                  │
+│  │ GET /api/         │                                             │
+│  │ volatility/       │                                             │
+│  │ recommended-stop  │                                             │
+│  └───────────────────┘                                             │
+│                                                                      │
+│  ┌───────────────────┐     ┌───────────────────┐                   │
+│  │ SendDashboard     │────▶│ POST /api/diag    │                   │
+│  │ Diag()            │     └─────────┬─────────┘                   │
+│  └───────────────────┘               │                             │
+│                                      ▼                             │
+│                            ┌───────────────────┐                   │
+│                            │  dashboard.db     │                   │
+│                            │  ├─diags          │                   │
+│                            │  ├─trades         │                   │
+│                            │  ├─entry_blocks   │                   │
+│                            │  └─suggestions    │                   │
+│                            └───────────────────┘                   │
+│                                      │                             │
+│                                      ▼                             │
+│                            ┌───────────────────┐                   │
+│                            │  Web Dashboard    │                   │
+│                            │  ├─bar_report     │                   │
+│                            │  ├─filter_analysis│                   │
+│                            │  └─opportunity_   │                   │
+│                            │    analysis       │                   │
+│                            └───────────────────┘                   │
+│                                                                      │
+│  ┌───────────────────┐     ┌───────────────────┐                   │
+│  │ ExportStrategy    │────▶│ strategy_state/   │                   │
+│  │ State() every     │     │ BarsOnTheFlow_    │                   │
+│  │ 10 bars           │     │ state.json        │                   │
+│  └───────────────────┘     └───────────────────┘                   │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+*Last Updated: December 19, 2025*

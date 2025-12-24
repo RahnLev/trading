@@ -1,0 +1,422 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Strategy State Monitor - BarsOnTheFlow</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <style>
+    body {
+      background: #1a1a1a;
+    }
+    .state-card {
+      background: #2a2a2a;
+      border: 1px solid #3a3a3a;
+      margin-bottom: 1rem;
+    }
+    .state-value {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    .state-label {
+      font-size: 0.875rem;
+      color: #888;
+    }
+    .position-long {
+      color: #48c774 !important;
+    }
+    .position-short {
+      color: #f14668 !important;
+    }
+    .position-flat {
+      color: #888 !important;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.5rem 0;
+      border-bottom: 1px solid #3a3a3a;
+    }
+    .metric-row:last-child {
+      border-bottom: none;
+    }
+    .update-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #48c774;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .stale {
+      background: #f14668 !important;
+    }
+  </style>
+</head>
+<body>
+<section class="section">
+  <div class="container">
+    <div class="level">
+      <div class="level-left">
+        <div class="level-item">
+          <h1 class="title has-text-light">Strategy State Monitor</h1>
+        </div>
+      </div>
+      <div class="level-right">
+        <div class="level-item">
+          <span class="tag is-dark">
+            <span class="update-indicator" id="updateIndicator"></span>
+            <span style="margin-left: 0.5rem;" id="lastUpdate">Waiting...</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Summary -->
+    <div class="columns">
+      <div class="column">
+        <div class="box state-card">
+          <p class="state-label">STRATEGY</p>
+          <p class="state-value has-text-light" id="strategyName">BarsOnTheFlow</p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="box state-card">
+          <p class="state-label">POSITION</p>
+          <p class="state-value" id="positionDisplay">Flat</p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="box state-card">
+          <p class="state-label">CURRENT BAR</p>
+          <p class="state-value has-text-light" id="currentBar">0</p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="box state-card">
+          <p class="state-label">CONTRACTS</p>
+          <p class="state-value has-text-light" id="contracts">0</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Previous Bar OHLC -->
+    <div class="box state-card">
+      <h2 class="title is-5 has-text-light">Previous Bar (Final OHLC)</h2>
+      <div class="columns">
+        <div class="column">
+          <div class="metric-row">
+            <span class="has-text-grey-light">Bar Index:</span>
+            <span class="has-text-light" id="barIndex">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Time:</span>
+            <span class="has-text-light" id="barTime">-</span>
+          </div>
+        </div>
+        <div class="column">
+          <div class="metric-row">
+            <span class="has-text-grey-light">Open:</span>
+            <span class="has-text-light" id="open">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">High:</span>
+            <span class="has-text-light" id="high">-</span>
+          </div>
+        </div>
+        <div class="column">
+          <div class="metric-row">
+            <span class="has-text-grey-light">Low:</span>
+            <span class="has-text-light" id="low">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Close:</span>
+            <span class="has-text-light" id="close">-</span>
+          </div>
+        </div>
+        <div class="column">
+          <div class="metric-row">
+            <span class="has-text-grey-light">Volume:</span>
+            <span class="has-text-light" id="volume">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Candle:</span>
+            <span id="candleType">-</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="columns">
+      <!-- Position State -->
+      <div class="column is-half">
+        <div class="box state-card">
+          <h2 class="title is-5 has-text-light">Position State</h2>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Market Position:</span>
+            <span id="positionMarketPosition">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Quantity:</span>
+            <span class="has-text-light" id="positionQuantity">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Average Price:</span>
+            <span class="has-text-light" id="positionAveragePrice">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Intended Position:</span>
+            <span id="intendedPosition">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Last Entry Bar:</span>
+            <span class="has-text-light" id="lastEntryBarIndex">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Last Entry Direction:</span>
+            <span id="lastEntryDirection">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stop Loss Configuration -->
+      <div class="column is-half">
+        <div class="box state-card">
+          <h2 class="title is-5 has-text-light">Stop Loss Configuration</h2>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Stop Loss Points:</span>
+            <span class="has-text-light" id="stopLossPoints">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Calculated Ticks:</span>
+            <span class="has-text-light" id="calculatedStopTicks">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Calculated Points:</span>
+            <span class="has-text-light" id="calculatedStopPoints">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Trailing Stop:</span>
+            <span id="useTrailingStop">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Dynamic Stop:</span>
+            <span id="useDynamicStopLoss">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Lookback / Multiplier:</span>
+            <span class="has-text-light"><span id="lookback">-</span> / <span id="multiplier">-</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="columns">
+      <!-- Strategy Parameters -->
+      <div class="column is-half">
+        <div class="box state-card">
+          <h2 class="title is-5 has-text-light">Strategy Parameters</h2>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Enable Shorts:</span>
+            <span id="enableShorts">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Avoid Longs on Bad:</span>
+            <span id="avoidLongsOnBadCandle">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Avoid Shorts on Good:</span>
+            <span id="avoidShortsOnGoodCandle">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Exit on Trend Break:</span>
+            <span id="exitOnTrendBreak">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Reverse on Trend Break:</span>
+            <span id="reverseOnTrendBreak">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Fast EMA Period:</span>
+            <span class="has-text-light" id="fastEmaPeriod">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Gradient Filter:</span>
+            <span id="gradientFilterEnabled">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Skip Longs Below:</span>
+            <span class="has-text-light" id="gradientThresholdSkipLongs">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Skip Shorts Above:</span>
+            <span class="has-text-light" id="gradientThresholdSkipShorts">-</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Trend & Signals -->
+      <div class="column is-half">
+        <div class="box state-card">
+          <h2 class="title is-5 has-text-light">Trend & Signals</h2>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Trend Lookback Bars:</span>
+            <span class="has-text-light" id="trendLookbackBars">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Min Consecutive Bars:</span>
+            <span class="has-text-light" id="minMatchingBars">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Use PnL Tiebreaker:</span>
+            <span id="usePnLTiebreaker">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Pending Long from Bad:</span>
+            <span id="pendingLongFromBad">-</span>
+          </div>
+          <div class="metric-row">
+            <span class="has-text-grey-light">Pending Short from Good:</span>
+            <span id="pendingShortFromGood">-</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Debug Info -->
+    <div class="box state-card">
+      <h2 class="title is-6 has-text-grey">Raw State (JSON)</h2>
+      <pre id="rawJson" style="background: #1a1a1a; color: #888; padding: 1rem; overflow-x: auto; font-size: 0.75rem;"></pre>
+    </div>
+
+    <div class="has-text-centered">
+      <a href="/" class="button is-dark">← Back to Dashboard</a>
+      <a href="/candles.html" class="button is-dark">Candles View</a>
+    </div>
+  </div>
+</section>
+
+<script>
+const API_BASE = 'http://localhost:51888';
+let lastUpdateTime = 0;
+
+function formatPosition(pos) {
+  const posLower = String(pos).toLowerCase();
+  if (posLower === 'long') return '<span class="tag is-success">Long</span>';
+  if (posLower === 'short') return '<span class="tag is-danger">Short</span>';
+  return '<span class="tag is-dark">Flat</span>';
+}
+
+function formatBool(val) {
+  if (val === true || val === 'true') return '<span class="tag is-success is-small">Yes</span>';
+  return '<span class="tag is-dark is-small">No</span>';
+}
+
+function formatCandleType(open, close) {
+  if (close > open) return '<span class="tag is-success is-small">Good</span>';
+  if (close < open) return '<span class="tag is-danger is-small">Bad</span>';
+  return '<span class="tag is-warning is-small">Doji</span>';
+}
+
+async function fetchState() {
+  try {
+    const response = await fetch(`${API_BASE}/strategy/state?strategy=BarsOnTheFlow`);
+    if (!response.ok) {
+      if (response.status === 404) {
+        document.getElementById('lastUpdate').textContent = 'No state cached yet';
+        document.getElementById('updateIndicator').classList.add('stale');
+        return;
+      }
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const state = await response.json();
+    lastUpdateTime = Date.now();
+    updateDisplay(state);
+    
+    // Update indicator
+    document.getElementById('updateIndicator').classList.remove('stale');
+    document.getElementById('lastUpdate').textContent = 'Live';
+    
+  } catch (err) {
+    console.error('Failed to fetch state:', err);
+    document.getElementById('lastUpdate').textContent = 'Connection error';
+    document.getElementById('updateIndicator').classList.add('stale');
+  }
+}
+
+function updateDisplay(state) {
+  // Header
+  document.getElementById('strategyName').textContent = state.strategyName || 'BarsOnTheFlow';
+  document.getElementById('currentBar').textContent = state.currentBar || 0;
+  document.getElementById('contracts').textContent = state.contracts || 0;
+  
+  // Position summary
+  const pos = state.positionMarketPosition || 'Flat';
+  const posEl = document.getElementById('positionDisplay');
+  posEl.innerHTML = formatPosition(pos);
+  posEl.className = `state-value position-${pos.toLowerCase()}`;
+  
+  // Previous bar OHLC
+  document.getElementById('barIndex').textContent = state.barIndex || '-';
+  document.getElementById('barTime').textContent = state.barTime ? new Date(state.barTime).toLocaleString() : '-';
+  document.getElementById('open').textContent = state.open ? state.open.toFixed(2) : '-';
+  document.getElementById('high').textContent = state.high ? state.high.toFixed(2) : '-';
+  document.getElementById('low').textContent = state.low ? state.low.toFixed(2) : '-';
+  document.getElementById('close').textContent = state.close ? state.close.toFixed(2) : '-';
+  document.getElementById('volume').textContent = state.volume || '-';
+  if (state.open && state.close) {
+    document.getElementById('candleType').innerHTML = formatCandleType(state.open, state.close);
+  }
+  
+  // Position state
+  document.getElementById('positionMarketPosition').innerHTML = formatPosition(state.positionMarketPosition);
+  document.getElementById('positionQuantity').textContent = state.positionQuantity || 0;
+  document.getElementById('positionAveragePrice').textContent = state.positionAveragePrice ? state.positionAveragePrice.toFixed(2) : '-';
+  document.getElementById('intendedPosition').innerHTML = formatPosition(state.intendedPosition);
+  document.getElementById('lastEntryBarIndex').textContent = state.lastEntryBarIndex || '-';
+  document.getElementById('lastEntryDirection').innerHTML = formatPosition(state.lastEntryDirection);
+  
+  // Stop loss
+  document.getElementById('stopLossPoints').textContent = state.stopLossPoints || '-';
+  document.getElementById('calculatedStopTicks').textContent = state.calculatedStopTicks || '-';
+  document.getElementById('calculatedStopPoints').textContent = state.calculatedStopPoints || '-';
+  document.getElementById('useTrailingStop').innerHTML = formatBool(state.useTrailingStop);
+  document.getElementById('useDynamicStopLoss').innerHTML = formatBool(state.useDynamicStopLoss);
+  document.getElementById('lookback').textContent = state.lookback || '-';
+  document.getElementById('multiplier').textContent = state.multiplier || '-';
+  
+  // Strategy parameters
+  document.getElementById('enableShorts').innerHTML = formatBool(state.enableShorts);
+  document.getElementById('avoidLongsOnBadCandle').innerHTML = formatBool(state.avoidLongsOnBadCandle);
+  document.getElementById('avoidShortsOnGoodCandle').innerHTML = formatBool(state.avoidShortsOnGoodCandle);
+  document.getElementById('exitOnTrendBreak').innerHTML = formatBool(state.exitOnTrendBreak);
+  document.getElementById('reverseOnTrendBreak').innerHTML = formatBool(state.reverseOnTrendBreak);
+  document.getElementById('fastEmaPeriod').textContent = state.fastEmaPeriod || '-';
+  document.getElementById('gradientFilterEnabled').innerHTML = formatBool(state.gradientFilterEnabled);
+  document.getElementById('gradientThresholdSkipLongs').textContent = state.gradientThresholdSkipLongs || '-';
+  document.getElementById('gradientThresholdSkipShorts').textContent = state.gradientThresholdSkipShorts || '-';
+  
+  // Trend & signals
+  document.getElementById('trendLookbackBars').textContent = state.trendLookbackBars || '-';
+  document.getElementById('minMatchingBars').textContent = state.minMatchingBars || '-';
+  document.getElementById('usePnLTiebreaker').innerHTML = formatBool(state.usePnLTiebreaker);
+  document.getElementById('pendingLongFromBad').innerHTML = formatBool(state.pendingLongFromBad);
+  document.getElementById('pendingShortFromGood').innerHTML = formatBool(state.pendingShortFromGood);
+  
+  // Raw JSON
+  document.getElementById('rawJson').textContent = JSON.stringify(state, null, 2);
+}
+
+// Poll every 1 second
+setInterval(fetchState, 1000);
+
+// Initial fetch
+fetchState();
+</script>
+</body>
+</html>

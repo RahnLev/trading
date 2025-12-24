@@ -15,6 +15,18 @@
             Updates the strategy state file - call periodically or on significant events
             </summary>
         </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.SendJsonToServer(System.String,System.String)">
+            <summary>
+            Sends a pre-built JSON string to the server.
+            Called on background thread via Task.Run.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.BuildStrategyStateJson">
+            <summary>
+            Builds the strategy state JSON string on the main thread.
+            This ensures thread-safe access to all NinjaTrader objects.
+            </summary>
+        </member>
         <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.IsReverseCooldownActive">
             <summary>
             Checks if reverse cooldown is active (prevents immediate reversal after flattening)

@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BarsOnTheFlow Monitor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        .stat-label {
+            font-size: 0.85rem;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+        .stat-value.ok {
+            color: #4ade80;
+        }
+        .stat-value.warning {
+            color: #fbbf24;
+        }
+        .stat-value.error {
+            color: #f87171;
+        }
+        .table-container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 20px;
+        }
+        h2 {
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        th {
+            background: rgba(0, 0, 0, 0.2);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+        tr:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .position-long {
+            color: #4ade80;
+            font-weight: bold;
+        }
+        .position-short {
+            color: #f87171;
+            font-weight: bold;
+        }
+        .position-flat {
+            color: #94a3b8;
+            font-weight: bold;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 20px;
+            opacity: 0.8;
+            font-size: 0.9rem;
+        }
+        .refresh-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #4ade80;
+            border-radius: 50%;
+            margin-left: 10px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .error-message {
+            background: rgba(248, 113, 113, 0.2);
+            border: 1px solid #f87171;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BarsOnTheFlow Monitor<span class="refresh-indicator"></span></h1>
+        
+        <div id="error-container"></div>
+        <div id="loading" class="loading">Loading data...</div>
+        
+        <div id="content" style="display:none;">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Bars</div>
+                    <div class="stat-value" id="row-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Bar Range</div>
+                    <div class="stat-value" id="bar-range">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Expected Count</div>
+                    <div class="stat-value" id="expected-count">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Missing Bars</div>
+                    <div class="stat-value" id="gaps">-</div>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <h2>Stop Settings (latest bar)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Trailing Stop</th>
+                            <th>Dynamic Stop</th>
+                            <th>Lookback</th>
+                            <th>Multiplier</th>
+                            <th>Stop Loss (pts)</th>
+                            <th>Calc Stop (pts)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td id="stop-trailing">-</td>
+                            <td id="stop-dynamic">-</td>
+                            <td id="stop-lookback">-</td>
+                            <td id="stop-multiplier">-</td>
+                            <td id="stop-points">-</td>
+                            <td id="stop-calc">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="table-container">
+                <h2>Latest Bars (Last 5)</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Bar Index</th>
+                            <th>Position</th>
+                            <th>Realized P&L</th>
+                            <th>Win Rate</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="latest-bars">
+                        <tr><td colspan="5" style="text-align:center;">No data</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="footer">
+                Auto-refreshing every 1 second • Last update: <span id="last-update">-</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let refreshInterval;
+
+        async function fetchStats() {
+            try {
+                const response = await fetch('/api/monitor/stats');
+                const data = await response.json();
+                
+                if (data.status === 'ok') {
+                    // Hide loading, show content
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('content').style.display = 'block';
+                    document.getElementById('error-container').innerHTML = '';
+                    
+                    // Update stats
+                    document.getElementById('row-count').textContent = data.row_count.toLocaleString();
+                    document.getElementById('bar-range').textContent = `${data.min_index} - ${data.max_index}`;
+                    document.getElementById('expected-count').textContent = data.expected_count.toLocaleString();
+                    
+                    // Update gaps with color coding
+                    const gapsEl = document.getElementById('gaps');
+                    gapsEl.textContent = data.gaps.toLocaleString();
+                    gapsEl.className = 'stat-value ' + (data.gaps === 0 ? 'ok' : data.gaps < 5 ? 'warning' : 'error');
+                    
+                    // Update latest bars table
+                    const tbody = document.getElementById('latest-bars');
+                    if (data.latest_bars.length > 0) {
+                        tbody.innerHTML = data.latest_bars.map(bar => `
+                            <tr>
+                                <td>${bar.barIndex}</td>
+                                <td><span class="position-${bar.position.toLowerCase()}">${bar.position}</span></td>
+                                <td>${bar.realizedPnL.toFixed(2)}</td>
+                                <td>${bar.winRate.toFixed(2)}%</td>
+                                <td>${bar.timestamp}</td>
+                            </tr>
+                        `).join('');
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No data</td></tr>';
+                    }
+
+                    // Stop settings
+                    if (data.latest_stop) {
+                        const ls = data.latest_stop;
+                        document.getElementById('stop-trailing').textContent = fmtBool(ls.useTrailingStop);
+                        document.getElementById('stop-dynamic').textContent = fmtBool(ls.useDynamicStopLoss);
+                        document.getElementById('stop-lookback').textContent = ls.lookback ?? '-';
+                        document.getElementById('stop-multiplier').textContent = ls.multiplier ?? '-';
+                        document.getElementById('stop-points').textContent = fmtNumber(ls.stopLossPoints);
+                        document.getElementById('stop-calc').textContent = fmtNumber(ls.calculatedStopPoints);
+                    }
+                    
+                    // Update timestamp
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                } else {
+                    showError('Server returned error: ' + data.message);
+                }
+            } catch (err) {
+                showError('Failed to fetch stats: ' + err.message);
+            }
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error-container').innerHTML = `
+                <div class="error-message">
+                    <strong>Error:</strong> ${message}
+                    <br><small>Make sure the dashboard server is running at http://localhost:51888</small>
+                </div>
+            `;
+        }
+
+        // Initial fetch
+        fetchStats();
+
+        // Auto-refresh every 1 second
+        refreshInterval = setInterval(fetchStats, 1000);
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (refreshInterval) clearInterval(refreshInterval);
+        });
+
+        function fmtBool(v) {
+            if (v === true) return 'On';
+            if (v === false) return 'Off';
+            return '-';
+        }
+
+        function fmtNumber(v) {
+            if (v === null || v === undefined) return '-';
+            const num = Number(v);
+            if (Number.isNaN(num)) return '-';
+            return num.toFixed(2);
+        }
+    </script>
+</body>
+</html>
