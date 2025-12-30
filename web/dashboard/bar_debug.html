@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bar Debug - Trade Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: #2d2d2d;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .header h1 {
+            font-size: 1.5rem;
+            margin: 0;
+        }
+        .controls {
+            padding: 15px 30px;
+            background: #252525;
+            border-bottom: 1px solid #404040;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .filter-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .filter-group input, .filter-group select {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border: 1px solid #404040;
+            border-radius: 4px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+        }
+        .filter-group label {
+            font-size: 0.9rem;
+            color: #b0b0b0;
+        }
+        .table-container {
+            overflow-x: auto;
+            max-height: calc(100vh - 250px);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        thead {
+            background: #252525;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #fff;
+            border-bottom: 2px solid #404040;
+            white-space: nowrap;
+        }
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #333;
+            white-space: nowrap;
+        }
+        tbody tr {
+            transition: background 0.2s;
+        }
+        tbody tr:hover {
+            background: #353535;
+        }
+        tbody tr.selected {
+            background: #4a5568;
+            border-left: 3px solid #667eea;
+        }
+        .bar-index {
+            font-weight: 700;
+            color: #667eea;
+        }
+        .direction-long {
+            color: #10b981;
+            font-weight: 700;
+        }
+        .direction-short {
+            color: #ef4444;
+            font-weight: 700;
+        }
+        .value-highest {
+            color: #10b981 !important;
+            font-weight: 700 !important;
+        }
+        .value-middle {
+            color: #fbbf24 !important;
+            font-weight: 700 !important;
+        }
+        .value-lowest {
+            color: #ef4444 !important;
+            font-weight: 700 !important;
+        }
+        .in-trade {
+            background: rgba(79, 209, 197, 0.1);
+        }
+        .candle-good {
+            color: #10b981;
+        }
+        .candle-bad {
+            color: #ef4444;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .error {
+            text-align: center;
+            padding: 40px;
+            color: #ef4444;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            padding: 15px 30px;
+            background: #252525;
+            border-bottom: 1px solid #404040;
+            flex-wrap: wrap;
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .stat-label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .stat-value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #e0e0e0;
+        }
+        .pagination {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .pagination button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        .pagination button:hover:not(:disabled) {
+            background: #5568d3;
+        }
+        .pagination button:disabled {
+            background: #4a4a4a;
+            color: #888;
+            cursor: not-allowed;
+        }
+        .pagination-info {
+            color: #b0b0b0;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Bar Debug - Trade Analysis</h1>
+            <a href="table-viewer.html" class="back-btn">← Back to Tables</a>
+        </div>
+        
+        <div class="stats" id="stats">
+            <div class="stat-item">
+                <span class="stat-label">Total Bars</span>
+                <span class="stat-value" id="totalBars">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Bars in Trade</span>
+                <span class="stat-value" id="barsInTrade">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Long Entries</span>
+                <span class="stat-value" id="longEntries">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Short Entries</span>
+                <span class="stat-value" id="shortEntries">-</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <div class="filter-group">
+                <label>Bar Range:</label>
+                <input type="number" id="barStart" placeholder="Start" min="0" style="width: 100px;">
+                <span>-</span>
+                <input type="number" id="barEnd" placeholder="End" min="0" style="width: 100px;">
+                <button onclick="applyFilters()">Filter</button>
+                <button onclick="clearFilters()">Clear</button>
+            </div>
+            <div class="filter-group">
+                <label>Direction:</label>
+                <select id="directionFilter">
+                    <option value="">All</option>
+                    <option value="LONG">Long</option>
+                    <option value="SHORT">Short</option>
+                    <option value="FLAT">Flat</option>
+                </select>
+                <label>In Trade:</label>
+                <select id="inTradeFilter">
+                    <option value="">All</option>
+                    <option value="1">Yes</option>
+                    <option value="0">No</option>
+                </select>
+            </div>
+            <div class="filter-group" style="border-top: 1px solid #404040; padding-top: 10px; margin-top: 10px; width: 100%;">
+                <label style="font-weight: 600;">Min Tick Gaps (for ✓/✗ indicators):</label>
+                <label>Min C→F Ticks:</label>
+                <input type="number" id="minTicksCloseToFast" placeholder="0" min="0" value="0" style="width: 60px;">
+                <label>Min F→S Ticks:</label>
+                <input type="number" id="minTicksFastToSlow" placeholder="0" min="0" value="0" style="width: 60px;">
+                <label style="margin-left: 15px; font-weight: 600;">Gradient Degree:</label>
+                <label>Min (for Longs):</label>
+                <input type="number" id="minGradientDeg" placeholder="0" step="0.1" value="0" style="width: 70px;">
+                <label>Max (for Shorts):</label>
+                <input type="number" id="maxGradientDeg" placeholder="0" step="0.1" value="0" style="width: 70px;">
+                <button onclick="renderTable()">Update Indicators</button>
+            </div>
+            <div class="pagination">
+                <button id="prevBtn" onclick="changePage(-1)">← Prev</button>
+                <span class="pagination-info" id="pageInfo">Page 1</span>
+                <button id="nextBtn" onclick="changePage(1)">Next →</button>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <div id="loading" class="loading">Loading bar data...</div>
+            <div id="error" class="error" style="display: none;"></div>
+            <table id="barTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Bar Index</th>
+                        <th>Timestamp</th>
+                        <th>Open</th>
+                        <th>High</th>
+                        <th>Low</th>
+                        <th>Close</th>
+                        <th>EMA Fast Val</th>
+                        <th>EMA Slow Val</th>
+                        <th>C→F Ticks</th>
+                        <th>F→S Ticks</th>
+                        <th>Gradient Deg</th>
+                        <th>Volume</th>
+                        <th>Range</th>
+                        <th>Body</th>
+                        <th>Stop Loss</th>
+                        <th>Trade</th>
+                        <th>Entry/Exit Reason</th>
+                        <th>Candle</th>
+                        <th>Trend↑</th>
+                        <th>Trend↓</th>
+                        <th>Allow L</th>
+                        <th>Allow S</th>
+                        <th>Pending L</th>
+                        <th>Pending S</th>
+                        <th>Avoid L</th>
+                        <th>Avoid S</th>
+                        <th>EMA Fast</th>
+                        <th>EMA Slow</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let allBars = [];
+        let filteredBars = [];
+        let tradesByBar = {}; // Map of bar_index -> {entry: trade, exit: trade}
+        let activeTrades = {}; // Map of entry_bar -> trade (for tracking active trades)
+        let currentPage = 0;
+        const pageSize = 200;
+
+        async function loadBars() {
+            try {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('error').style.display = 'none';
+                document.getElementById('barTable').style.display = 'none';
+
+                // Load bars and trades in parallel
+                const [barsResponse, tradesResponse] = await Promise.all([
+                    fetch('/api/databases/table-data?database_name=volatility.db&table_name=bar_samples&limit=10000'),
+                    fetch('/api/databases/table-data?database_name=dashboard.db&table_name=trades&limit=10000')
+                ]);
+                
+                if (!barsResponse.ok) {
+                    const errorText = await barsResponse.text();
+                    throw new Error(`HTTP ${barsResponse.status}: ${errorText}`);
+                }
+                
+                const barsData = await barsResponse.json();
+                
+                // API returns: {rows: [...], columns: [...], total_rows: ...}
+                if (barsData.rows && Array.isArray(barsData.rows)) {
+                    allBars = barsData.rows;
+                } else if (barsData.error) {
+                    throw new Error(barsData.error);
+                } else if (barsData.success && barsData.data) {
+                    allBars = barsData.data;
+                } else if (Array.isArray(barsData)) {
+                    allBars = barsData;
+                } else {
+                    throw new Error('Unexpected response format. Expected "rows" array. Got: ' + Object.keys(barsData).join(', '));
+                }
+                
+                if (allBars.length === 0) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('error').style.display = 'block';
+                    document.getElementById('error').textContent = 'No bar data found. Make sure the strategy is running and recording bar samples.';
+                    return;
+                }
+                
+                // Load trades if available
+                if (tradesResponse.ok) {
+                    try {
+                        const tradesData = await tradesResponse.json();
+                        let trades = [];
+                        if (tradesData.rows && Array.isArray(tradesData.rows)) {
+                            trades = tradesData.rows;
+                        } else if (tradesData.success && tradesData.data) {
+                            trades = tradesData.data;
+                        } else if (Array.isArray(tradesData)) {
+                            trades = tradesData;
+                        }
+                        
+                        // Build map of trades by bar index and track active trades
+                        tradesByBar = {};
+                        activeTrades = {};
+                        trades.forEach(trade => {
+                            const entryBar = trade.entry_bar;
+                            const exitBar = trade.exit_bar;
+                            
+                            if (entryBar !== null && entryBar !== undefined) {
+                                if (!tradesByBar[entryBar]) {
+                                    tradesByBar[entryBar] = {entry: null, exit: null};
+                                }
+                                tradesByBar[entryBar].entry = trade;
+                                // Track as active trade from entry to exit
+                                activeTrades[entryBar] = trade;
+                            }
+                            
+                            if (exitBar !== null && exitBar !== undefined) {
+                                if (!tradesByBar[exitBar]) {
+                                    tradesByBar[exitBar] = {entry: null, exit: null};
+                                }
+                                tradesByBar[exitBar].exit = trade;
+                            }
+                        });
+                    } catch (tradesError) {
+                        console.warn('Failed to load trades:', tradesError);
+                        // Continue without trades
+                    }
+                }
+                
+                allBars.sort((a, b) => (a.bar_index || 0) - (b.bar_index || 0));
+                applyFilters();
+                updateStats();
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').textContent = `Error: ${error.message}`;
+                console.error('Load bars error:', error);
+            }
+        }
+
+        function updateStats() {
+            const total = allBars.length;
+            const inTrade = allBars.filter(b => b.in_trade == 1).length;
+            const longEntries = allBars.filter((b, i) => 
+                i > 0 && b.direction === 'LONG' && allBars[i-1].direction !== 'LONG'
+            ).length;
+            const shortEntries = allBars.filter((b, i) => 
+                i > 0 && b.direction === 'SHORT' && allBars[i-1].direction !== 'SHORT'
+            ).length;
+
+            document.getElementById('totalBars').textContent = total;
+            document.getElementById('barsInTrade').textContent = inTrade;
+            document.getElementById('longEntries').textContent = longEntries;
+            document.getElementById('shortEntries').textContent = shortEntries;
+        }
+
+        function applyFilters() {
+            const barStart = document.getElementById('barStart').value;
+            const barEnd = document.getElementById('barEnd').value;
+            const direction = document.getElementById('directionFilter').value;
+            const inTrade = document.getElementById('inTradeFilter').value;
+
+            filteredBars = allBars.filter(bar => {
+                if (barStart && bar.bar_index < parseInt(barStart)) return false;
+                if (barEnd && bar.bar_index > parseInt(barEnd)) return false;
+                if (direction && bar.direction !== direction) return false;
+                if (inTrade !== '' && bar.in_trade != parseInt(inTrade)) return false;
+                return true;
+            });
+
+            currentPage = 0;
+            renderTable();
+        }
+
+        function clearFilters() {
+            document.getElementById('barStart').value = '';
+            document.getElementById('barEnd').value = '';
+            document.getElementById('directionFilter').value = '';
+            document.getElementById('inTradeFilter').value = '';
+            applyFilters();
+        }
+
+        function changePage(delta) {
+            const maxPage = Math.ceil(filteredBars.length / pageSize) - 1;
+            currentPage = Math.max(0, Math.min(maxPage, currentPage + delta));
+            renderTable();
+        }
+
+        function renderTable() {
+            const start = currentPage * pageSize;
+            const end = start + pageSize;
+            const pageBars = filteredBars.slice(start, end);
+
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            pageBars.forEach(bar => {
+                const row = document.createElement('tr');
+                if (bar.in_trade == 1) {
+                    row.classList.add('in-trade');
+                }
+
+                // Set direction color: green for LONG, red for SHORT, default for FLAT
+                const direction = bar.direction || 'FLAT';
+                const directionClass = direction === 'LONG' ? 'direction-long' : 
+                                     direction === 'SHORT' ? 'direction-short' : '';
+
+                // Color code all three values (Close, EMA Fast, EMA Slow): green=highest, yellow=middle, red=lowest
+                const close = parseFloat(bar.close_price);
+                const open = parseFloat(bar.open_price);
+                const emaFast = parseFloat(bar.ema_fast_value);
+                const emaSlow = parseFloat(bar.ema_slow_value);
+                
+                // Determine candle body color: green for bullish (Close > Open), red for bearish (Close < Open)
+                const isBullishCandle = !isNaN(close) && !isNaN(open) && close > open;
+                const isBearishCandle = !isNaN(close) && !isNaN(open) && close < open;
+                let bodyBgColor = '';
+                let bodyTextColor = '#e0e0e0';
+                if (isBullishCandle) {
+                    bodyBgColor = 'background-color: #10b981; ';
+                    bodyTextColor = '#ffffff';
+                } else if (isBearishCandle) {
+                    bodyBgColor = 'background-color: #ef4444; ';
+                    bodyTextColor = '#ffffff';
+                }
+                
+                // Build array of all three values (only include valid numbers)
+                const allValues = [];
+                if (!isNaN(close) && close !== null && close !== undefined) allValues.push({ val: Number(close), name: 'close' });
+                if (!isNaN(emaFast) && emaFast !== null && emaFast !== undefined) allValues.push({ val: Number(emaFast), name: 'emaFast' });
+                if (!isNaN(emaSlow) && emaSlow !== null && emaSlow !== undefined) allValues.push({ val: Number(emaSlow), name: 'emaSlow' });
+                
+                // Sort by value descending to determine highest, middle, lowest
+                allValues.sort((a, b) => {
+                    const diff = b.val - a.val;
+                    // Handle floating point precision issues
+                    return Math.abs(diff) < 0.0001 ? 0 : diff;
+                });
+                
+                // Get color class for any of the three values (Close, EMA Fast, EMA Slow)
+                const getValueClass = (val, name) => {
+                    const numVal = Number(val);
+                    if (isNaN(numVal) || numVal === null || numVal === undefined || allValues.length < 2) {
+                        console.log(`[COLOR_TRACE] Bar ${bar.bar_index} ${name}: Invalid value or not enough values`, { val, numVal, allValuesLength: allValues.length });
+                        return '';
+                    }
+                    
+                    // Find the index of this value in the sorted array by name
+                    const idx = allValues.findIndex(v => v.name === name);
+                    if (idx === -1) {
+                        console.log(`[COLOR_TRACE] Bar ${bar.bar_index} ${name}: Not found in allValues`, { val, name, allValues });
+                        return '';
+                    }
+                    
+                    // If only 2 values, highest is green, lowest is red
+                    if (allValues.length === 2) {
+                        const result = idx === 0 ? 'value-highest' : 'value-lowest';
+                        console.log(`[COLOR_TRACE] Bar ${bar.bar_index} ${name}: 2 values, idx=${idx}, result=${result}`, { allValues, idx });
+                        return result;
+                    }
+                    
+                    // If 3 values: highest=green, middle=yellow, lowest=red
+                    let result;
+                    if (idx === 0) result = 'value-highest';
+                    else if (idx === allValues.length - 1) result = 'value-lowest';
+                    else result = 'value-middle';
+                    
+                    console.log(`[COLOR_TRACE] Bar ${bar.bar_index} ${name}: 3 values, idx=${idx}, result=${result}`, { 
+                        allValues: allValues.map(v => `${v.name}=${v.val}`),
+                        sortedOrder: allValues.map((v, i) => `${i}:${v.name}`).join(', '),
+                        idx,
+                        result
+                    });
+                    return result;
+                };
+                
+                const closeClass = getValueClass(close, 'close');
+                const emaFastClass = getValueClass(emaFast, 'emaFast');
+                const emaSlowClass = getValueClass(emaSlow, 'emaSlow');
+                
+                // Build inline style strings for all three values with !important to override any CSS
+                let closeStyle = '';
+                if (closeClass) {
+                    const color = closeClass === 'value-highest' ? '#10b981' : 
+                                 closeClass === 'value-middle' ? '#fbbf24' : '#ef4444';
+                    closeStyle = `style="color: ${color} !important; font-weight: 700 !important;"`;
+                }
+                
+                let emaFastStyle = '';
+                if (emaFastClass) {
+                    const color = emaFastClass === 'value-highest' ? '#10b981' : 
+                                 emaFastClass === 'value-middle' ? '#fbbf24' : '#ef4444';
+                    emaFastStyle = `style="color: ${color} !important; font-weight: 700 !important;"`;
+                }
+                
+                let emaSlowStyle = '';
+                if (emaSlowClass) {
+                    const color = emaSlowClass === 'value-highest' ? '#10b981' : 
+                                 emaSlowClass === 'value-middle' ? '#fbbf24' : '#ef4444';
+                    emaSlowStyle = `style="color: ${color} !important; font-weight: 700 !important;"`;
+                }
+
+                // Calculate tick gaps (MNQ tick size = 0.25, so 4 ticks per point)
+                const TICK_SIZE = 0.25;
+                let closeToFastTicks = '-';
+                let fastToSlowTicks = '-';
+                let closeToFastMet = false;
+                let fastToSlowMet = false;
+                let closeToFastSymbol = '';
+                let fastToSlowSymbol = '';
+                
+                // Get minimum requirements from input fields (outside if blocks for scope)
+                const minTicksCloseToFastInput = document.getElementById('minTicksCloseToFast');
+                const minTicksFastToSlowInput = document.getElementById('minTicksFastToSlow');
+                const minTicksCloseToFast = minTicksCloseToFastInput ? (parseFloat(minTicksCloseToFastInput.value) || 0) : 0;
+                const minTicksFastToSlow = minTicksFastToSlowInput ? (parseFloat(minTicksFastToSlowInput.value) || 0) : 0;
+                
+                // Get gradient degree thresholds
+                const minGradientDegInput = document.getElementById('minGradientDeg');
+                const maxGradientDegInput = document.getElementById('maxGradientDeg');
+                const minGradientDeg = minGradientDegInput ? (parseFloat(minGradientDegInput.value) || 0) : 0;
+                const maxGradientDeg = maxGradientDegInput ? (parseFloat(maxGradientDegInput.value) || 0) : 0;
+                
+                if (!isNaN(close) && !isNaN(emaFast) && close !== null && emaFast !== null) {
+                    const gapCloseToFast = Math.abs(close - emaFast);
+                    closeToFastTicks = (gapCloseToFast / TICK_SIZE).toFixed(2);
+                    
+                    // Determine if gap meets requirement based on EMA alignment
+                    if (close > emaFast && emaFast > emaSlow) {
+                        // Bullish: Close >= Fast EMA + minGap
+                        closeToFastMet = close >= emaFast + (minTicksCloseToFast * TICK_SIZE);
+                    } else if (close < emaFast && emaFast < emaSlow) {
+                        // Bearish: Close <= Fast EMA - minGap
+                        closeToFastMet = close <= emaFast - (minTicksCloseToFast * TICK_SIZE);
+                    } else {
+                        // Not aligned, check if gap is at least minimum
+                        closeToFastMet = gapCloseToFast >= (minTicksCloseToFast * TICK_SIZE);
+                    }
+                    
+                    closeToFastSymbol = minTicksCloseToFast > 0 ? (closeToFastMet ? '✓' : '✗') : '';
+                }
+                
+                if (!isNaN(emaFast) && !isNaN(emaSlow) && emaFast !== null && emaSlow !== null) {
+                    const gapFastToSlow = Math.abs(emaFast - emaSlow);
+                    fastToSlowTicks = (gapFastToSlow / TICK_SIZE).toFixed(2);
+                    
+                    // Determine if gap meets requirement based on EMA alignment
+                    if (close > emaFast && emaFast > emaSlow) {
+                        // Bullish: Fast EMA >= Slow EMA + minGap
+                        fastToSlowMet = emaFast >= emaSlow + (minTicksFastToSlow * TICK_SIZE);
+                    } else if (close < emaFast && emaFast < emaSlow) {
+                        // Bearish: Fast EMA <= Slow EMA - minGap
+                        fastToSlowMet = emaFast <= emaSlow - (minTicksFastToSlow * TICK_SIZE);
+                    } else {
+                        // Not aligned, check if gap is at least minimum
+                        fastToSlowMet = gapFastToSlow >= (minTicksFastToSlow * TICK_SIZE);
+                    }
+                    
+                    fastToSlowSymbol = minTicksFastToSlow > 0 ? (fastToSlowMet ? '✓' : '✗') : '';
+                }
+                
+                // Determine colors for tick gap columns: green if meets minimum, red if below minimum
+                let closeToFastBgColor = '';
+                let closeToFastTextColor = '#e0e0e0';
+                // Check if minimum is set and we have valid tick data
+                if (minTicksCloseToFast > 0 && closeToFastTicks !== '-' && !isNaN(parseFloat(closeToFastTicks))) {
+                    closeToFastBgColor = closeToFastMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                    closeToFastTextColor = '#ffffff';
+                }
+                
+                let fastToSlowBgColor = '';
+                let fastToSlowTextColor = '#e0e0e0';
+                // Check if minimum is set and we have valid tick data
+                if (minTicksFastToSlow > 0 && fastToSlowTicks !== '-' && !isNaN(parseFloat(fastToSlowTicks))) {
+                    fastToSlowBgColor = fastToSlowMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                    fastToSlowTextColor = '#ffffff';
+                }
+                
+                // Determine gradient degree colors: green if meets threshold, red if below/above threshold
+                // Determine potential direction based on EMA alignment, not current position
+                const gradDeg = parseFloat(bar.fast_ema_grad_deg);
+                let gradDegBgColor = '';
+                let gradDegTextColor = '#e0e0e0';
+                let gradDegMet = false;
+                
+                if (!isNaN(gradDeg) && gradDeg !== null && gradDeg !== undefined) {
+                    // Determine potential trade direction based on EMA alignment (not current position)
+                    // Bullish alignment (Close > Fast EMA > Slow EMA) = potential LONG
+                    // Bearish alignment (Close < Fast EMA < Slow EMA) = potential SHORT
+                    const isBullishAlignment = !isNaN(close) && !isNaN(emaFast) && !isNaN(emaSlow) && 
+                                             close > emaFast && emaFast > emaSlow;
+                    const isBearishAlignment = !isNaN(close) && !isNaN(emaFast) && !isNaN(emaSlow) && 
+                                              close < emaFast && emaFast < emaSlow;
+                    
+                    // Check thresholds based on EMA alignment (potential trade direction)
+                    if (isBullishAlignment && minGradientDeg !== 0) {
+                        // Potential LONG: gradient should be >= minGradientDeg (positive gradient)
+                        gradDegMet = gradDeg >= minGradientDeg;
+                        gradDegBgColor = gradDegMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                        gradDegTextColor = '#ffffff';
+                    } else if (isBearishAlignment && maxGradientDeg !== 0) {
+                        // Potential SHORT: gradient should be <= maxGradientDeg (negative gradient)
+                        gradDegMet = gradDeg <= maxGradientDeg;
+                        gradDegBgColor = gradDegMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                        gradDegTextColor = '#ffffff';
+                    } else if (!isBullishAlignment && !isBearishAlignment) {
+                        // EMAs not aligned - check both thresholds if set
+                        if (minGradientDeg !== 0 && maxGradientDeg !== 0) {
+                            // Check if gradient meets either threshold (could be long or short setup)
+                            gradDegMet = (gradDeg >= minGradientDeg) || (gradDeg <= maxGradientDeg);
+                            gradDegBgColor = gradDegMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                            gradDegTextColor = '#ffffff';
+                        } else if (minGradientDeg !== 0) {
+                            // Only min threshold set - check for long qualification
+                            gradDegMet = gradDeg >= minGradientDeg;
+                            gradDegBgColor = gradDegMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                            gradDegTextColor = '#ffffff';
+                        } else if (maxGradientDeg !== 0) {
+                            // Only max threshold set - check for short qualification
+                            gradDegMet = gradDeg <= maxGradientDeg;
+                            gradDegBgColor = gradDegMet ? 'background-color: #10b981; ' : 'background-color: #ef4444; ';
+                            gradDegTextColor = '#ffffff';
+                        }
+                    }
+                }
+
+                // Get trade info for this bar
+                const barTradeInfo = tradesByBar[bar.bar_index] || {entry: null, exit: null};
+                let tradeText = '-';
+                let tradeStyle = '';
+                let hasTrade = false;
+                
+                // Check if this bar is part of an active trade (between entry and exit)
+                let activeTrade = null;
+                for (const entryBar in activeTrades) {
+                    const trade = activeTrades[entryBar];
+                    const entryBarNum = parseInt(entryBar);
+                    const exitBarNum = trade.exit_bar;
+                    const currentBarNum = bar.bar_index;
+                    
+                    if (currentBarNum >= entryBarNum && (exitBarNum === null || exitBarNum === undefined || currentBarNum <= exitBarNum)) {
+                        activeTrade = trade;
+                        break;
+                    }
+                }
+                
+                if (barTradeInfo.entry && barTradeInfo.exit) {
+                    // One-bar trade (entry and exit on same bar) - show EXIT with final P&L
+                    const trade = barTradeInfo.entry;
+                    const pnl = parseFloat(trade.realized_points || 0);
+                    const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444';
+                    if (Math.abs(pnl) < 0.01) {
+                        // P&L is essentially zero, just show EXIT
+                        tradeText = `EXIT ${trade.direction}`;
+                        tradeStyle = `background-color: ${pnlColor}; color: #ffffff; font-weight: 700; text-align: center;`;
+                    } else {
+                        tradeText = `EXIT ${trade.direction} ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
+                        tradeStyle = `background-color: ${pnlColor}; color: #ffffff; font-weight: 700; text-align: center;`;
+                    }
+                    hasTrade = true;
+                } else if (barTradeInfo.entry) {
+                    // Entry bar - show entry label only (no P&L)
+                    const trade = barTradeInfo.entry;
+                    tradeText = `ENTRY ${trade.direction}`;
+                    tradeStyle = 'background-color: #3b82f6; color: #ffffff; font-weight: 700; text-align: center;';
+                    hasTrade = true;
+                } else if (barTradeInfo.exit) {
+                    // Exit bar - show EXIT with final P&L
+                    const trade = barTradeInfo.exit;
+                    const pnl = parseFloat(trade.realized_points || 0);
+                    const pnlColor = pnl >= 0 ? '#10b981' : '#ef4444';
+                    if (Math.abs(pnl) < 0.01) {
+                        // P&L is essentially zero, just show EXIT
+                        tradeText = `EXIT ${trade.direction}`;
+                        tradeStyle = `background-color: ${pnlColor}; color: #ffffff; font-weight: 700; text-align: center;`;
+                    } else {
+                        tradeText = `EXIT ${trade.direction} ${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}`;
+                        tradeStyle = `background-color: ${pnlColor}; color: #ffffff; font-weight: 700; text-align: center;`;
+                    }
+                    hasTrade = true;
+                } else if (activeTrade) {
+                    // Bar is between entry and exit - show only P&L (no "ENTRY" prefix)
+                    const entryPrice = parseFloat(activeTrade.entry_price || 0);
+                    const currentClose = parseFloat(bar.close_price || 0);
+                    let unrealizedPnl = 0;
+                    
+                    if (activeTrade.direction === 'LONG' && entryPrice > 0 && currentClose > 0) {
+                        unrealizedPnl = currentClose - entryPrice;
+                    } else if (activeTrade.direction === 'SHORT' && entryPrice > 0 && currentClose > 0) {
+                        unrealizedPnl = entryPrice - currentClose;
+                    }
+                    
+                    // Only show P&L if it's not essentially zero
+                    if (Math.abs(unrealizedPnl) < 0.01) {
+                        // P&L is essentially zero, show just direction
+                        tradeText = activeTrade.direction;
+                        tradeStyle = 'background-color: #3b82f6; color: #ffffff; font-weight: 700; text-align: center;';
+                    } else {
+                        const pnlColor = unrealizedPnl >= 0 ? '#10b981' : '#ef4444';
+                        tradeText = `${unrealizedPnl >= 0 ? '+' : ''}${unrealizedPnl.toFixed(2)}`;
+                        tradeStyle = `background-color: ${pnlColor}; color: #ffffff; font-weight: 700; text-align: center;`;
+                    }
+                    hasTrade = true;
+                }
+                
+                // Highlight row if it has a trade
+                if (hasTrade) {
+                    row.style.backgroundColor = '#1a3a5a';
+                }
+                
+                row.innerHTML = `
+                    <td class="bar-index">${bar.bar_index || '-'}</td>
+                    <td>${bar.timestamp || '-'}</td>
+                    <td>${formatPrice(bar.open_price)}</td>
+                    <td>${formatPrice(bar.high_price)}</td>
+                    <td>${formatPrice(bar.low_price)}</td>
+                    <td class="${closeClass}" ${closeStyle}>${formatPrice(bar.close_price)}</td>
+                    <td class="${emaFastClass}" ${emaFastStyle}>${formatPrice(bar.ema_fast_value)}</td>
+                    <td class="${emaSlowClass}" ${emaSlowStyle}>${formatPrice(bar.ema_slow_value)}</td>
+                    <td style="${closeToFastBgColor}color: ${closeToFastTextColor}; font-weight: 700; text-align: center;">${closeToFastTicks}${closeToFastSymbol ? ' ' + closeToFastSymbol : ''}</td>
+                    <td style="${fastToSlowBgColor}color: ${fastToSlowTextColor}; font-weight: 700; text-align: center;">${fastToSlowTicks}${fastToSlowSymbol ? ' ' + fastToSlowSymbol : ''}</td>
+                    <td style="${gradDegBgColor}color: ${gradDegTextColor}; font-weight: 700; text-align: center;">${formatPrice(bar.fast_ema_grad_deg) || '-'}</td>
+                    <td>${bar.volume || '-'}</td>
+                    <td>${formatPrice(bar.bar_range)}</td>
+                    <td style="${bodyBgColor}color: ${bodyTextColor}; font-weight: 700; text-align: center;">${formatPrice(bar.body_size)}</td>
+                    <td style="text-align: center;">${(bar.stop_loss_points !== null && bar.stop_loss_points !== undefined && bar.stop_loss_points !== '' && bar.stop_loss_points !== 'null' && !isNaN(parseFloat(bar.stop_loss_points))) ? parseFloat(bar.stop_loss_points).toFixed(2) : '-'}</td>
+                    <td style="${tradeStyle}">${tradeText}</td>
+                    <td style="text-align: center; font-size: 0.8rem;">${(() => {
+                        // Show entry reason on entry bars, exit reason on exit bars
+                        let reason = '-';
+                        if (barTradeInfo.exit) {
+                            // Exit bar - show exit reason
+                            reason = barTradeInfo.exit.exit_reason || '-';
+                        } else if (barTradeInfo.entry && barTradeInfo.entry.exit_reason) {
+                            // One-bar trade (entry and exit on same bar) - show exit reason
+                            reason = barTradeInfo.entry.exit_reason;
+                        } else if (barTradeInfo.entry) {
+                            // Entry bar - show entry reason
+                            reason = barTradeInfo.entry.entry_reason || '-';
+                        }
+                        // Bars between entry and exit don't have reasons
+                        return reason || '-';
+                    })()}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${(() => {
+                        const ct = bar.candle_type || '';
+                        if (ct === 'good') return 'background-color: #10b981; color: #ffffff; font-weight: 700;';
+                        if (ct === 'bad') return 'background-color: #ef4444; color: #ffffff; font-weight: 700;';
+                        return '';
+                    })()}">${bar.candle_type || '-'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.trend_up == 1 ? 'background-color: #10b981; color: #ffffff; font-weight: 700;' : ''}">${bar.trend_up == 1 ? '✓' : '-'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.trend_down == 1 ? 'background-color: #ef4444; color: #ffffff; font-weight: 700;' : ''}">${bar.trend_down == 1 ? '✓' : '-'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.allow_long_this_bar == 1 ? 'background-color: #10b981; color: #ffffff; font-weight: 700;' : 'background-color: #ef4444; color: #ffffff; font-weight: 700;'}">${bar.allow_long_this_bar == 1 ? '✓' : '✗'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.allow_short_this_bar == 1 ? 'background-color: #10b981; color: #ffffff; font-weight: 700;' : 'background-color: #ef4444; color: #ffffff; font-weight: 700;'}">${bar.allow_short_this_bar == 1 ? '✓' : '✗'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.pending_long_from_bad == 1 ? 'background-color: #f59e0b; color: #ffffff; font-weight: 700;' : ''}">${bar.pending_long_from_bad == 1 ? '✓' : '-'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.pending_short_from_good == 1 ? 'background-color: #f59e0b; color: #ffffff; font-weight: 700;' : ''}">${bar.pending_short_from_good == 1 ? '✓' : '-'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.avoid_longs_on_bad_candle == 1 ? 'background-color: #ef4444; color: #ffffff; font-weight: 700;' : ''}">${bar.avoid_longs_on_bad_candle == 1 ? 'ON' : 'OFF'}</td>
+                    <td style="text-align: center; font-size: 0.8rem; ${bar.avoid_shorts_on_good_candle == 1 ? 'background-color: #ef4444; color: #ffffff; font-weight: 700;' : ''}">${bar.avoid_shorts_on_good_candle == 1 ? 'ON' : 'OFF'}</td>
+                    <td>${bar.ema_fast_period || '-'}</td>
+                    <td>${bar.ema_slow_period || '-'}</td>
+                `;
+
+                row.addEventListener('click', () => {
+                    document.querySelectorAll('tbody tr').forEach(r => r.classList.remove('selected'));
+                    row.classList.add('selected');
+                });
+
+                tbody.appendChild(row);
+            });
+
+            const maxPage = Math.ceil(filteredBars.length / pageSize) - 1;
+            document.getElementById('pageInfo').textContent = 
+                `Page ${currentPage + 1} of ${maxPage + 1} (${filteredBars.length} bars)`;
+            document.getElementById('prevBtn').disabled = currentPage === 0;
+            document.getElementById('nextBtn').disabled = currentPage >= maxPage;
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('barTable').style.display = 'table';
+        }
+
+        function formatPrice(value) {
+            if (value === null || value === undefined || value === 'null' || value === '') return '-';
+            const num = parseFloat(value);
+            if (isNaN(num)) return '-';
+            return num.toFixed(2);
+        }
+
+        // Load data on page load
+        loadBars();
+    </script>
+</body>
+</html>
+

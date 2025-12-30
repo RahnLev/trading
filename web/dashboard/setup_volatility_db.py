@@ -20,11 +20,12 @@ def create_database():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Table for aggregated volatility statistics by hour
+    # Table for aggregated volatility statistics by quarter hour (15 minutes)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS volatility_stats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            hour_of_day INTEGER NOT NULL,  -- 0-23 (Eastern time)
+            hour_of_day INTEGER NOT NULL,  -- 0-23 (Eastern time) - kept for backward compatibility
+            quarter_hour INTEGER NOT NULL,  -- 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
             day_of_week INTEGER,           -- 0-6 (Mon-Sun), NULL for all days
             symbol TEXT NOT NULL,
             
@@ -51,9 +52,16 @@ def create_database():
             last_sample_time TEXT,
             last_updated TEXT,
             
-            UNIQUE(hour_of_day, day_of_week, symbol)
+            UNIQUE(quarter_hour, day_of_week, symbol)
         )
     ''')
+    
+    # Add quarter_hour column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute('ALTER TABLE volatility_stats ADD COLUMN quarter_hour INTEGER')
+        cursor.execute('UPDATE volatility_stats SET quarter_hour = hour_of_day * 4 WHERE quarter_hour IS NULL')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     
     # Table for individual bar samples (for detailed analysis)
     cursor.execute('''
@@ -63,6 +71,7 @@ def create_database():
             bar_index INTEGER,
             symbol TEXT NOT NULL,
             hour_of_day INTEGER NOT NULL,
+            quarter_hour INTEGER NOT NULL,  -- 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
             day_of_week INTEGER NOT NULL,
             
             -- Bar data
@@ -90,10 +99,22 @@ def create_database():
         )
     ''')
     
+    # Add quarter_hour column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute('ALTER TABLE bar_samples ADD COLUMN quarter_hour INTEGER')
+        cursor.execute('UPDATE bar_samples SET quarter_hour = hour_of_day * 4 WHERE quarter_hour IS NULL')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    
     # Index for fast lookups
     cursor.execute('''
         CREATE INDEX IF NOT EXISTS idx_bar_samples_hour 
         ON bar_samples(symbol, hour_of_day, day_of_week)
+    ''')
+    
+    cursor.execute('''
+        CREATE INDEX IF NOT EXISTS idx_bar_samples_quarter_hour 
+        ON bar_samples(symbol, quarter_hour, day_of_week)
     ''')
     
     cursor.execute('''
@@ -173,6 +194,8 @@ def insert_bar_sample(timestamp, bar_index, symbol, open_p, high_p, low_p, close
         dt = datetime.strptime(timestamp.split('.')[0], '%Y-%m-%d %H:%M:%S')
     
     hour_of_day = dt.hour
+    # Calculate quarter hour: 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
+    quarter_hour = hour_of_day * 4 + (dt.minute // 15)
     day_of_week = dt.weekday()
     
     # Calculate metrics
@@ -191,13 +214,13 @@ def insert_bar_sample(timestamp, bar_index, symbol, open_p, high_p, low_p, close
     
     cursor.execute('''
         INSERT INTO bar_samples (
-            timestamp, bar_index, symbol, hour_of_day, day_of_week,
+            timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
             open_price, high_price, low_price, close_price, volume,
             bar_range, body_size, upper_wick, lower_wick,
             range_per_1k_volume, direction, in_trade, trade_result_ticks
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
-        timestamp, bar_index, symbol, hour_of_day, day_of_week,
+        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
         open_p, high_p, low_p, close_p, volume,
         bar_range, body_size, upper_wick, lower_wick,
         range_per_1k_volume, direction, 1 if in_trade else 0, trade_result_ticks
@@ -211,8 +234,8 @@ def update_aggregated_stats(symbol='MNQ'):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Calculate stats for each hour
-    for hour in range(24):
+    # Calculate stats for each quarter hour (0-95)
+    for quarter_hour in range(96):
         cursor.execute('''
             SELECT 
                 AVG(volume) as avg_vol,
@@ -226,21 +249,23 @@ def update_aggregated_stats(symbol='MNQ'):
                 MIN(timestamp) as first_sample,
                 MAX(timestamp) as last_sample
             FROM bar_samples
-            WHERE hour_of_day = ? AND symbol = ?
-        ''', (hour, symbol))
+            WHERE quarter_hour = ? AND symbol = ?
+        ''', (quarter_hour, symbol))
         
         row = cursor.fetchone()
         if row and row[7] > 0:  # sample_count > 0
+            # Calculate hour_of_day from quarter_hour for backward compatibility
+            hour_of_day = quarter_hour // 4
             cursor.execute('''
                 INSERT OR REPLACE INTO volatility_stats (
-                    hour_of_day, day_of_week, symbol,
+                    hour_of_day, quarter_hour, day_of_week, symbol,
                     avg_volume, min_volume, max_volume,
                     avg_bar_range, min_bar_range, max_bar_range,
                     avg_range_per_1k_volume,
                     sample_count, first_sample_time, last_sample_time, last_updated
-                ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             ''', (
-                hour, symbol,
+                hour_of_day, quarter_hour, symbol,
                 row[0], row[1], row[2],  # volume stats
                 row[3], row[4], row[5],  # range stats
                 row[6],                   # range per 1k volume
@@ -249,7 +274,7 @@ def update_aggregated_stats(symbol='MNQ'):
     
     conn.commit()
     conn.close()
-    print("Aggregated statistics updated.")
+    print("Aggregated statistics updated (by quarter hour).")
 
 def get_recommended_stop(hour_of_day, current_volume, symbol='MNQ'):
     """
@@ -260,12 +285,18 @@ def get_recommended_stop(hour_of_day, current_volume, symbol='MNQ'):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Get stats for this hour
+    # Calculate quarter_hour from hour_of_day and current minute
+    # For backward compatibility, if we only have hour_of_day, use the first quarter of that hour
+    from datetime import datetime
+    now = datetime.now()
+    quarter_hour = hour_of_day * 4 + (now.minute // 15)
+    
+    # Get stats for this quarter hour
     cursor.execute('''
         SELECT avg_bar_range, avg_volume, avg_range_per_1k_volume, sample_count
         FROM volatility_stats
-        WHERE hour_of_day = ? AND symbol = ? AND day_of_week IS NULL
-    ''', (hour_of_day, symbol))
+        WHERE quarter_hour = ? AND symbol = ? AND day_of_week IS NULL
+    ''', (quarter_hour, symbol))
     
     row = cursor.fetchone()
     conn.close()

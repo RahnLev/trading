@@ -3578,6 +3578,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
 
 
+
 #region NinjaScript generated code. Neither change nor remove.
 
 namespace NinjaTrader.NinjaScript.Indicators

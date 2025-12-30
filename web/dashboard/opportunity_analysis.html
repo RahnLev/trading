@@ -260,6 +260,27 @@
             color: #f59e0b;
         }
 
+        .bar-pattern {
+            display: flex;
+            gap: 3px;
+            align-items: center;
+        }
+
+        .bar-circle {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .bar-good {
+            background-color: #10b981;
+        }
+
+        .bar-bad {
+            background-color: #ef4444;
+        }
+
         .file-selector {
             background: #1a1f3a;
             border-radius: 8px;
@@ -427,6 +448,9 @@
                 <div id="suggested-params">
                     <p style="color: #9ca3af; font-size: 13px; margin: 0;">Run optimization to see suggestions</p>
                 </div>
+                <button id="apply-settings-btn" class="btn-primary" style="margin-top: 15px; display: none; width: 100%;" onclick="applySettingsToStrategy()">
+                    📥 Apply to Strategy
+                </button>
             </div>
         </div>
         
@@ -540,6 +564,143 @@
         </div>
     </div>
 
+    <!-- Historical Profitability Section -->
+    <div class="header" style="margin-top: 30px;">
+        <h1>📊 Historical Profitability Analysis</h1>
+        <p class="subtitle">Real trade performance metrics from the strategy database</p>
+        
+        <div class="controls" style="margin-top: 15px;">
+            <div class="control-group">
+                <label>Time Period</label>
+                <select id="profitability-days">
+                    <option value="1">Last 24 Hours</option>
+                    <option value="7" selected>Last 7 Days</option>
+                    <option value="30">Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                    <option value="365">Last Year</option>
+                </select>
+            </div>
+            <div class="control-group" style="align-self: end;">
+                <button onclick="loadHistoricalProfitability()">🔄 Refresh Data</button>
+            </div>
+        </div>
+
+        <div id="profitability-loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p>Loading historical profitability data...</p>
+        </div>
+
+        <div id="profitability-content" style="display: none;">
+            <!-- Overall Performance Stats -->
+            <div class="stats" style="margin-top: 20px;">
+                <div class="stat-card" style="border-left-color: #10b981;">
+                    <div class="stat-label">Total Trades</div>
+                    <div class="stat-value" id="hp-total-trades">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #10b981;">
+                    <div class="stat-label">Winning Trades</div>
+                    <div class="stat-value success" id="hp-winners">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #ef4444;">
+                    <div class="stat-label">Losing Trades</div>
+                    <div class="stat-value danger" id="hp-losers">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #10b981;">
+                    <div class="stat-label">Win Rate</div>
+                    <div class="stat-value" id="hp-win-rate">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #10b981;">
+                    <div class="stat-label">Total PnL</div>
+                    <div class="stat-value" id="hp-total-pnl">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg PnL per Trade</div>
+                    <div class="stat-value" id="hp-avg-pnl">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #10b981;">
+                    <div class="stat-label">Best Trade</div>
+                    <div class="stat-value success" id="hp-best-trade">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #ef4444;">
+                    <div class="stat-label">Worst Trade</div>
+                    <div class="stat-value danger" id="hp-worst-trade">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg MFE</div>
+                    <div class="stat-value" id="hp-avg-mfe">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg MAE</div>
+                    <div class="stat-value" id="hp-avg-mae">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Avg Bars Held</div>
+                    <div class="stat-value" id="hp-avg-bars-held">-</div>
+                </div>
+                <div class="stat-card" style="border-left-color: #f59e0b;">
+                    <div class="stat-label">MFE Capture %</div>
+                    <div class="stat-value warning" id="hp-mfe-capture">-</div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+                <div class="settings-card">
+                    <h3>📈 Hourly Performance</h3>
+                    <div style="width: 100%; height: 300px; position: relative;">
+                        <canvas id="hourly-chart" style="width: 100%; height: 100%;"></canvas>
+                    </div>
+                </div>
+                <div class="settings-card">
+                    <h3>📊 Profitability by Bars Held</h3>
+                    <div style="width: 100%; height: 300px; position: relative;">
+                        <canvas id="bars-held-chart" style="width: 100%; height: 100%;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Exit Reason Analysis -->
+            <div class="table-container" style="margin-top: 20px;">
+                <h3 style="color: #60a5fa; margin-bottom: 15px;">Exit Reason Analysis</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Exit Reason</th>
+                            <th>Count</th>
+                            <th>Avg PnL</th>
+                            <th>Total PnL</th>
+                            <th>Avg MFE</th>
+                        </tr>
+                    </thead>
+                    <tbody id="exit-reasons-body">
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Recent Trades -->
+            <div class="table-container" style="margin-top: 20px;">
+                <h3 style="color: #60a5fa; margin-bottom: 15px;">Recent Trades</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Direction</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>Bars Held</th>
+                            <th>PnL</th>
+                            <th>MFE</th>
+                            <th>MAE</th>
+                            <th>Exit Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recent-trades-body">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
     <div class="table-container">
         <div class="loading" id="loading">
             <div class="spinner"></div>
@@ -571,6 +732,7 @@
         let selectedFile = null;
         let streakResults = [];
         let currentStrategySettings = null;
+        let suggestedParams = null; // Store optimized parameters
 
         const BASE_URL = window.location.origin;
 
@@ -603,6 +765,14 @@
         function updateSuggestedParams(params, pnl) {
             const container = document.getElementById('suggested-params');
             const current = currentStrategySettings || {};
+            
+            // Store for later application
+            suggestedParams = {
+                trendLookbackBars: params.min_streak,
+                minMatchingBars: params.max_streak,
+                gradientThresholdSkipLongs: params.long_gradient_threshold,
+                gradientThresholdSkipShorts: params.short_gradient_threshold
+            };
             
             const lookbackChanged = params.min_streak !== current.trendLookbackBars;
             const matchingChanged = params.max_streak !== current.minMatchingBars;
@@ -639,6 +809,9 @@
                     <div class="param-value">$${pnl.potentialPnl.toFixed(2)}</div>
                 </div>
             `;
+            
+            // Show the apply button
+            document.getElementById('apply-settings-btn').style.display = 'block';
         }
 
         async function loadFiles() {
@@ -684,8 +857,10 @@
 
             const params = {
                 filename: selectedFile,
-                min_streak: parseInt(document.getElementById('min-streak').value),
-                max_streak: parseInt(document.getElementById('max-streak').value),
+                // Note: UI "Lookback Window" maps to max_streak (max streak length to check)
+                // UI "Min Matching Bars" maps to min_streak (minimum streak length required)
+                min_streak: parseInt(document.getElementById('max-streak').value),
+                max_streak: parseInt(document.getElementById('min-streak').value),
                 long_gradient_threshold: parseFloat(document.getElementById('long-grad-thresh').value),
                 short_gradient_threshold: parseFloat(document.getElementById('short-grad-thresh').value),
                 min_movement: parseFloat(document.getElementById('min-movement').value),
@@ -941,18 +1116,61 @@
             }
         }
 
+        function renderPatternCircles(pattern) {
+            if (!pattern) return '-';
+            
+            const circles = [];
+            let i = 0;
+            
+            while (i < pattern.length) {
+                const char = pattern[i];
+                
+                if (/\d/.test(char)) {
+                    // Parse number like "3G" or "2B"
+                    let numStr = '';
+                    while (i < pattern.length && /\d/.test(pattern[i])) {
+                        numStr += pattern[i];
+                        i++;
+                    }
+                    const count = parseInt(numStr);
+                    // Next char should be G or B
+                    if (i < pattern.length) {
+                        const type = pattern[i];
+                        const circleClass = type === 'G' ? 'bar-good' : 'bar-bad';
+                        for (let j = 0; j < count; j++) {
+                            circles.push(`<span class="bar-circle ${circleClass}"></span>`);
+                        }
+                        i++;
+                    }
+                } else if (char === 'G' || char === 'B') {
+                    // Single G or B without number
+                    const circleClass = char === 'G' ? 'bar-good' : 'bar-bad';
+                    circles.push(`<span class="bar-circle ${circleClass}"></span>`);
+                    i++;
+                } else {
+                    i++;
+                }
+            }
+            
+            return circles.length > 0 ? `<div class="bar-pattern">${circles.join('')}</div>` : pattern;
+        }
+
         function renderTable(streaks) {
             const tbody = document.getElementById('table-body');
-            tbody.innerHTML = streaks.map((streak, idx) => {
+            // Reverse streaks to show newest (highest bar numbers) first
+            const reversedStreaks = [...streaks].reverse();
+            
+            tbody.innerHTML = reversedStreaks.map((streak, idx) => {
                 const statusClass = streak.status === 'caught' ? 'streak-caught' : 
                                    streak.status === 'missed' ? 'streak-missed' : 'streak-partial';
                 const directionBadge = streak.direction === 'LONG' ? 'badge-long' : 'badge-short';
                 const statusBadge = streak.status === 'caught' ? 'success' : 
                                    streak.status === 'missed' ? 'danger' : 'warning';
+                const patternHtml = renderPatternCircles(streak.pattern);
 
                 return `
                     <tr class="${statusClass}">
-                        <td>${idx + 1}</td>
+                        <td>${streaks.length - idx}</td>
                         <td><span class="badge ${directionBadge}">${streak.direction}</span></td>
                         <td>${streak.start_bar}</td>
                         <td>${streak.end_bar}</td>
@@ -963,7 +1181,325 @@
                         <td>${streak.missed_points >= 0 ? streak.missed_points.toFixed(2) : '-'}</td>
                         <td>${streak.avg_gradient.toFixed(2)}°</td>
                         <td style="font-size: 11px; color: #9ca3af;">${streak.block_reason || '-'}</td>
-                        <td style="font-size: 11px;">${streak.pattern || '-'}</td>
+                        <td>${patternHtml}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        async function applySettingsToStrategy() {
+            if (!suggestedParams) {
+                alert('No optimized parameters available. Run optimization first.');
+                return;
+            }
+
+            const btn = document.getElementById('apply-settings-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Applying...';
+
+            try {
+                const response = await fetch(`${BASE_URL}/api/strategy/update-params`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        strategy: 'BarsOnTheFlow',
+                        params: suggestedParams
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (response.ok) {
+                    btn.textContent = '✅ Applied!';
+                    btn.style.background = '#10b981';
+                    
+                    // Reload current settings to show updated values
+                    setTimeout(() => {
+                        loadCurrentSettings();
+                        btn.textContent = '📥 Apply to Strategy';
+                        btn.style.background = '';
+                        btn.disabled = false;
+                    }, 2000);
+                    
+                    alert('Settings applied successfully! Restart NinjaTrader strategy to use new parameters.');
+                } else {
+                    throw new Error(result.error || 'Failed to apply settings');
+                }
+            } catch (error) {
+                console.error('Error applying settings:', error);
+                btn.textContent = '❌ Failed';
+                btn.style.background = '#ef4444';
+                alert(`Error applying settings: ${error.message}`);
+                
+                setTimeout(() => {
+                    btn.textContent = '📥 Apply to Strategy';
+                    btn.style.background = '';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+
+        // Historical Profitability Functions
+        async function loadHistoricalProfitability() {
+            const days = parseInt(document.getElementById('profitability-days').value);
+            const loadingEl = document.getElementById('profitability-loading');
+            const contentEl = document.getElementById('profitability-content');
+            
+            loadingEl.style.display = 'block';
+            contentEl.style.display = 'none';
+            
+            try {
+                const response = await fetch(`${BASE_URL}/analytics?days=${days}&min_trades=0`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                // Update overall stats
+                updateProfitabilityStats(data);
+                
+                // Update charts
+                updateHourlyChart(data.hourly || []);
+                updateBarsHeldChart(data.bars_analysis || []);
+                
+                // Update exit reasons table
+                updateExitReasonsTable(data.exit_reasons || []);
+                
+                // Update recent trades table
+                updateRecentTradesTable(data.recent || []);
+                
+                loadingEl.style.display = 'none';
+                contentEl.style.display = 'block';
+            } catch (error) {
+                console.error('Error loading historical profitability:', error);
+                loadingEl.innerHTML = `<p style="color: #ef4444;">Error loading data: ${error.message}</p>`;
+            }
+        }
+
+        function updateProfitabilityStats(data) {
+            const overall = data.overall || {};
+            
+            document.getElementById('hp-total-trades').textContent = overall.total_trades || 0;
+            document.getElementById('hp-winners').textContent = overall.winners || 0;
+            document.getElementById('hp-losers').textContent = overall.losers || 0;
+            
+            const winRate = overall.total_trades > 0 ? 
+                ((overall.winners / overall.total_trades) * 100).toFixed(1) : 0;
+            document.getElementById('hp-win-rate').textContent = `${winRate}%`;
+            
+            const totalPnl = overall.total_pnl || 0;
+            const totalPnlEl = document.getElementById('hp-total-pnl');
+            totalPnlEl.textContent = `$${totalPnl.toFixed(2)}`;
+            totalPnlEl.className = `stat-value ${totalPnl >= 0 ? 'success' : 'danger'}`;
+            
+            const avgPnl = overall.avg_pnl || 0;
+            const avgPnlEl = document.getElementById('hp-avg-pnl');
+            avgPnlEl.textContent = `$${avgPnl.toFixed(2)}`;
+            avgPnlEl.className = `stat-value ${avgPnl >= 0 ? 'success' : 'danger'}`;
+            
+            const bestTrade = overall.best_trade || 0;
+            const bestTradeEl = document.getElementById('hp-best-trade');
+            bestTradeEl.textContent = `$${bestTrade.toFixed(2)}`;
+            bestTradeEl.className = `stat-value success`;
+            
+            const worstTrade = overall.worst_trade || 0;
+            const worstTradeEl = document.getElementById('hp-worst-trade');
+            worstTradeEl.textContent = `$${worstTrade.toFixed(2)}`;
+            worstTradeEl.className = `stat-value danger`;
+            
+            document.getElementById('hp-avg-mfe').textContent = (overall.avg_mfe || 0).toFixed(2);
+            document.getElementById('hp-avg-mae').textContent = (overall.avg_mae || 0).toFixed(2);
+            document.getElementById('hp-avg-bars-held').textContent = (overall.avg_bars_held || 0).toFixed(1);
+            
+            const mfeStats = data.mfe_stats || {};
+            const mfeCapture = mfeStats.avg_mfe_capture_pct || 0;
+            const mfeCaptureEl = document.getElementById('hp-mfe-capture');
+            mfeCaptureEl.textContent = `${mfeCapture.toFixed(1)}%`;
+            mfeCaptureEl.className = `stat-value ${mfeCapture >= 50 ? 'success' : mfeCapture >= 30 ? 'warning' : 'danger'}`;
+        }
+
+        function updateHourlyChart(hourlyData) {
+            const canvas = document.getElementById('hourly-chart');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size based on container
+            const container = canvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = container.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            
+            if (!hourlyData || hourlyData.length === 0) {
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No hourly data available', rect.width / 2, rect.height / 2);
+                return;
+            }
+            
+            // Find min/max for scaling
+            const maxPnl = Math.max(...hourlyData.map(h => Math.abs(h.total_pnl || 0)));
+            const minPnl = Math.min(...hourlyData.map(h => h.total_pnl || 0));
+            const range = maxPnl - minPnl || 1;
+            
+            const padding = 40;
+            const chartWidth = rect.width - padding * 2;
+            const chartHeight = rect.height - padding * 2;
+            const barWidth = chartWidth / hourlyData.length;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            
+            // Draw bars
+            hourlyData.forEach((hour, idx) => {
+                const x = padding + idx * barWidth;
+                const pnl = hour.total_pnl || 0;
+                const barHeight = Math.abs((pnl / range) * chartHeight);
+                const y = pnl >= 0 ? 
+                    padding + chartHeight - barHeight : 
+                    padding + chartHeight;
+                
+                ctx.fillStyle = pnl >= 0 ? '#10b981' : '#ef4444';
+                ctx.fillRect(x + 2, y, barWidth - 4, barHeight);
+                
+                // Draw hour label
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${hour.hour}:00`, x + barWidth / 2, rect.height - 10);
+            });
+            
+            // Draw zero line
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(padding, padding + chartHeight);
+            ctx.lineTo(rect.width - padding, padding + chartHeight);
+            ctx.stroke();
+        }
+
+        function updateBarsHeldChart(barsData) {
+            const canvas = document.getElementById('bars-held-chart');
+            const ctx = canvas.getContext('2d');
+            
+            // Set canvas size based on container
+            const container = canvas.parentElement;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = container.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            canvas.style.width = rect.width + 'px';
+            canvas.style.height = rect.height + 'px';
+            
+            if (!barsData || barsData.length === 0) {
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '14px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('No bars held data available', rect.width / 2, rect.height / 2);
+                return;
+            }
+            
+            // Find min/max for scaling
+            const maxPnl = Math.max(...barsData.map(b => Math.abs(b.total_pnl || 0)));
+            const minPnl = Math.min(...barsData.map(b => b.total_pnl || 0));
+            const range = maxPnl - minPnl || 1;
+            
+            const padding = 40;
+            const chartWidth = rect.width - padding * 2;
+            const chartHeight = rect.height - padding * 2;
+            const barWidth = chartWidth / barsData.length;
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            
+            // Draw bars
+            barsData.forEach((bar, idx) => {
+                const x = padding + idx * barWidth;
+                const pnl = bar.total_pnl || 0;
+                const barHeight = Math.abs((pnl / range) * chartHeight);
+                const y = pnl >= 0 ? 
+                    padding + chartHeight - barHeight : 
+                    padding + chartHeight;
+                
+                ctx.fillStyle = pnl >= 0 ? '#10b981' : '#ef4444';
+                ctx.fillRect(x + 2, y, barWidth - 4, barHeight);
+                
+                // Draw bars held label
+                ctx.fillStyle = '#9ca3af';
+                ctx.font = '10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${bar.bars_held}`, x + barWidth / 2, rect.height - 10);
+            });
+            
+            // Draw zero line
+            ctx.strokeStyle = '#374151';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(padding, padding + chartHeight);
+            ctx.lineTo(rect.width - padding, padding + chartHeight);
+            ctx.stroke();
+        }
+
+        function updateExitReasonsTable(exitReasons) {
+            const tbody = document.getElementById('exit-reasons-body');
+            
+            if (!exitReasons || exitReasons.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #9ca3af;">No exit reason data available</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = exitReasons.map(reason => {
+                const avgPnl = reason.avg_pnl || 0;
+                const totalPnl = reason.total_pnl || 0;
+                const pnlClass = avgPnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                
+                return `
+                    <tr>
+                        <td>${reason.exit_reason || 'Unknown'}</td>
+                        <td>${reason.count || 0}</td>
+                        <td class="${pnlClass}">$${avgPnl.toFixed(2)}</td>
+                        <td class="${pnlClass}">$${totalPnl.toFixed(2)}</td>
+                        <td>${(reason.avg_mfe || 0).toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function updateRecentTradesTable(recentTrades) {
+            const tbody = document.getElementById('recent-trades-body');
+            
+            if (!recentTrades || recentTrades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #9ca3af;">No recent trades available</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = recentTrades.map(trade => {
+                const pnl = trade.realized_points || 0;
+                const pnlClass = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+                const directionBadge = trade.direction === 'LONG' ? 'badge-long' : 'badge-short';
+                
+                return `
+                    <tr>
+                        <td>${trade.entry_time_str || '-'}</td>
+                        <td><span class="badge ${directionBadge}">${trade.direction || '-'}</span></td>
+                        <td>${(trade.entry_price || 0).toFixed(2)}</td>
+                        <td>${(trade.exit_price || 0).toFixed(2)}</td>
+                        <td>${trade.bars_held || 0}</td>
+                        <td class="${pnlClass}">$${pnl.toFixed(2)}</td>
+                        <td>${(trade.mfe || 0).toFixed(2)}</td>
+                        <td>${(trade.mae || 0).toFixed(2)}</td>
+                        <td style="font-size: 11px; color: #9ca3af;">${trade.exit_reason || '-'}</td>
                     </tr>
                 `;
             }).join('');
@@ -972,6 +1508,25 @@
         // Load files and current settings on page load
         loadFiles();
         loadCurrentSettings();
+        
+        // Auto-load historical profitability on page load
+        setTimeout(() => {
+            loadHistoricalProfitability();
+        }, 500);
+
+        // Handle window resize for charts
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                const profitabilityContent = document.getElementById('profitability-content');
+                if (profitabilityContent && profitabilityContent.style.display !== 'none') {
+                    // Re-render charts on resize
+                    const days = parseInt(document.getElementById('profitability-days').value);
+                    loadHistoricalProfitability();
+                }
+            }, 250);
+        });
     </script>
 </body>
 </html>

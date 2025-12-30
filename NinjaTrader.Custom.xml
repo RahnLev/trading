@@ -4,6 +4,77 @@
         <name>NinjaTrader.Custom</name>
     </assembly>
     <members>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ProcessTradingDecisions(System.Double,System.Double,System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Boolean)">
+            <summary>
+            ALL TRADING DECISION LOGIC IS HERE
+            This method contains all entry/exit filters, guards, and decision logic.
+            To disable trading logic, comment out the call to this method in OnBarUpdate.
+            To try alternative logic, create ProcessTradingDecisionsV2() and swap the call.
+            
+            ====================================================================
+            OHLC DATA USAGE GUIDELINES:
+            ====================================================================
+            
+            MUST USE FINAL OHLC [1] (Previous Completed Bar):
+            - Trend detection (IsTrendUp/IsTrendDown) - analyzes completed bars
+            - Gradient calculation for bar-close decisions - uses completed EMA values
+            - Entry filters (AvoidShortsOnGoodCandle, AvoidLongsOnBadCandle) - based on completed bar
+            - ExitIfEntryBarOpposite - checks if entry bar closed opposite (completed bar)
+            - Bar snapshots/logging - records completed bar data
+            
+            REASON: These decisions are made on the FIRST TICK of a new bar, when:
+            - [1] = Previous bar (completed, final OHLC) ✓ Use this for decisions
+            - [0] = New bar (just started, incomplete data) ✗ Don't use for decisions
+            
+            CAN USE CURRENT OHLC [0] (Current Bar - Forming):
+            - Mid-bar gradient entry/exit checks (CheckMidBarGradientEntry/Exit) - uses real-time EMA[0]
+            - Break-even stop management - uses current price Close[0]
+            - Trailing stop updates - uses current price
+            - Real-time position management - uses current price
+            - State updates during mid-bar ticks - uses current price
+            
+            REASON: These decisions are made DURING the current bar formation, when:
+            - [0] = Current bar (forming, real-time data) ✓ Use this for real-time decisions
+            - [1] = Previous bar (already completed) ✓ Use for comparison/reference
+            
+            ====================================================================
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ProcessDatabaseOperations">
+            <summary>
+            All database operations (API calls, state updates, bar samples)
+            To disable database operations, comment out the call to this method in OnBarUpdate.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ProcessPendingCSVLogs">
+            <summary>
+            Process pending CSV logs from previous bar
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ProcessMidBarOperations">
+            <summary>
+            Process mid-bar operations (gradient entry/exit checks, state updates)
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ProcessCSVLogging(System.Double,System.Double,System.Boolean,System.Boolean,System.Boolean,System.Boolean,System.Boolean)">
+            <summary>
+            All CSV logging operations (bar snapshots, opportunity analysis)
+            To disable CSV logging, comment out the call to this method in OnBarUpdate.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.WriteParametersJsonFile">
+            <summary>
+            Writes all strategy parameters to a JSON file for the strategy_state.html dashboard page.
+            This file is used by http://localhost:51888/strategy_state.html to display current parameters.
+            Called during log initialization to create the parameters file.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.UpdateVisualizations(System.Boolean,System.Boolean)">
+            <summary>
+            All visualization operations (trend overlays, labels, gradient displays)
+            To disable visualization, comment out the call to this method in OnBarUpdate.
+            </summary>
+        </member>
         <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ExportStrategyState">
             <summary>
             Exports current strategy state to a JSON file for external API queries.
@@ -25,6 +96,104 @@
             <summary>
             Builds the strategy state JSON string on the main thread.
             This ensures thread-safe access to all NinjaTrader objects.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.RecordCompletedBar(System.Double,System.Double)">
+            <summary>
+            RECORD COMPLETED BAR - Uses FINAL OHLC [1]
+            Records the completed bar's final OHLC data for trend analysis.
+            Called on bar close (first tick of new bar) with [1] values (completed bar).
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.IsTrendUp">
+            <summary>
+            TREND DETECTION - Uses FINAL OHLC [1]
+            Analyzes completed bars from recentGood queue (populated by RecordCompletedBar using [1]).
+            Called on bar close (first tick of new bar) when [1] contains the completed bar's final OHLC.
+            NOTE: This method is only effective when EnableBarsOnTheFlowTrendDetection is true.
+            When disabled, returns false regardless of trend analysis.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.IsTrendDown">
+            <summary>
+            TREND DETECTION - Uses FINAL OHLC [1]
+            Analyzes completed bars from recentGood queue (populated by RecordCompletedBar using [1]).
+            Called on bar close (first tick of new bar) when [1] contains the completed bar's final OHLC.
+            NOTE: This method is only effective when EnableBarsOnTheFlowTrendDetection is true.
+            When disabled, the caller will return false regardless of this method's result.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.SetInitialStopLoss(System.String,NinjaTrader.Cbi.MarketPosition)">
+            <summary>
+            Set stop loss BEFORE entering a trade (when position is still Flat).
+            This is the correct NinjaTrader pattern - SetStopLoss must be called BEFORE EnterLong/EnterShort.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ApplyStopLoss(System.String)">
+            <summary>
+            Apply stop loss when position is already open (e.g., for break-even adjustments).
+            Use SetInitialStopLoss() when entering a new trade.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.RecordExitForCooldown(NinjaTrader.Cbi.MarketPosition)">
+            <summary>
+            Record exit bar when a position exits - cooldown counts from exit, not crossover
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.EmaCrossoverFilterPasses(System.Boolean)">
+            <summary>
+            EMA CROSSOVER FILTER - Uses FINAL OHLC [1]
+            Checks if EMA crossover confirmation passes for entry.
+            
+            If RequireCrossover = true:
+              For longs: Close crosses above EMA(Fast) AND EMA(Fast) crosses above EMA(Slow).
+              For shorts: Close crosses below EMA(Fast) AND EMA(Fast) crosses below EMA(Slow).
+              Crossovers can occur on the same bar (strict) or within EmaCrossoverWindowBars (relaxed).
+            
+            If RequireCrossover = false:
+              For longs: Close greater than EMA Fast AND EMA Fast greater than EMA Slow (current state check).
+              For shorts: Close less than EMA Fast AND EMA Fast less than EMA Slow (current state check).
+            
+            Uses completed bar data [1] for bar-close decisions.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.CheckMidBarGradientEntry">
+            <summary>
+            MID-BAR GRADIENT ENTRY CHECK
+            Uses CURRENT OHLC [0] - This runs during bar formation, not on bar close.
+            
+            OHLC Usage:
+            - EMA[0] = Current tick's EMA value (real-time, forming bar) ✓
+            - EMA[1] = Previous bar's final EMA value (completed) ✓
+            - Close[0] = Current tick price (real-time) ✓
+            
+            This allows entry when gradient crosses threshold mid-bar, before bar close.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.CheckMidBarGradientExit">
+            <summary>
+            MID-BAR GRADIENT EXIT CHECK
+            Uses CURRENT OHLC [0] - This runs during bar formation, not on bar close.
+            
+            OHLC Usage:
+            - EMA[0] = Current tick's EMA value (real-time, forming bar) ✓
+            - Close[0] = Current tick price (real-time) ✓
+            
+            This allows exit when gradient crosses unfavorable threshold mid-bar, before bar close.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ComputeFastEmaGradient(System.Int32,System.Double@)">
+            <summary>
+            GRADIENT CALCULATION - Uses FINAL OHLC [1]
+            Calculates EMA gradient using completed bars (barsAgo 1, 2, etc.).
+            Called on bar close (first tick of new bar) when [1] contains the completed bar's final EMA value.
+            </summary>
+        </member>
+        <member name="M:NinjaTrader.NinjaScript.Strategies.BarsOnTheFlow.ComputeChartScaledFastEmaDeg(System.Int32)">
+            <summary>
+            CHART-SCALED GRADIENT CALCULATION - Uses FINAL OHLC [1]
+            Calculates gradient using completed bars (barsAgo 1, 2, etc.) for bar-close decisions.
+            Called on bar close (first tick of new bar) when [1] contains the completed bar's final EMA value.
             </summary>
         </member>
         <member name="M:NinjaTrader.NinjaScript.Strategies.CBAS_SuperTrendStrategy.IsReverseCooldownActive">

@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Database Monitor - BarsOnTheFlow</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #fff;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .refresh-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        .refresh-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+        .auto-refresh {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .auto-refresh input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .status-populated {
+            background: #10b981;
+            color: white;
+        }
+        .status-populating {
+            background: #3b82f6;
+            color: white;
+            animation: pulse 2s infinite;
+        }
+        .status-empty {
+            background: #6b7280;
+            color: white;
+        }
+        .status-emptied {
+            background: #ef4444;
+            color: white;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .database-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 30px;
+        }
+        .database-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+        }
+        .database-name {
+            font-size: 1.8rem;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+        }
+        .database-path {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            font-family: 'Courier New', monospace;
+        }
+        .table-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .table-name {
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+        .table-name-link {
+            color: #60a5fa;
+            text-decoration: none;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .table-name-link:hover {
+            color: #93c5fd;
+            text-decoration: underline;
+        }
+        .table-info {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .info-label {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-value {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .row-count {
+            font-size: 1.2rem;
+            color: #60a5fa;
+        }
+        .strategy-name {
+            font-size: 1rem;
+            color: #a78bfa;
+        }
+        .history-section {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .history-title {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .history-list {
+            list-style: none;
+        }
+        .history-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .history-item-time {
+            font-size: 0.85rem;
+            opacity: 0.7;
+            font-family: 'Courier New', monospace;
+        }
+        .history-item-details {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .history-event-type {
+            font-size: 0.85rem;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 1.2rem;
+            opacity: 0.8;
+        }
+        .error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            opacity: 0.7;
+            font-style: italic;
+        }
+        .last-updated {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.85rem;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Database Monitor</h1>
+        
+        <div class="header-controls">
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button class="refresh-btn" onclick="loadData()">🔄 Refresh</button>
+                <a href="/bar_debug.html" class="refresh-btn" style="text-decoration: none; display: inline-block;">📊 Bar Debug</a>
+            </div>
+            <div class="auto-refresh">
+                <label>
+                    <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()">
+                    Auto-refresh (30s)
+                </label>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="loading">Loading database information...</div>
+        </div>
+
+        <div class="last-updated" id="lastUpdated"></div>
+    </div>
+
+    <script>
+        let autoRefreshInterval = null;
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp * 1000);
+            return date.toLocaleString();
+        }
+
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return 'N/A';
+            const seconds = Math.floor((Date.now() / 1000) - timestamp);
+            if (seconds < 60) return `${seconds}s ago`;
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            return `${days}d ago`;
+        }
+
+        function formatNumber(num) {
+            if (num === null || num === undefined) return 'N/A';
+            return num.toLocaleString();
+        }
+
+        function renderDatabase(databaseName, databaseData) {
+            if (!databaseData.exists) {
+                return `
+                    <div class="database-section">
+                        <div class="database-header">
+                            <div>
+                                <div class="database-name">${databaseName}</div>
+                                <div class="database-path">Database not found</div>
+                            </div>
+                        </div>
+                        <div class="no-data">Database file does not exist</div>
+                    </div>
+                `;
+            }
+
+            const tables = databaseData.tables || {};
+            const tableEntries = Object.entries(tables);
+
+            if (tableEntries.length === 0) {
+                return `
+                    <div class="database-section">
+                        <div class="database-header">
+                            <div>
+                                <div class="database-name">${databaseName}</div>
+                                <div class="database-path">${databaseData.path || 'N/A'}</div>
+                            </div>
+                        </div>
+                        <div class="no-data">No tables found in this database</div>
+                    </div>
+                `;
+            }
+
+            let tablesHtml = '';
+            for (const [tableName, tableData] of tableEntries) {
+                const status = tableData.status || 'unknown';
+                const rowCount = tableData.row_count || 0;
+                const strategyName = tableData.strategy_name || 'Unknown';
+                const history = tableData.history || [];
+
+                let historyHtml = '';
+                if (history.length > 0) {
+                    historyHtml = `
+                        <div class="history-section">
+                            <div class="history-title">Recent History (Last 5 Events)</div>
+                            <ul class="history-list">
+                                ${history.map(event => `
+                                    <li class="history-item">
+                                        <div>
+                                            <div class="history-item-time">${formatTimeAgo(event.timestamp)}</div>
+                                        </div>
+                                        <div class="history-item-details">
+                                            <span class="status-badge status-${event.status}">${event.status}</span>
+                                            ${event.event_type ? `<span class="history-event-type">${event.event_type}</span>` : ''}
+                                            ${event.strategy_name ? `<span class="strategy-name">${event.strategy_name}</span>` : ''}
+                                            ${event.row_count !== null ? `<span class="row-count">${formatNumber(event.row_count)} rows</span>` : ''}
+                                            ${event.event_details ? `<span style="opacity: 0.7;">${event.event_details}</span>` : ''}
+                                        </div>
+                                    </li>
+                                `).join('')}
+                            </ul>
+                        </div>
+                    `;
+                } else {
+                    historyHtml = `
+                        <div class="history-section">
+                            <div class="no-data" style="padding: 20px;">No history available for this table</div>
+                        </div>
+                    `;
+                }
+
+                tablesHtml += `
+                    <div class="table-card">
+                        <div class="table-header">
+                            <div class="table-name">
+                                <a href="/table-viewer.html?database=${encodeURIComponent(databaseName)}&table=${encodeURIComponent(tableName)}" 
+                                   class="table-name-link" 
+                                   target="_blank">${tableName}</a>
+                            </div>
+                            <div class="table-info">
+                                <div class="info-item">
+                                    <div class="info-label">Status</div>
+                                    <span class="status-badge status-${status}">${status}</span>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Rows</div>
+                                    <div class="info-value row-count">${formatNumber(rowCount)}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Strategy</div>
+                                    <div class="info-value strategy-name">${strategyName}</div>
+                                </div>
+                                ${tableName === 'bar_samples' ? `
+                                <div class="info-item">
+                                    <a href="/bar_debug.html" class="refresh-btn" style="text-decoration: none; display: inline-block; padding: 6px 12px; font-size: 0.9rem;">📊 Bar Debug</a>
+                                </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                        ${historyHtml}
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="database-section">
+                    <div class="database-header">
+                        <div>
+                            <div class="database-name">${databaseName}</div>
+                            <div class="database-path">${databaseData.path || 'N/A'}</div>
+                        </div>
+                    </div>
+                    ${tablesHtml}
+                </div>
+            `;
+        }
+
+        async function loadData() {
+            const contentDiv = document.getElementById('content');
+            contentDiv.innerHTML = '<div class="loading">Loading database information...</div>';
+
+            try {
+                const response = await fetch('/api/databases/status');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+
+                if (data.error) {
+                    contentDiv.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+                    return;
+                }
+
+                let html = '';
+                for (const [dbName, dbData] of Object.entries(data)) {
+                    html += renderDatabase(dbName, dbData);
+                }
+
+                if (html === '') {
+                    html = '<div class="no-data">No databases found</div>';
+                }
+
+                contentDiv.innerHTML = html;
+                document.getElementById('lastUpdated').textContent = `Last updated: ${new Date().toLocaleString()}`;
+            } catch (error) {
+                console.error('Error loading data:', error);
+                contentDiv.innerHTML = `<div class="error">Error loading data: ${error.message}</div>`;
+            }
+        }
+
+        function toggleAutoRefresh() {
+            const checkbox = document.getElementById('autoRefresh');
+            if (checkbox.checked) {
+                autoRefreshInterval = setInterval(loadData, 30000); // 30 seconds
+            } else {
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                }
+            }
+        }
+
+        // Load data on page load
+        loadData();
+    </script>
+</body>
+</html>
+

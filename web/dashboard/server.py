@@ -5,13 +5,14 @@ import csv
 import sqlite3
 import hashlib
 import re
+import io
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from collections import deque
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Query
 from starlette.requests import ClientDisconnect
 from fastapi import WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -34,6 +35,22 @@ async def serve_monitor():
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse('<h1>Monitor page not found</h1><p>Create monitor.html in the dashboard directory.</p>', status_code=404)
+
+@app.get('/historical_profitability_analyzer.html')
+async def serve_historical_profitability_analyzer():
+    try:
+        with open('historical_profitability_analyzer.html', 'r', encoding='utf-8') as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse('<h1>Historical Profitability Analyzer not found</h1>', status_code=404)
+
+@app.get('/trend_parameter_analyzer.html')
+async def serve_trend_parameter_analyzer():
+    try:
+        with open('trend_parameter_analyzer.html', 'r', encoding='utf-8') as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse('<h1>Trend Parameter Analyzer not found</h1>', status_code=404)
 ws_clients: List[WebSocket] = []
 
 async def ws_broadcast(message: Dict[str, Any]):
@@ -222,6 +239,27 @@ def init_db():
         rsiBelowStreak INTEGER
     )
     """)
+    # Trades table for historical profitability analysis
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_time REAL NOT NULL,
+        entry_bar INTEGER,
+        direction TEXT,
+        entry_price REAL,
+        exit_time REAL,
+        exit_bar INTEGER,
+        exit_price REAL,
+        bars_held INTEGER,
+        realized_points REAL,
+        mfe REAL,
+        mae REAL,
+        exit_reason TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_direction ON trades(direction)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_exit_reason ON trades(exit_reason)")
     # Strategy snapshots for session persistence
     cur.execute("""
     CREATE TABLE IF NOT EXISTS strategy_snapshots (
@@ -292,6 +330,30 @@ def init_db():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_dev_metrics_metric ON dev_metrics(metric)")
     
+    # Table status tracking for database monitoring (safe creation with error handling)
+    try:
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS table_status_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            database_name TEXT NOT NULL,
+            table_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            strategy_name TEXT,
+            row_count INTEGER,
+            event_type TEXT,
+            event_details TEXT,
+            timestamp REAL NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_table_status_db_table ON table_status_history(database_name, table_name)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_table_status_timestamp ON table_status_history(timestamp DESC)")
+        print('[DB] table_status_history table initialized successfully')
+    except Exception as table_ex:
+        # Don't fail server startup if table creation fails - it might already exist with different schema
+        print(f'[DB] Warning: Could not create table_status_history table: {table_ex}')
+        print('[DB] Server will continue without table status tracking')
+    
     conn.commit()
     # Don't close - keep persistent connection
 
@@ -360,6 +422,10 @@ def init_bars_db():
             gradientThresholdSkipShorts REAL,
             gradientFilterEnabled INTEGER,
             
+            -- Gradient values (degrees)
+            fastGradDeg REAL,
+            slowGradDeg REAL,
+            
             -- Trend parameters
             trendLookbackBars INTEGER,
             minMatchingBars INTEGER,
@@ -420,6 +486,36 @@ def ensure_db_columns():
                 cur.execute("ALTER TABLE entry_cancellations ADD COLUMN volume REAL")
         except Exception as ex:
             print('[DB] cancellations add volume failed:', ex)
+        # Add contracts column to trades table if missing
+        try:
+            if not has_column('trades', 'contracts'):
+                cur.execute("ALTER TABLE trades ADD COLUMN contracts INTEGER")
+                print('[DB] Added contracts column to trades table')
+        except Exception as ex:
+            print('[DB] trades add contracts failed:', ex)
+        
+        # Add minMatchingBars column to BarsOnTheFlowStateAndBar if missing
+        try:
+            bars_conn = get_bars_db_connection()
+            bars_cur = bars_conn.cursor()
+            bars_cur.execute("PRAGMA table_info(BarsOnTheFlowStateAndBar)")
+            bars_columns = [row[1] for row in bars_cur.fetchall()]
+            
+            if 'minMatchingBars' not in bars_columns:
+                bars_cur.execute("ALTER TABLE BarsOnTheFlowStateAndBar ADD COLUMN minMatchingBars INTEGER")
+                print('[DB] Added minMatchingBars column to BarsOnTheFlowStateAndBar table')
+            
+            # Add gradient degree columns if missing
+            if 'fastGradDeg' not in bars_columns:
+                bars_cur.execute("ALTER TABLE BarsOnTheFlowStateAndBar ADD COLUMN fastGradDeg REAL")
+                print('[DB] Added fastGradDeg column to BarsOnTheFlowStateAndBar table')
+            if 'slowGradDeg' not in bars_columns:
+                bars_cur.execute("ALTER TABLE BarsOnTheFlowStateAndBar ADD COLUMN slowGradDeg REAL")
+                print('[DB] Added slowGradDeg column to BarsOnTheFlowStateAndBar table')
+            bars_conn.commit()
+        except Exception as ex:
+            print('[DB] BarsOnTheFlowStateAndBar column migration failed:', ex)
+        
         # Add diagnostic enrichment columns if missing
         for col, ddl in [
             ('accel','ALTER TABLE diags ADD COLUMN accel REAL'),
@@ -995,6 +1091,16 @@ def bar_report_page():
     except Exception as e:
         return HTMLResponse(f'<h1>Bar Report Page Not Found</h1><p>Error: {e}</p>', status_code=404)
 
+@app.get('/bar_debug.html', response_class=HTMLResponse)
+@app.get('/bar_debug', response_class=HTMLResponse)
+def bar_debug_page():
+    page_path = os.path.join(os.path.dirname(static_dir), 'bar_debug.html')
+    try:
+        with open(page_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        return HTMLResponse(f'<h1>Bar Debug Page Not Found</h1><p>Error: {e}</p>', status_code=404)
+
 @app.get('/barFlowReport.html', response_class=HTMLResponse)
 @app.get('/barFlowReport', response_class=HTMLResponse)
 def bar_flow_report_page():
@@ -1135,33 +1241,37 @@ VOLATILITY_DB_PATH = os.path.join(os.path.dirname(__file__), 'volatility.db')
 
 @app.get('/api/volatility/recommended-stop')
 def api_volatility_recommended_stop(hour: int = None, volume: int = 0, symbol: str = 'MNQ'):
-    """Get recommended stop loss in ticks based on hour and current volume.
+    """Get recommended stop loss in ticks based on quarter hour and current volume.
     
     Query params:
-        hour: Hour of day (0-23 ET). If not provided, uses current hour.
+        hour: Hour of day (0-23 ET). If not provided, uses current hour and minute to calculate quarter hour.
         volume: Current bar volume for volume-adjusted stop
         symbol: Trading symbol (default MNQ)
     
     Returns:
         recommended_stop_ticks: Recommended stop loss in ticks
-        avg_bar_range: Average bar range for this hour (in points)
-        avg_volume: Average volume for this hour
+        avg_bar_range: Average bar range for this quarter hour (in points)
+        avg_volume: Average volume for this quarter hour
         volume_condition: LOW/NORMAL/HIGH based on current vs average
         confidence: LOW/MEDIUM/HIGH based on sample count
     """
     try:
+        now = datetime.now()
         if hour is None:
-            hour = datetime.now().hour
+            hour = now.hour
+        
+        # Calculate quarter hour: 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
+        quarter_hour = hour * 4 + (now.minute // 15)
         
         conn = sqlite3.connect(VOLATILITY_DB_PATH)
         cursor = conn.cursor()
         
-        # Get stats for this hour
+        # Get stats for this quarter hour
         cursor.execute('''
             SELECT avg_bar_range, avg_volume, avg_range_per_1k_volume, sample_count
             FROM volatility_stats
-            WHERE hour_of_day = ? AND symbol = ? AND day_of_week IS NULL
-        ''', (hour, symbol))
+            WHERE quarter_hour = ? AND symbol = ? AND day_of_week IS NULL
+        ''', (quarter_hour, symbol))
         
         row = cursor.fetchone()
         conn.close()
@@ -1173,7 +1283,7 @@ def api_volatility_recommended_stop(hour: int = None, volume: int = 0, symbol: s
                 'avg_volume': 0,
                 'volume_condition': 'UNKNOWN',
                 'confidence': 'LOW',
-                'message': f'Insufficient data for hour {hour} ({row[3] if row else 0} samples)'
+                'message': f'Insufficient data for quarter hour {quarter_hour} (hour {hour}) ({row[3] if row else 0} samples)'
             })
         
         avg_range, avg_volume, avg_range_per_vol, sample_count = row
@@ -1217,7 +1327,8 @@ def api_volatility_recommended_stop(hour: int = None, volume: int = 0, symbol: s
             'volume_condition': volume_condition,
             'confidence': confidence,
             'sample_count': sample_count,
-            'hour': hour
+            'hour': hour,
+            'quarter_hour': quarter_hour
         })
         
     except Exception as ex:
@@ -1263,6 +1374,8 @@ async def api_volatility_record_bar(request: Request):
             dt = datetime.now()
         
         hour_of_day = dt.hour
+        # Calculate quarter hour: 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
+        quarter_hour = hour_of_day * 4 + (dt.minute // 15)
         day_of_week = dt.weekday()
         
         # Calculate metrics
@@ -1278,24 +1391,250 @@ async def api_volatility_record_bar(request: Request):
         
         range_per_1k_volume = (bar_range / (volume / 1000)) if volume > 0 else 0
         
-        cursor.execute('''
-            INSERT INTO bar_samples (
-                timestamp, bar_index, symbol, hour_of_day, day_of_week,
-                open_price, high_price, low_price, close_price, volume,
-                bar_range, body_size, upper_wick, lower_wick,
-                range_per_1k_volume, direction, in_trade, trade_result_ticks
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            timestamp, bar_index, symbol, hour_of_day, day_of_week,
-            open_p, high_p, low_p, close_p, volume,
-            bar_range, body_size, upper_wick, lower_wick,
-            range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
-        ))
+        # Check if EMA columns exist, add them if missing
+        cursor.execute("PRAGMA table_info(bar_samples)")
+        columns = [row[1] for row in cursor.fetchall()]
+        has_ema_fast = 'ema_fast_period' in columns
+        has_ema_slow = 'ema_slow_period' in columns
+        has_ema_fast_value = 'ema_fast_value' in columns
+        has_ema_slow_value = 'ema_slow_value' in columns
+        has_grad_deg = 'fast_ema_grad_deg' in columns
+        has_stop_loss = 'stop_loss_points' in columns
+        has_candle_type = 'candle_type' in columns
+        has_trend_up = 'trend_up' in columns
+        has_trend_down = 'trend_down' in columns
+        has_allow_long = 'allow_long_this_bar' in columns
+        has_allow_short = 'allow_short_this_bar' in columns
+        has_pending_long = 'pending_long_from_bad' in columns
+        has_pending_short = 'pending_short_from_good' in columns
+        has_avoid_longs = 'avoid_longs_on_bad_candle' in columns
+        has_avoid_shorts = 'avoid_shorts_on_good_candle' in columns
+        
+        if not has_ema_fast:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN ema_fast_period INTEGER")
+        if not has_ema_slow:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN ema_slow_period INTEGER")
+        if not has_ema_fast_value:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN ema_fast_value REAL")
+        if not has_ema_slow_value:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN ema_slow_value REAL")
+        if not has_grad_deg:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN fast_ema_grad_deg REAL")
+        if not has_stop_loss:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN stop_loss_points REAL")
+        if not has_candle_type:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN candle_type TEXT")
+        if not has_trend_up:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN trend_up INTEGER")
+        if not has_trend_down:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN trend_down INTEGER")
+        if not has_allow_long:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN allow_long_this_bar INTEGER")
+        if not has_allow_short:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN allow_short_this_bar INTEGER")
+        if not has_pending_long:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN pending_long_from_bad INTEGER")
+        if not has_pending_short:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN pending_short_from_good INTEGER")
+        if not has_avoid_longs:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN avoid_longs_on_bad_candle INTEGER")
+        if not has_avoid_shorts:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN avoid_shorts_on_good_candle INTEGER")
+        
+        # Get EMA values and gradient degree, handle null/None
+        ema_fast_val = data.get('ema_fast_value')
+        ema_slow_val = data.get('ema_slow_value')
+        grad_deg_val = data.get('fast_ema_grad_deg')
+        stop_loss_val = data.get('stop_loss_points')
+        ema_fast_value = float(ema_fast_val) if ema_fast_val is not None and ema_fast_val != 'null' else None
+        ema_slow_value = float(ema_slow_val) if ema_slow_val is not None and ema_slow_val != 'null' else None
+        fast_ema_grad_deg = float(grad_deg_val) if grad_deg_val is not None and grad_deg_val != 'null' else None
+        stop_loss_points = float(stop_loss_val) if stop_loss_val is not None and stop_loss_val != 'null' else None
+        
+        # Get debugging fields
+        candle_type = data.get('candle_type', '')
+        trend_up = 1 if data.get('trend_up', False) in (True, 'true', 1, '1') else 0
+        trend_down = 1 if data.get('trend_down', False) in (True, 'true', 1, '1') else 0
+        allow_long_this_bar = 1 if data.get('allow_long_this_bar', False) in (True, 'true', 1, '1') else 0
+        allow_short_this_bar = 1 if data.get('allow_short_this_bar', False) in (True, 'true', 1, '1') else 0
+        pending_long_from_bad = 1 if data.get('pending_long_from_bad', False) in (True, 'true', 1, '1') else 0
+        pending_short_from_good = 1 if data.get('pending_short_from_good', False) in (True, 'true', 1, '1') else 0
+        avoid_longs_on_bad_candle = 1 if data.get('avoid_longs_on_bad_candle', False) in (True, 'true', 1, '1') else 0
+        avoid_shorts_on_good_candle = 1 if data.get('avoid_shorts_on_good_candle', False) in (True, 'true', 1, '1') else 0
+        
+        has_all_debug_cols = (has_candle_type and has_trend_up and has_trend_down and has_allow_long and 
+                              has_allow_short and has_pending_long and has_pending_short and 
+                              has_avoid_longs and has_avoid_shorts)
+        
+        try:
+            if has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg and has_stop_loss and has_all_debug_cols:
+                cursor.execute('''
+                    INSERT INTO bar_samples (
+                        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                        open_price, high_price, low_price, close_price, volume,
+                        bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                        ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
+                        range_per_1k_volume, direction, in_trade, trade_result_ticks,
+                        candle_type, trend_up, trend_down, allow_long_this_bar, allow_short_this_bar,
+                        pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                    open_p, high_p, low_p, close_p, volume,
+                    bar_range, body_size, upper_wick, lower_wick,
+                    int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                    ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
+                    range_per_1k_volume, direction, 1 if in_trade else 0, trade_result,
+                    candle_type, trend_up, trend_down, allow_long_this_bar, allow_short_this_bar,
+                    pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle
+                ))
+            elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg and has_stop_loss:
+                cursor.execute('''
+                    INSERT INTO bar_samples (
+                        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                        open_price, high_price, low_price, close_price, volume,
+                        bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                        ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
+                        range_per_1k_volume, direction, in_trade, trade_result_ticks
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                    open_p, high_p, low_p, close_p, volume,
+                    bar_range, body_size, upper_wick, lower_wick,
+                    int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                    ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
+                    range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                ))
+            elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg:
+                cursor.execute('''
+                    INSERT INTO bar_samples (
+                        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                        open_price, high_price, low_price, close_price, volume,
+                        bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                        ema_fast_value, ema_slow_value, fast_ema_grad_deg,
+                        range_per_1k_volume, direction, in_trade, trade_result_ticks
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                    open_p, high_p, low_p, close_p, volume,
+                    bar_range, body_size, upper_wick, lower_wick,
+                    int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                    ema_fast_value, ema_slow_value, fast_ema_grad_deg,
+                    range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                ))
+            elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value:
+                # Fallback if gradient column doesn't exist yet
+                cursor.execute('''
+                    INSERT INTO bar_samples (
+                        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                        open_price, high_price, low_price, close_price, volume,
+                        bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                        ema_fast_value, ema_slow_value,
+                        range_per_1k_volume, direction, in_trade, trade_result_ticks
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                    open_p, high_p, low_p, close_p, volume,
+                    bar_range, body_size, upper_wick, lower_wick,
+                    int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                    ema_fast_value, ema_slow_value,
+                    range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                ))
+            elif has_ema_fast and has_ema_slow:
+                cursor.execute('''
+                    INSERT INTO bar_samples (
+                            timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                        open_price, high_price, low_price, close_price, volume,
+                        bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                        range_per_1k_volume, direction, in_trade, trade_result_ticks
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                    open_p, high_p, low_p, close_p, volume,
+                    bar_range, body_size, upper_wick, lower_wick,
+                    int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                    range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                ))
+            else:
+                cursor.execute('''
+                    INSERT INTO bar_samples (
+                            timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                        open_price, high_price, low_price, close_price, volume,
+                        bar_range, body_size, upper_wick, lower_wick,
+                        range_per_1k_volume, direction, in_trade, trade_result_ticks
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                        timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                    open_p, high_p, low_p, close_p, volume,
+                    bar_range, body_size, upper_wick, lower_wick,
+                    range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                ))
+        except sqlite3.OperationalError as col_error:
+            if 'no such column: quarter_hour' in str(col_error):
+                # Column missing - try to add it
+                print('[API] quarter_hour column missing, adding it...')
+                try:
+                    cursor.execute("ALTER TABLE bar_samples ADD COLUMN quarter_hour INTEGER")
+                    cursor.execute("UPDATE bar_samples SET quarter_hour = hour_of_day * 4 WHERE quarter_hour IS NULL")
+                    conn.commit()
+                    # Retry the insert
+                    if has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value:
+                        cursor.execute('''
+                            INSERT INTO bar_samples (
+                                timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                                open_price, high_price, low_price, close_price, volume,
+                                bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                                ema_fast_value, ema_slow_value,
+                                range_per_1k_volume, direction, in_trade, trade_result_ticks
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                            open_p, high_p, low_p, close_p, volume,
+                            bar_range, body_size, upper_wick, lower_wick,
+                            int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                            ema_fast_value, ema_slow_value,
+                            range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                        ))
+                    elif has_ema_fast and has_ema_slow:
+                        cursor.execute('''
+                            INSERT INTO bar_samples (
+                                timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                                open_price, high_price, low_price, close_price, volume,
+                                bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
+                                range_per_1k_volume, direction, in_trade, trade_result_ticks
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                            open_p, high_p, low_p, close_p, volume,
+                            bar_range, body_size, upper_wick, lower_wick,
+                            int(data.get('ema_fast_period', 0) or 0), int(data.get('ema_slow_period', 0) or 0),
+                            range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                        ))
+                    else:
+                        cursor.execute('''
+                            INSERT INTO bar_samples (
+                                timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                                open_price, high_price, low_price, close_price, volume,
+                                bar_range, body_size, upper_wick, lower_wick,
+                                range_per_1k_volume, direction, in_trade, trade_result_ticks
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
+                            open_p, high_p, low_p, close_p, volume,
+                            bar_range, body_size, upper_wick, lower_wick,
+                            range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
+                        ))
+                    print('[API] ✓ Added quarter_hour column and retried insert')
+                except Exception as add_ex:
+                    conn.close()
+                    raise add_ex
+            else:
+                raise
         
         conn.commit()
         conn.close()
         
-        return JSONResponse({'status': 'ok', 'bar_index': bar_index, 'hour': hour_of_day})
+        return JSONResponse({'status': 'ok', 'bar_index': bar_index, 'hour': hour_of_day, 'quarter_hour': quarter_hour})
         
     except Exception as ex:
         print(f'[API] volatility record-bar error: {ex}')
@@ -1303,17 +1642,17 @@ async def api_volatility_record_bar(request: Request):
 
 @app.get('/api/volatility/stats')
 def api_volatility_stats(symbol: str = 'MNQ'):
-    """Get volatility statistics by hour for analysis."""
+    """Get volatility statistics by quarter hour (15 minutes) for analysis."""
     try:
         conn = sqlite3.connect(VOLATILITY_DB_PATH)
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT hour_of_day, sample_count, avg_bar_range, avg_volume, 
+            SELECT quarter_hour, hour_of_day, sample_count, avg_bar_range, avg_volume, 
                    avg_range_per_1k_volume, min_bar_range, max_bar_range
             FROM volatility_stats
             WHERE symbol = ? AND day_of_week IS NULL
-            ORDER BY hour_of_day
+            ORDER BY quarter_hour
         ''', (symbol,))
         
         rows = cursor.fetchall()
@@ -1321,14 +1660,20 @@ def api_volatility_stats(symbol: str = 'MNQ'):
         
         stats = []
         for row in rows:
+            quarter_hour = row[0]
+            hour = row[1]
+            minute_start = (quarter_hour % 4) * 15
+            time_label = f"{hour:02d}:{minute_start:02d}"
             stats.append({
-                'hour': row[0],
-                'sample_count': row[1],
-                'avg_bar_range': round(row[2], 2) if row[2] else 0,
-                'avg_volume': int(row[3]) if row[3] else 0,
-                'avg_range_per_1k_vol': round(row[4], 4) if row[4] else 0,
-                'min_bar_range': round(row[5], 2) if row[5] else 0,
-                'max_bar_range': round(row[6], 2) if row[6] else 0
+                'quarter_hour': quarter_hour,
+                'time': time_label,
+                'hour': hour,
+                'sample_count': row[2],
+                'avg_bar_range': round(row[3], 2) if row[3] else 0,
+                'avg_volume': int(row[4]) if row[4] else 0,
+                'avg_range_per_1k_vol': round(row[5], 4) if row[5] else 0,
+                'min_bar_range': round(row[6], 2) if row[6] else 0,
+                'max_bar_range': round(row[7], 2) if row[7] else 0
             })
         
         return JSONResponse({'status': 'ok', 'stats': stats})
@@ -1339,13 +1684,13 @@ def api_volatility_stats(symbol: str = 'MNQ'):
 
 @app.post('/api/volatility/update-aggregates')
 def api_volatility_update_aggregates(symbol: str = 'MNQ'):
-    """Recalculate aggregated volatility statistics from bar samples."""
+    """Recalculate aggregated volatility statistics from bar samples (by quarter hour)."""
     try:
         conn = sqlite3.connect(VOLATILITY_DB_PATH)
         cursor = conn.cursor()
         
-        # Calculate stats for each hour
-        for hour in range(24):
+        # Calculate stats for each quarter hour (0-95)
+        for quarter_hour in range(96):
             cursor.execute('''
                 SELECT 
                     AVG(volume) as avg_vol,
@@ -1359,21 +1704,23 @@ def api_volatility_update_aggregates(symbol: str = 'MNQ'):
                     MIN(timestamp) as first_sample,
                     MAX(timestamp) as last_sample
                 FROM bar_samples
-                WHERE hour_of_day = ? AND symbol = ?
-            ''', (hour, symbol))
+                WHERE quarter_hour = ? AND symbol = ?
+            ''', (quarter_hour, symbol))
             
             row = cursor.fetchone()
             if row and row[7] > 0:  # sample_count > 0
+                # Calculate hour_of_day from quarter_hour for backward compatibility
+                hour_of_day = quarter_hour // 4
                 cursor.execute('''
                     INSERT OR REPLACE INTO volatility_stats (
-                        hour_of_day, day_of_week, symbol,
+                        hour_of_day, quarter_hour, day_of_week, symbol,
                         avg_volume, min_volume, max_volume,
                         avg_bar_range, min_bar_range, max_bar_range,
                         avg_range_per_1k_volume,
                         sample_count, first_sample_time, last_sample_time, last_updated
-                    ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 ''', (
-                    hour, symbol,
+                    hour_of_day, quarter_hour, symbol,
                     row[0], row[1], row[2],  # volume stats
                     row[3], row[4], row[5],  # range stats
                     row[6],                   # range per 1k volume
@@ -1383,7 +1730,7 @@ def api_volatility_update_aggregates(symbol: str = 'MNQ'):
         conn.commit()
         conn.close()
         
-        return JSONResponse({'status': 'ok', 'message': 'Aggregates updated'})
+        return JSONResponse({'status': 'ok', 'message': 'Aggregates updated (by quarter hour)'})
         
     except Exception as ex:
         print(f'[API] volatility update-aggregates error: {ex}')
@@ -1427,7 +1774,7 @@ def get_diags(since: float = 0.0):
     """Return recent diagnostics since a given timestamp."""
     out = []
     # Use last 500 to bound work
-    search_list = diags[-500:] if len(diags) > 500 else diags
+    search_list =  diags[-500:] if len(diags) > 500 else diags
     for d in search_list:
         ts = d.get('receivedTs') or d.get('receivedAt') or 0
         if ts > since:
@@ -1635,10 +1982,6 @@ async def receive_state(request: Request):
         import traceback
         traceback.print_exc()
         return JSONResponse({"error": str(ex)}, status_code=500)
-    
-    except Exception as ex:
-        print(f"[STATE] Error processing state: {ex}")
-        return JSONResponse({"error": str(ex)}, status_code=500)
 
 def _save_state_to_db(payload: dict, strategy_name: str):
     """Save state to database in background thread."""
@@ -1666,9 +2009,11 @@ def _save_state_to_db(payload: dict, strategy_name: str):
                 intendedPosition, lastEntryBarIndex, lastEntryDirection,
                 stopLossPoints, calculatedStopTicks, calculatedStopPoints,
                 useTrailingStop, useDynamicStopLoss, lookback, multiplier,
+                useBreakEven, breakEvenTrigger, breakEvenOffset, breakEvenActivated,
                 contracts, enableShorts, avoidLongsOnBadCandle, avoidShortsOnGoodCandle,
                 exitOnTrendBreak, reverseOnTrendBreak, fastEmaPeriod,
                 gradientThresholdSkipLongs, gradientThresholdSkipShorts, gradientFilterEnabled,
+                fastGradDeg, slowGradDeg,
                 trendLookbackBars, minMatchingBars, usePnLTiebreaker,
                 pendingLongFromBad, pendingShortFromGood,
                 unrealizedPnL, realizedPnL, totalTradesCount,
@@ -1676,7 +2021,7 @@ def _save_state_to_db(payload: dict, strategy_name: str):
                 stateJson
             ) VALUES (
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
         """, (
             payload.get('timestamp'),
@@ -1705,6 +2050,10 @@ def _save_state_to_db(payload: dict, strategy_name: str):
             1 if payload.get('useDynamicStopLoss') else 0,
             payload.get('lookback'),
             payload.get('multiplier'),
+            1 if payload.get('useBreakEven') else 0,
+            payload.get('breakEvenTrigger'),
+            payload.get('breakEvenOffset'),
+            1 if payload.get('breakEvenActivated') else 0,
             payload.get('contracts'),
             1 if payload.get('enableShorts') else 0,
             1 if payload.get('avoidLongsOnBadCandle') else 0,
@@ -1715,6 +2064,8 @@ def _save_state_to_db(payload: dict, strategy_name: str):
             payload.get('gradientThresholdSkipLongs'),
             payload.get('gradientThresholdSkipShorts'),
             1 if payload.get('gradientFilterEnabled') else 0,
+            payload.get('fastGradDeg'),
+            payload.get('slowGradDeg'),
             payload.get('trendLookbackBars'),
             payload.get('minMatchingBars'),
             1 if payload.get('usePnLTiebreaker') else 0,
@@ -1730,11 +2081,16 @@ def _save_state_to_db(payload: dict, strategy_name: str):
         ))
         conn.commit()
         # Don't close global connection - keep it open for reuse
-        print(f"[BG_SAVE] Saved bar {bar_idx} successfully")
+        print(f"[BG_SAVE] ✓ Saved bar {bar_idx} to BarsOnTheFlowStateAndBar")
+    except sqlite3.IntegrityError as integrity_ex:
+        # UNIQUE constraint violation - bar already exists (this is normal with INSERT OR REPLACE)
+        print(f"[BG_SAVE] Bar {bar_idx} already exists (replaced): {integrity_ex}")
+        conn.rollback()
     except Exception as db_ex:
-        print(f"[BG_SAVE] Error saving bar: {db_ex}")
+        print(f"[BG_SAVE] ✗ ERROR saving bar {bar_idx} to database: {db_ex}")
         import traceback
         traceback.print_exc()
+        # Don't re-raise - let it fail silently to avoid crashing the background thread
 
 @app.get('/strategy/state')
 async def get_strategy_state(strategy: str = "BarsOnTheFlow"):
@@ -1744,6 +2100,58 @@ async def get_strategy_state(strategy: str = "BarsOnTheFlow"):
         return JSONResponse(state)
     else:
         return JSONResponse({"error": "no_state_cached", "strategy": strategy}, status_code=404)
+
+@app.post('/api/strategy/update-params')
+async def update_strategy_params(request: Request):
+    """Update strategy parameters in the state JSON file."""
+    try:
+        data = await request.json()
+        strategy = data.get('strategy', 'BarsOnTheFlow')
+        params = data.get('params', {})
+        
+        if not params:
+            return JSONResponse({'error': 'No parameters provided'}, status_code=400)
+        
+        # Path to strategy state JSON file
+        state_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'strategy_state')
+        state_file = os.path.join(state_dir, f'{strategy}_state.json')
+        
+        # Create directory if it doesn't exist
+        os.makedirs(state_dir, exist_ok=True)
+        
+        # Load existing state or create new
+        if os.path.exists(state_file):
+            with open(state_file, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+        else:
+            state = {}
+        
+        # Update parameters
+        for key, value in params.items():
+            state[key] = value
+        
+        # Add timestamp
+        state['lastUpdated'] = datetime.now().isoformat()
+        state['updatedBy'] = 'OpportunityAnalysis'
+        
+        # Save updated state
+        with open(state_file, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2)
+        
+        print(f"[STRATEGY] Updated {strategy} parameters: {params}")
+        
+        return JSONResponse({
+            'success': True,
+            'strategy': strategy,
+            'updated_params': params,
+            'state_file': state_file
+        })
+        
+    except Exception as ex:
+        print(f"[STRATEGY] Error updating parameters: {ex}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({'error': str(ex)}, status_code=500)
 
 @app.get('/strategies')
 async def list_strategies():
@@ -1994,36 +2402,78 @@ def analytics(days: int = 7, min_trades: int = 10):
         conn = get_db_connection()
         cutoff_ts = time.time() - (days * 86400)
         
-        # Overall performance
+        # Check if trades table exists, create if it doesn't
         cur = conn.cursor()
+        cur.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='trades'
+        """)
+        if not cur.fetchone():
+            # Table doesn't exist, create it
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entry_time REAL NOT NULL,
+                    entry_bar INTEGER,
+                    direction TEXT,
+                    entry_price REAL,
+                    exit_time REAL,
+                    exit_bar INTEGER,
+                    exit_price REAL,
+                    bars_held INTEGER,
+                    realized_points REAL,
+                    mfe REAL,
+                    mae REAL,
+                    exit_reason TEXT
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time DESC)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_direction ON trades(direction)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_exit_reason ON trades(exit_reason)")
+            conn.commit()
+        
+        # Overall performance
         cur.execute("""
             SELECT 
                 COUNT(*) as total_trades,
                 SUM(CASE WHEN realized_points > 0 THEN 1 ELSE 0 END) as winners,
                 SUM(CASE WHEN realized_points < 0 THEN 1 ELSE 0 END) as losers,
-                SUM(realized_points) as total_pnl,
-                AVG(realized_points) as avg_pnl,
-                AVG(mfe) as avg_mfe,
-                AVG(mae) as avg_mae,
-                AVG(bars_held) as avg_bars_held,
-                MAX(realized_points) as best_trade,
-                MIN(realized_points) as worst_trade
+                COALESCE(SUM(realized_points), 0) as total_pnl,
+                COALESCE(AVG(realized_points), 0) as avg_pnl,
+                COALESCE(AVG(mfe), 0) as avg_mfe,
+                COALESCE(AVG(mae), 0) as avg_mae,
+                COALESCE(AVG(bars_held), 0) as avg_bars_held,
+                COALESCE(MAX(realized_points), 0) as best_trade,
+                COALESCE(MIN(realized_points), 0) as worst_trade
             FROM trades
             WHERE entry_time >= ?
         """, (cutoff_ts,))
         
-        overall = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+        row = cur.fetchone()
+        if row:
+            overall = dict(zip([d[0] for d in cur.description], row))
+        else:
+            overall = {
+                'total_trades': 0, 'winners': 0, 'losers': 0,
+                'total_pnl': 0, 'avg_pnl': 0, 'avg_mfe': 0,
+                'avg_mae': 0, 'avg_bars_held': 0,
+                'best_trade': 0, 'worst_trade': 0
+            }
         
         # MFE capture analysis
         cur.execute("""
             SELECT 
-                AVG(CASE WHEN mfe > 0 THEN realized_points / mfe ELSE 0 END) * 100 as avg_mfe_capture_pct,
-                COUNT(CASE WHEN mfe > 1.5 AND realized_points / mfe < 0.4 THEN 1 END) as poor_capture_count
+                COALESCE(AVG(CASE WHEN mfe > 0 THEN realized_points / mfe ELSE 0 END) * 100, 0) as avg_mfe_capture_pct,
+                COALESCE(COUNT(CASE WHEN mfe > 1.5 AND realized_points / mfe < 0.4 THEN 1 END), 0) as poor_capture_count
             FROM trades
             WHERE entry_time >= ? AND mfe > 0
         """, (cutoff_ts,))
         
-        mfe_stats = dict(zip([d[0] for d in cur.description], cur.fetchone()))
+        row = cur.fetchone()
+        if row:
+            mfe_stats = dict(zip([d[0] for d in cur.description], row))
+        else:
+            mfe_stats = {'avg_mfe_capture_pct': 0, 'poor_capture_count': 0}
         
         # Bars held analysis
         cur.execute("""
@@ -2097,18 +2547,33 @@ def analytics(days: int = 7, min_trades: int = 10):
         
         return JSONResponse({
             'overall': overall,
-            'mfe_analysis': mfe_stats,
-            'bars_held_performance': bars_analysis,
+            'mfe_stats': mfe_stats,
+            'bars_analysis': bars_analysis,
             'exit_reasons': exit_reasons,
-            'hourly_performance': hourly,
-            'recent_trades': recent,
-            'period_days': days,
-            'query_time_ms': int((time.time() - cutoff_ts + (days * 86400)) * 1000) % 1000
+            'hourly': hourly,
+            'recent': recent,
+            'period_days': days
         })
         
     except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
         print(f"[ANALYTICS] Error: {ex}")
-        return JSONResponse({'error': str(ex)}, status_code=500)
+        print(f"[ANALYTICS] Traceback: {error_trace}")
+        return JSONResponse({
+            'error': str(ex),
+            'overall': {
+                'total_trades': 0, 'winners': 0, 'losers': 0,
+                'total_pnl': 0, 'avg_pnl': 0, 'avg_mfe': 0,
+                'avg_mae': 0, 'avg_bars_held': 0,
+                'best_trade': 0, 'worst_trade': 0
+            },
+            'mfe_stats': {'avg_mfe_capture_pct': 0, 'poor_capture_count': 0},
+            'bars_analysis': [],
+            'exit_reasons': [],
+            'hourly': [],
+            'recent': []
+        }, status_code=500)
 
 @app.get('/debugdump')
 def debugdump(n: int = 50):
@@ -2638,6 +3103,78 @@ def get_bar_detail(barIndex: int):
     
     return JSONResponse(result)
 
+@app.get('/api/trades/by-bar')
+async def get_trades_by_bar(entry_bar: int = None, exit_bar: int = None):
+    """Query trades by entry_bar or exit_bar number"""
+    try:
+        if not USE_SQLITE:
+            return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+        
+        if entry_bar is None and exit_bar is None:
+            return JSONResponse({'error': 'Must provide entry_bar or exit_bar parameter'}, status_code=400)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Build query based on provided parameters
+        conditions = []
+        params = []
+        
+        if entry_bar is not None:
+            conditions.append("entry_bar = ?")
+            params.append(entry_bar)
+        
+        if exit_bar is not None:
+            conditions.append("exit_bar = ?")
+            params.append(exit_bar)
+        
+        where_clause = " OR ".join(conditions)
+        
+        cur.execute(f"""
+            SELECT 
+                id,
+                entry_time,
+                entry_bar,
+                direction,
+                entry_price,
+                exit_time,
+                exit_bar,
+                exit_price,
+                bars_held,
+                realized_points,
+                mfe,
+                mae,
+                exit_reason
+            FROM trades
+            WHERE {where_clause}
+            ORDER BY entry_bar
+        """, params)
+        
+        trades = []
+        for row in cur.fetchall():
+            trade = dict(zip([d[0] for d in cur.description], row))
+            if trade.get('entry_time'):
+                trade['entry_time_str'] = datetime.fromtimestamp(trade['entry_time']).strftime("%Y-%m-%d %H:%M:%S")
+            if trade.get('exit_time'):
+                trade['exit_time_str'] = datetime.fromtimestamp(trade['exit_time']).strftime("%Y-%m-%d %H:%M:%S")
+            trades.append(trade)
+        
+        return JSONResponse({
+            'trades': trades,
+            'count': len(trades),
+            'query': {
+                'entry_bar': entry_bar,
+                'exit_bar': exit_bar
+            }
+        })
+        
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[GET_TRADES_BY_BAR] Error: {ex}")
+        print(f"[GET_TRADES_BY_BAR] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
 @app.post('/trade_completed')
 async def trade_completed(request: Request):
     """Receive trade completion data for exit performance analysis AND save to database.
@@ -2650,26 +3187,218 @@ async def trade_completed(request: Request):
         # Save to database
         if USE_SQLITE:
             try:
-                db_exec("""
-                    INSERT INTO trades (
-                        entry_time, entry_bar, direction, entry_price,
-                        exit_time, exit_bar, exit_price, bars_held,
-                        realized_points, mfe, mae, exit_reason
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    float(data.get('EntryTime', time.time())),
-                    int(data.get('EntryBar', 0)),
-                    data.get('Direction', 'LONG'),
-                    float(data.get('EntryPrice', 0)),
-                    float(data.get('ExitTime', time.time())),
-                    int(data.get('ExitBar', 0)),
-                    float(data.get('ExitPrice', 0)),
-                    int(data.get('BarsHeld', 0)),
-                    float(data.get('RealizedPoints', 0)),
-                    float(data.get('MFE', 0)),
-                    float(data.get('MAE', 0)),
-                    data.get('ExitReason', '')
-                ))
+                # Check if columns exist before inserting
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("PRAGMA table_info(trades)")
+                columns = [row[1] for row in cur.fetchall()]
+                has_contracts = 'contracts' in columns
+                has_ema_fast = 'ema_fast_period' in columns
+                has_ema_slow = 'ema_slow_period' in columns
+                has_ema_fast_value = 'ema_fast_value' in columns
+                has_ema_slow_value = 'ema_slow_value' in columns
+                has_candle_type = 'candle_type' in columns
+                has_open_final = 'open_final' in columns
+                has_high_final = 'high_final' in columns
+                has_low_final = 'low_final' in columns
+                has_close_final = 'close_final' in columns
+                has_fast_ema = 'fast_ema' in columns
+                has_fast_ema_grad_deg = 'fast_ema_grad_deg' in columns
+                has_bar_pattern = 'bar_pattern' in columns
+                has_entry_reason = 'entry_reason' in columns
+                
+                # Add missing columns if needed
+                if not has_ema_fast:
+                    cur.execute("ALTER TABLE trades ADD COLUMN ema_fast_period INTEGER")
+                    conn.commit()
+                    has_ema_fast = True
+                if not has_ema_slow:
+                    cur.execute("ALTER TABLE trades ADD COLUMN ema_slow_period INTEGER")
+                    conn.commit()
+                    has_ema_slow = True
+                if not has_ema_fast_value:
+                    cur.execute("ALTER TABLE trades ADD COLUMN ema_fast_value REAL")
+                    conn.commit()
+                    has_ema_fast_value = True
+                if not has_ema_slow_value:
+                    cur.execute("ALTER TABLE trades ADD COLUMN ema_slow_value REAL")
+                    conn.commit()
+                    has_ema_slow_value = True
+                if not has_candle_type:
+                    cur.execute("ALTER TABLE trades ADD COLUMN candle_type TEXT")
+                    conn.commit()
+                    has_candle_type = True
+                if not has_open_final:
+                    cur.execute("ALTER TABLE trades ADD COLUMN open_final REAL")
+                    conn.commit()
+                    has_open_final = True
+                if not has_high_final:
+                    cur.execute("ALTER TABLE trades ADD COLUMN high_final REAL")
+                    conn.commit()
+                    has_high_final = True
+                if not has_low_final:
+                    cur.execute("ALTER TABLE trades ADD COLUMN low_final REAL")
+                    conn.commit()
+                    has_low_final = True
+                if not has_close_final:
+                    cur.execute("ALTER TABLE trades ADD COLUMN close_final REAL")
+                    conn.commit()
+                    has_close_final = True
+                if not has_fast_ema:
+                    cur.execute("ALTER TABLE trades ADD COLUMN fast_ema REAL")
+                    conn.commit()
+                    has_fast_ema = True
+                if not has_fast_ema_grad_deg:
+                    cur.execute("ALTER TABLE trades ADD COLUMN fast_ema_grad_deg REAL")
+                    conn.commit()
+                    has_fast_ema_grad_deg = True
+                if not has_bar_pattern:
+                    cur.execute("ALTER TABLE trades ADD COLUMN bar_pattern TEXT")
+                    conn.commit()
+                    has_bar_pattern = True
+                if not has_entry_reason:
+                    cur.execute("ALTER TABLE trades ADD COLUMN entry_reason TEXT")
+                    conn.commit()
+                    has_entry_reason = True
+                
+                # Get EMA values, handle null/None
+                ema_fast_val = data.get('EmaFastValue')
+                ema_slow_val = data.get('EmaSlowValue')
+                ema_fast_value = float(ema_fast_val) if ema_fast_val is not None and ema_fast_val != 'null' else None
+                ema_slow_value = float(ema_slow_val) if ema_slow_val is not None and ema_slow_val != 'null' else None
+                
+                # Get exit bar OHLC and other exit bar data
+                open_final = data.get('OpenFinal')
+                high_final = data.get('HighFinal')
+                low_final = data.get('LowFinal')
+                close_final = data.get('CloseFinal')
+                fast_ema = data.get('FastEma')
+                fast_ema_grad_deg = data.get('FastEmaGradDeg')
+                candle_type = data.get('CandleType', '')
+                bar_pattern = data.get('BarPattern', '')
+                
+                open_final_val = float(open_final) if open_final is not None and open_final != 'null' else None
+                high_final_val = float(high_final) if high_final is not None and high_final != 'null' else None
+                low_final_val = float(low_final) if low_final is not None and low_final != 'null' else None
+                close_final_val = float(close_final) if close_final is not None and close_final != 'null' else None
+                fast_ema_val = float(fast_ema) if fast_ema is not None and fast_ema != 'null' else None
+                fast_ema_grad_deg_val = float(fast_ema_grad_deg) if fast_ema_grad_deg is not None and fast_ema_grad_deg != 'null' else None
+                
+                # Get entry reason
+                entry_reason = data.get('EntryReason', '')
+                
+                # Check if all new columns exist
+                has_all_new_cols = (has_candle_type and has_open_final and has_high_final and 
+                                   has_low_final and has_close_final and has_fast_ema and 
+                                   has_fast_ema_grad_deg and has_bar_pattern and has_entry_reason)
+                
+                if has_contracts and has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_all_new_cols:
+                    db_exec("""
+                        INSERT INTO trades (
+                            entry_time, entry_bar, direction, entry_price,
+                            exit_time, exit_bar, exit_price, bars_held,
+                            realized_points, mfe, mae, exit_reason, entry_reason, contracts,
+                            ema_fast_period, ema_slow_period, ema_fast_value, ema_slow_value,
+                            candle_type, open_final, high_final, low_final, close_final,
+                            fast_ema, fast_ema_grad_deg, bar_pattern
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        float(data.get('EntryTime', time.time())),
+                        int(data.get('EntryBar', 0)),
+                        data.get('Direction', 'LONG'),
+                        float(data.get('EntryPrice', 0)),
+                        float(data.get('ExitTime', time.time())),
+                        int(data.get('ExitBar', 0)),
+                        float(data.get('ExitPrice', 0)),
+                        int(data.get('BarsHeld', 0)),
+                        float(data.get('RealizedPoints', 0)),
+                        float(data.get('MFE', 0)),
+                        float(data.get('MAE', 0)),
+                        data.get('ExitReason', ''),
+                        entry_reason,
+                        int(data.get('Contracts', 0)),
+                        int(data.get('EmaFastPeriod', 0)),
+                        int(data.get('EmaSlowPeriod', 0)),
+                        ema_fast_value,
+                        ema_slow_value,
+                        candle_type,
+                        open_final_val,
+                        high_final_val,
+                        low_final_val,
+                        close_final_val,
+                        fast_ema_val,
+                        fast_ema_grad_deg_val,
+                        bar_pattern
+                    ))
+                elif has_contracts and has_ema_fast and has_ema_slow:
+                    db_exec("""
+                        INSERT INTO trades (
+                            entry_time, entry_bar, direction, entry_price,
+                            exit_time, exit_bar, exit_price, bars_held,
+                            realized_points, mfe, mae, exit_reason, contracts,
+                            ema_fast_period, ema_slow_period
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        float(data.get('EntryTime', time.time())),
+                        int(data.get('EntryBar', 0)),
+                        data.get('Direction', 'LONG'),
+                        float(data.get('EntryPrice', 0)),
+                        float(data.get('ExitTime', time.time())),
+                        int(data.get('ExitBar', 0)),
+                        float(data.get('ExitPrice', 0)),
+                        int(data.get('BarsHeld', 0)),
+                        float(data.get('RealizedPoints', 0)),
+                        float(data.get('MFE', 0)),
+                        float(data.get('MAE', 0)),
+                        data.get('ExitReason', ''),
+                        int(data.get('Contracts', 0)),
+                        int(data.get('EmaFastPeriod', 0)),
+                        int(data.get('EmaSlowPeriod', 0))
+                    ))
+                elif has_contracts:
+                    db_exec("""
+                        INSERT INTO trades (
+                            entry_time, entry_bar, direction, entry_price,
+                            exit_time, exit_bar, exit_price, bars_held,
+                            realized_points, mfe, mae, exit_reason, contracts
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        float(data.get('EntryTime', time.time())),
+                        int(data.get('EntryBar', 0)),
+                        data.get('Direction', 'LONG'),
+                        float(data.get('EntryPrice', 0)),
+                        float(data.get('ExitTime', time.time())),
+                        int(data.get('ExitBar', 0)),
+                        float(data.get('ExitPrice', 0)),
+                        int(data.get('BarsHeld', 0)),
+                        float(data.get('RealizedPoints', 0)),
+                        float(data.get('MFE', 0)),
+                        float(data.get('MAE', 0)),
+                        data.get('ExitReason', ''),
+                        int(data.get('Contracts', 0))
+                    ))
+                else:
+                    # Fallback for older schema without contracts column
+                    db_exec("""
+                        INSERT INTO trades (
+                            entry_time, entry_bar, direction, entry_price,
+                            exit_time, exit_bar, exit_price, bars_held,
+                            realized_points, mfe, mae, exit_reason
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        float(data.get('EntryTime', time.time())),
+                        int(data.get('EntryBar', 0)),
+                        data.get('Direction', 'LONG'),
+                        float(data.get('EntryPrice', 0)),
+                        float(data.get('ExitTime', time.time())),
+                        int(data.get('ExitBar', 0)),
+                        float(data.get('ExitPrice', 0)),
+                        int(data.get('BarsHeld', 0)),
+                        float(data.get('RealizedPoints', 0)),
+                        float(data.get('MFE', 0)),
+                        float(data.get('MAE', 0)),
+                        data.get('ExitReason', '')
+                    ))
             except Exception as db_ex:
                 print(f"[TRADE_COMPLETED] DB insert failed: {db_ex}")
         
@@ -2684,6 +3413,305 @@ async def trade_completed(request: Request):
     except Exception as ex:
         print(f"[TRADE_COMPLETED] Error: {ex}")
         return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.get('/api/trades/stop-loss-analysis')
+async def analyze_stop_loss(format: str = 'json'):
+    """Analyze trades table to check if stop loss is working correctly.
+    Supports format='json' (default) or format='text' for plain text output.
+    """
+    """Analyze trades table to check if stop loss is working correctly."""
+    try:
+        if not USE_SQLITE:
+            return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+        
+        import re
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get all trades ordered by entry_time DESC (newest first)
+        cursor.execute("""
+            SELECT 
+                id,
+                entry_time,
+                entry_bar,
+                direction,
+                entry_price,
+                exit_time,
+                exit_bar,
+                exit_price,
+                bars_held,
+                realized_points,
+                mfe,
+                mae,
+                exit_reason
+            FROM trades
+            ORDER BY entry_time DESC
+            LIMIT 100
+        """)
+        
+        trades = cursor.fetchall()
+        
+        if not trades:
+            return JSONResponse({
+                'total_trades': 0,
+                'message': 'No trades found in database'
+            })
+        
+        # Statistics
+        total_trades = len(trades)
+        stop_loss_trades = 0
+        zero_stop_loss = 0
+        same_entry_exit_price = 0
+        valid_stop_loss = 0
+        break_even_stops = 0
+        trail_stops = 0
+        problematic_trades = []
+        
+        trade_details = []
+        
+        for trade in trades:
+            trade_id, entry_time, entry_bar, direction, entry_price, exit_time, exit_bar, exit_price, bars_held, realized_points, mfe, mae, exit_reason = trade
+            
+            # Parse exit_reason to extract stop loss info
+            stop_loss_info = None
+            stop_loss_points = None
+            is_stop_loss = False
+            issues = []
+            
+            if exit_reason:
+                # Check if it's a stop loss exit
+                if "Stop" in exit_reason or "stop" in exit_reason.lower():
+                    is_stop_loss = True
+                    stop_loss_trades += 1
+                    
+                    # Extract stop loss points from exit_reason
+                    match = re.search(r'([\d.]+)\s*pts', exit_reason)
+                    if match:
+                        stop_loss_points = float(match.group(1))
+                        stop_loss_info = f"{stop_loss_points:.2f} pts"
+                        
+                        if stop_loss_points == 0.0:
+                            zero_stop_loss += 1
+                            issues.append("Zero stop loss")
+                        elif stop_loss_points > 0:
+                            valid_stop_loss += 1
+                    else:
+                        stop_loss_info = "Stop (no pts)"
+                        issues.append("Stop loss but no points found")
+                    
+                    # Check for break-even or trail
+                    if "BreakEven" in exit_reason or "break-even" in exit_reason.lower():
+                        break_even_stops += 1
+                    if "Trail" in exit_reason or "trail" in exit_reason.lower():
+                        trail_stops += 1
+            
+            # Check if entry and exit prices are the same
+            if entry_price and exit_price and abs(entry_price - exit_price) < 0.01:
+                same_entry_exit_price += 1
+                issues.append("Entry = Exit price")
+            
+            # Check if problematic
+            if issues:
+                problematic_trades.append({
+                    'id': trade_id,
+                    'entry_price': entry_price,
+                    'exit_price': exit_price,
+                    'exit_reason': exit_reason,
+                    'issues': issues
+                })
+            
+            trade_details.append({
+                'id': trade_id,
+                'entry_time': entry_time,
+                'entry_bar': entry_bar,
+                'direction': direction,
+                'entry_price': entry_price,
+                'exit_time': exit_time,
+                'exit_bar': exit_bar,
+                'exit_price': exit_price,
+                'bars_held': bars_held,
+                'realized_points': realized_points,
+                'mfe': mfe,
+                'mae': mae,
+                'exit_reason': exit_reason,
+                'stop_loss_points': stop_loss_points,
+                'is_stop_loss': is_stop_loss,
+                'issues': issues
+            })
+        
+        # Return in requested format
+        if format == 'text':
+            # Plain text format for easy reading
+            text_output = []
+            text_output.append("="*100)
+            text_output.append(f"TRADES TABLE - STOP LOSS ANALYSIS")
+            text_output.append("="*100)
+            text_output.append("")
+            text_output.append("SUMMARY STATISTICS:")
+            text_output.append(f"  Total trades analyzed: {total_trades}")
+            text_output.append(f"  Stop loss exits: {stop_loss_trades} ({round(stop_loss_trades / total_trades * 100, 1) if total_trades > 0 else 0}%)")
+            text_output.append(f"    - Valid stop loss (>0 pts): {valid_stop_loss}")
+            text_output.append(f"    - Zero stop loss (0.00 pts): {zero_stop_loss} ⚠️")
+            text_output.append(f"    - Break-even stops: {break_even_stops}")
+            text_output.append(f"    - Trail stops: {trail_stops}")
+            text_output.append(f"  Trades with same entry/exit price: {same_entry_exit_price} ⚠️")
+            text_output.append("")
+            
+            if problematic_trades:
+                text_output.append("="*100)
+                text_output.append(f"⚠️  PROBLEMATIC TRADES ({len(problematic_trades)}):")
+                text_output.append("-"*100)
+                for trade in problematic_trades:
+                    text_output.append(f"  Trade ID {trade['id']}: {', '.join(trade['issues'])}")
+                    text_output.append(f"    Entry: {trade['entry_price']:.2f}, Exit: {trade['exit_price']:.2f}")
+                    text_output.append(f"    Reason: {trade['exit_reason']}")
+                    text_output.append("")
+            
+            text_output.append("="*100)
+            text_output.append("RECENT TRADES (Last 20):")
+            text_output.append("="*100)
+            text_output.append("")
+            text_output.append(f"{'ID':<6} {'Dir':<5} {'Entry Price':<12} {'Exit Price':<12} {'Pts':<8} {'Stop Loss':<15} {'Issues':<30}")
+            text_output.append("-"*100)
+            
+            for trade in trade_details[:20]:
+                issues_str = ', '.join(trade.get('issues', [])) if trade.get('issues') else 'OK'
+                stop_loss_str = f"{trade.get('stop_loss_points', 0):.2f} pts" if trade.get('stop_loss_points') is not None else "N/A"
+                text_output.append(f"{trade['id']:<6} {trade.get('direction', 'N/A'):<5} {trade.get('entry_price', 0):<12.2f} {trade.get('exit_price', 0):<12.2f} {trade.get('realized_points', 0):<8.2f} {stop_loss_str:<15} {issues_str:<30}")
+            
+            return PlainTextResponse('\n'.join(text_output))
+        else:
+            # JSON format (default)
+            return JSONResponse({
+                'total_trades': total_trades,
+                'statistics': {
+                    'stop_loss_exits': stop_loss_trades,
+                    'stop_loss_percentage': round(stop_loss_trades / total_trades * 100, 1) if total_trades > 0 else 0,
+                    'valid_stop_loss': valid_stop_loss,
+                    'zero_stop_loss': zero_stop_loss,
+                    'break_even_stops': break_even_stops,
+                    'trail_stops': trail_stops,
+                    'same_entry_exit_price': same_entry_exit_price
+                },
+                'problematic_trades': problematic_trades,
+                'trades': trade_details[:20]  # Return first 20 for display
+            })
+        
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[STOP_LOSS_ANALYSIS] Error: {ex}\n{error_trace}")
+        return JSONResponse({'error': str(ex), 'trace': error_trace}, status_code=500)
+
+@app.post('/api/trades/clear')
+async def clear_trades():
+    """Clear all trades from the trades table (for fresh runs)."""
+    try:
+        if not USE_SQLITE:
+            return JSONResponse({'error': 'Database not enabled'}, status_code=500)
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get count before deletion
+        cur.execute("SELECT COUNT(*) FROM trades")
+        count_before = cur.fetchone()[0]
+        
+        # Delete all trades
+        cur.execute("DELETE FROM trades")
+        
+        # Reset AUTOINCREMENT counter so IDs start from 1 again
+        cur.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
+        
+        conn.commit()
+        
+        print(f"[TRADES_CLEAR] Cleared {count_before} trades from database and reset AUTOINCREMENT counter")
+        
+        return JSONResponse({
+            'status': 'ok',
+            'message': f'Cleared {count_before} trades',
+            'trades_deleted': count_before
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[TRADES_CLEAR] Error: {ex}")
+        print(f"[TRADES_CLEAR] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/databases/clear-bars-table')
+async def clear_bars_table():
+    """Clear all rows from BarsOnTheFlowStateAndBar table (for fresh runs)."""
+    try:
+        if not os.path.exists(BARS_DB_PATH):
+            return JSONResponse({'error': 'Database not found'}, status_code=404)
+        
+        conn = sqlite3.connect(BARS_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get count before deletion
+        cursor.execute("SELECT COUNT(*) FROM BarsOnTheFlowStateAndBar")
+        count_before = cursor.fetchone()[0]
+        
+        # Delete all rows
+        cursor.execute("DELETE FROM BarsOnTheFlowStateAndBar")
+        
+        # Reset AUTOINCREMENT counter so IDs start from 1 again
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='BarsOnTheFlowStateAndBar'")
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[BARS_CLEAR] Cleared {count_before} rows from BarsOnTheFlowStateAndBar and reset AUTOINCREMENT counter")
+        
+        return JSONResponse({
+            'status': 'ok',
+            'message': f'Cleared {count_before} rows',
+            'rows_deleted': count_before
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[BARS_CLEAR] Error: {ex}")
+        print(f"[BARS_CLEAR] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/databases/clear-bar-samples')
+async def clear_bar_samples():
+    """Clear all rows from bar_samples table (for fresh runs)."""
+    try:
+        if not os.path.exists(VOLATILITY_DB_PATH):
+            return JSONResponse({'error': 'Database not found'}, status_code=404)
+        
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get count before deletion
+        cursor.execute("SELECT COUNT(*) FROM bar_samples")
+        count_before = cursor.fetchone()[0]
+        
+        # Delete all rows
+        cursor.execute("DELETE FROM bar_samples")
+        
+        # Reset AUTOINCREMENT counter so IDs start from 1 again
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='bar_samples'")
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"[BAR_SAMPLES_CLEAR] Cleared {count_before} rows from bar_samples and reset AUTOINCREMENT counter")
+        
+        return JSONResponse({
+            'status': 'ok',
+            'message': f'Cleared {count_before} rows',
+            'rows_deleted': count_before
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[BAR_SAMPLES_CLEAR] Error: {ex}")
+        print(f"[BAR_SAMPLES_CLEAR] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
 
 @app.post('/entry_blocked')
 async def entry_blocked(request: Request):
@@ -3938,6 +4966,32 @@ def find_streaks(bars, min_streak, max_streak, long_grad_thresh, short_grad_thre
             
             # Only add valid streaks (either caught or had valid signal but was blocked)
             if entry_status != 'missed' or block_reason:
+                # Build pattern string from streak bars (e.g., "3G2B" for 3 good then 2 bad)
+                def build_pattern(bar_list):
+                    pattern_parts = []
+                    current_type = None
+                    current_count = 0
+                    for bar in bar_list:
+                        bar_type = 'G' if bar['candleType'] == 'good' else 'B'
+                        if bar_type == current_type:
+                            current_count += 1
+                        else:
+                            if current_type is not None:
+                                pattern_parts.append(f"{current_count}{current_type}")
+                            current_type = bar_type
+                            current_count = 1
+                    if current_type is not None:
+                        pattern_parts.append(f"{current_count}{current_type}")
+                    return ''.join(pattern_parts)
+
+                # Get 5 bars before the streak (if available)
+                lookback_n = 5
+                lookback_start = max(0, i - lookback_n)
+                lookback_bars = bars[lookback_start:i] if i > 0 else []
+                lookback_pattern = build_pattern(lookback_bars) if lookback_bars else ''
+                streak_pattern = build_pattern(streak_bars)
+                full_pattern = (lookback_pattern + '-' if lookback_pattern else '') + streak_pattern
+
                 streaks.append({
                     'start_bar': streak_bars[0]['bar'],
                     'end_bar': streak_bars[-1]['bar'],
@@ -3951,7 +5005,7 @@ def find_streaks(bars, min_streak, max_streak, long_grad_thresh, short_grad_thre
                     'entry_bar': entry_bar,
                     'missed_points': missed_points,
                     'block_reason': block_reason,
-                    'pattern': streak_bars[0].get('barPattern', ''),
+                    'pattern': full_pattern,
                     'gradient_ok': gradient_ok
                 })
                 
@@ -3962,6 +5016,2093 @@ def find_streaks(bars, min_streak, max_streak, long_grad_thresh, short_grad_thre
             i += 1
     
     return streaks
+
+@app.get('/api/strategy-log-files')
+def get_strategy_log_files():
+    """List available main strategy log CSV files"""
+    try:
+        files = []
+        for filename in os.listdir(LOG_DIR):
+            if filename.startswith('BarsOnTheFlow_') and filename.endswith('.csv') and 'Opportunities' not in filename and 'OutputWindow' not in filename and 'FastGradDebug' not in filename:
+                filepath = os.path.join(LOG_DIR, filename)
+                stat = os.stat(filepath)
+                mtime = datetime.fromtimestamp(stat.st_mtime)
+                
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        row_count = sum(1 for _ in f) - 1
+                except:
+                    row_count = 0
+                
+                files.append({
+                    'filename': filename,
+                    'timestamp': mtime.strftime('%Y-%m-%d %H:%M:%S'),
+                    'bars': row_count,
+                    'size': stat.st_size
+                })
+        
+        files.sort(key=lambda x: x['timestamp'], reverse=True)
+        return JSONResponse({'files': files, 'count': len(files)})
+    except Exception as ex:
+        print(f"[STRATEGY_LOG] Error listing files: {ex}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/analyze-historical-profitability')
+async def analyze_historical_profitability(request: Request):
+    """Analyze historical strategy run to identify profitable patterns and bad trades"""
+    try:
+        params = await request.json()
+        filename = params.get('filename')
+        min_profit = params.get('minProfit', 10.0)
+        max_loss = params.get('maxLoss', -20.0)
+        analysis_type = params.get('analysisType', 'all')
+        
+        if not filename:
+            return JSONResponse({'error': 'filename required'}, status_code=400)
+        
+        main_log_path = os.path.join(LOG_DIR, filename)
+        if not os.path.exists(main_log_path):
+            return JSONResponse({'error': 'log file not found'}, status_code=404)
+        
+        # Try to find corresponding opportunity log
+        opp_filename = filename.replace('BarsOnTheFlow_', 'BarsOnTheFlow_Opportunities_')
+        opp_log_path = os.path.join(LOG_DIR, opp_filename)
+        has_opp_log = os.path.exists(opp_log_path)
+        
+        # Parse main log
+        trades = []
+        bars = []
+        with open(main_log_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                bar_data = {
+                    'bar': int(row['bar']),
+                    'timestamp': row['timestamp'],
+                    'action': row['action'],
+                    'direction': row['direction'],
+                    'orderName': row.get('orderName', ''),
+                    'quantity': int(row['quantity']) if row['quantity'] else 0,
+                    'price': float(row['price']) if row['price'] else 0,
+                    'pnl': float(row['pnl']) if row['pnl'] else 0,
+                    'reason': row.get('reason', ''),
+                    'barPattern': row.get('barPattern', ''),
+                    'fastEmaGradDeg': float(row['fastEmaGradDeg']) if row.get('fastEmaGradDeg') and row['fastEmaGradDeg'] not in ('', 'NaN') else None,
+                    'open': float(row['open']),
+                    'high': float(row['high']),
+                    'low': float(row['low']),
+                    'close': float(row['close']),
+                    'candleType': row.get('candleType', ''),
+                    'trendUpAtDecision': row.get('trendUpAtDecision', '') == 'True',
+                    'trendDownAtDecision': row.get('trendDownAtDecision', '') == 'True'
+                }
+                bars.append(bar_data)
+                
+                # Track entries
+                if bar_data['action'] == 'ENTRY':
+                    trades.append({
+                        'entryBar': bar_data['bar'],
+                        'entryTimestamp': bar_data['timestamp'],
+                        'direction': bar_data['direction'],
+                        'entryPrice': bar_data['price'],
+                        'entryPattern': bar_data['barPattern'],
+                        'entryGradient': bar_data['fastEmaGradDeg'],
+                        'entryTrend': 'UP' if bar_data['trendUpAtDecision'] else 'DOWN' if bar_data['trendDownAtDecision'] else 'NONE',
+                        'entryCandleType': bar_data['candleType']
+                    })
+                # Track exits and complete trades
+                elif bar_data['action'] == 'EXIT' and trades:
+                    # Find the most recent open trade
+                    for trade in reversed(trades):
+                        if 'exitBar' not in trade:
+                            trade['exitBar'] = bar_data['bar']
+                            trade['exitTimestamp'] = bar_data['timestamp']
+                            trade['exitPrice'] = bar_data['price']
+                            trade['exitReason'] = bar_data['reason']
+                            trade['pnl'] = bar_data['pnl']
+                            trade['barsHeld'] = trade['exitBar'] - trade['entryBar']
+                            break
+        
+        # Parse opportunity log if available
+        opp_data = {}
+        if has_opp_log:
+            with open(opp_log_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    bar_num = int(row['bar'])
+                    opp_data[bar_num] = {
+                        'actionTaken': row.get('actionTaken', ''),
+                        'blockReason': row.get('blockReason', ''),
+                        'opportunityType': row.get('opportunityType', ''),
+                        'gradientFilterLong': row.get('gradientFilterLong', '') == 'True',
+                        'gradientFilterShort': row.get('gradientFilterShort', '') == 'True'
+                    }
+        
+        # Enrich trades with opportunity data
+        for trade in trades:
+            if trade['entryBar'] in opp_data:
+                opp = opp_data[trade['entryBar']]
+                trade['entryAction'] = opp['actionTaken']
+                trade['entryBlockReason'] = opp['blockReason']
+                trade['opportunityType'] = opp['opportunityType']
+        
+        # Calculate max profit for each trade (from bars data)
+        for trade in trades:
+            if 'exitBar' in trade:
+                max_profit = 0
+                max_loss = 0
+                entry_price = trade['entryPrice']
+                direction = trade['direction']
+                
+                # Find bars between entry and exit
+                for bar in bars:
+                    if trade['entryBar'] <= bar['bar'] <= trade['exitBar']:
+                        if direction == 'LONG':
+                            profit = bar['high'] - entry_price
+                            loss = entry_price - bar['low']
+                        else:  # SHORT
+                            profit = entry_price - bar['low']
+                            loss = bar['high'] - entry_price
+                        
+                        max_profit = max(max_profit, profit)
+                        max_loss = max(max_loss, loss)
+                
+                trade['maxProfit'] = max_profit
+                trade['maxLoss'] = max_loss
+                trade['profitCapture'] = (trade['pnl'] / max_profit * 100) if max_profit > 0 else 0
+        
+        # Categorize trades
+        profitable_trades = [t for t in trades if 'pnl' in t and t['pnl'] >= min_profit]
+        unprofitable_trades = [t for t in trades if 'pnl' in t and t['pnl'] <= max_loss]
+        exit_analysis = []
+        for t in trades:
+            if 'maxProfit' in t and t['maxProfit'] > 0 and 'pnl' in t and t['pnl'] > 0:
+                # Add exitProfit and exitPattern for frontend compatibility
+                exit_trade = t.copy()
+                exit_trade['exitProfit'] = t['pnl']
+                exit_trade['exitPattern'] = t.get('entryPattern', '')  # Use entry pattern as exit pattern for now
+                exit_analysis.append(exit_trade)
+        
+        # Calculate summary stats
+        total_trades = len([t for t in trades if 'pnl' in t])
+        profitable_count = len(profitable_trades)
+        unprofitable_count = len(unprofitable_trades)
+        total_pnl = sum(t['pnl'] for t in trades if 'pnl' in t)
+        avg_profit = sum(t['pnl'] for t in profitable_trades) / profitable_count if profitable_count > 0 else 0
+        avg_loss = sum(t['pnl'] for t in unprofitable_trades) / unprofitable_count if unprofitable_count > 0 else 0
+        win_rate = (profitable_count / total_trades * 100) if total_trades > 0 else 0
+        profit_factor = abs(avg_profit * profitable_count / (avg_loss * unprofitable_count)) if unprofitable_count > 0 and avg_loss < 0 else 0
+        
+        # Generate insights
+        insights = []
+        if profitable_count > 0:
+            avg_bars_held_profitable = sum(t['barsHeld'] for t in profitable_trades) / profitable_count
+            common_pattern = max(set(t['entryPattern'] for t in profitable_trades if t.get('entryPattern')), key=lambda x: list(t['entryPattern'] for t in profitable_trades if t.get('entryPattern')).count(x), default='N/A')
+            insights.append({
+                'type': 'success',
+                'title': 'Profitable Trade Characteristics',
+                'text': f'Average bars held: {avg_bars_held_profitable:.1f} | Most common pattern: {common_pattern} | Avg profit: ${avg_profit:.2f}'
+            })
+        
+        if unprofitable_count > 0:
+            avg_bars_held_unprofitable = sum(t['barsHeld'] for t in unprofitable_trades) / unprofitable_count
+            common_bad_pattern = max(set(t['entryPattern'] for t in unprofitable_trades if t.get('entryPattern')), key=lambda x: list(t['entryPattern'] for t in unprofitable_trades if t.get('entryPattern')).count(x), default='N/A')
+            insights.append({
+                'type': 'warning',
+                'title': 'Unprofitable Trade Characteristics',
+                'text': f'Average bars held: {avg_bars_held_unprofitable:.1f} | Common bad pattern: {common_bad_pattern} | Avg loss: ${avg_loss:.2f}'
+            })
+        
+        # Pattern analysis
+        pattern_stats = {}
+        for trade in trades:
+            if 'pnl' in trade and trade.get('entryPattern'):
+                pattern = trade['entryPattern']
+                if pattern not in pattern_stats:
+                    pattern_stats[pattern] = {'count': 0, 'totalPnl': 0, 'wins': 0}
+                pattern_stats[pattern]['count'] += 1
+                pattern_stats[pattern]['totalPnl'] += trade['pnl']
+                if trade['pnl'] > 0:
+                    pattern_stats[pattern]['wins'] += 1
+        
+        profitable_patterns = []
+        unprofitable_patterns = []
+        for pattern, stats in pattern_stats.items():
+            avg_pnl = stats['totalPnl'] / stats['count']
+            win_rate = (stats['wins'] / stats['count'] * 100) if stats['count'] > 0 else 0
+            pattern_data = {
+                'pattern': pattern,
+                'count': stats['count'],
+                'avgPnl': avg_pnl,
+                'winRate': win_rate
+            }
+            if avg_pnl > 0:
+                profitable_patterns.append(pattern_data)
+            else:
+                unprofitable_patterns.append(pattern_data)
+        
+        profitable_patterns.sort(key=lambda x: x['avgPnl'], reverse=True)
+        unprofitable_patterns.sort(key=lambda x: x['avgPnl'])
+        
+        # Add "why bad" analysis for unprofitable trades
+        for trade in unprofitable_trades:
+            reasons = []
+            if trade.get('barsHeld', 0) < 2:
+                reasons.append('Exited too early')
+            if trade.get('maxProfit', 0) > abs(trade['pnl']) * 2:
+                reasons.append('Poor profit capture')
+            if trade.get('entryGradient') and trade['direction'] == 'LONG' and trade['entryGradient'] < 0:
+                reasons.append('Negative gradient on long entry')
+            if trade.get('entryGradient') and trade['direction'] == 'SHORT' and trade['entryGradient'] > 0:
+                reasons.append('Positive gradient on short entry')
+            trade['whyBad'] = '; '.join(reasons) if reasons else 'Unknown'
+        
+        return JSONResponse({
+            'summary': {
+                'totalTrades': total_trades,
+                'profitableTrades': profitable_count,
+                'unprofitableTrades': unprofitable_count,
+                'totalPnl': total_pnl,
+                'avgProfit': avg_profit,
+                'avgLoss': avg_loss,
+                'winRate': win_rate,
+                'profitFactor': profit_factor
+            },
+            'insights': insights,
+            'profitableTrades': profitable_trades[:50],  # Limit to 50
+            'unprofitableTrades': unprofitable_trades[:50],
+            'exitAnalysis': exit_analysis[:50],
+            'patternAnalysis': {
+                'profitablePatterns': profitable_patterns[:20],
+                'unprofitablePatterns': unprofitable_patterns[:20]
+            }
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[HISTORICAL_PROFITABILITY] Error: {ex}")
+        print(f"[HISTORICAL_PROFITABILITY] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/api/strategy-log-data')
+async def get_strategy_log_data(filename: str):
+    """Get bar data from strategy log file for chart visualization"""
+    try:
+        if not filename:
+            return JSONResponse({'error': 'filename required'}, status_code=400)
+        
+        main_log_path = os.path.join(LOG_DIR, filename)
+        if not os.path.exists(main_log_path):
+            return JSONResponse({'error': 'log file not found'}, status_code=404)
+        
+        # Use a dictionary to store the final value for each bar (handles duplicate bar numbers)
+        # Prefer rows with action='BAR' as they represent finalized bars (like candles.html does)
+        bars_dict = {}
+        bars_by_action = {}  # Track BAR action rows separately
+        
+        with open(main_log_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    bar_num = int(row['bar'])
+                    action = row.get('action', '').upper()
+                    
+                    # Use Final OHLC values if available, otherwise fall back to regular OHLC
+                    open_val = float(row.get('openFinal') or row.get('open') or 0)
+                    high_val = float(row.get('highFinal') or row.get('high') or 0)
+                    low_val = float(row.get('lowFinal') or row.get('low') or 0)
+                    close_val = float(row.get('closeFinal') or row.get('close') or 0)
+                    
+                    # Skip if no valid price data
+                    if open_val == 0 and high_val == 0 and low_val == 0 and close_val == 0:
+                        continue
+                    
+                    bar_data = {
+                        'bar': bar_num,
+                        'timestamp': row.get('timestamp', ''),
+                        'open': open_val,
+                        'high': high_val,
+                        'low': low_val,
+                        'close': close_val,
+                        'candleType': row.get('candleType', '')
+                    }
+                    
+                    # Store BAR action rows separately (these are finalized bars)
+                    if action == 'BAR':
+                        bars_by_action[bar_num] = bar_data
+                    # Otherwise, store as fallback (last row for each bar wins)
+                    else:
+                        bars_dict[bar_num] = bar_data
+                except Exception as e:
+                    continue
+        
+        # Use BAR action rows where available, otherwise use the last row for that bar
+        final_bars = {}
+        all_bar_nums = set(list(bars_by_action.keys()) + list(bars_dict.keys()))
+        for bar_num in all_bar_nums:
+            if bar_num in bars_by_action:
+                final_bars[bar_num] = bars_by_action[bar_num]
+            elif bar_num in bars_dict:
+                final_bars[bar_num] = bars_dict[bar_num]
+        
+        # Convert to sorted list by bar number
+        bars = sorted(final_bars.values(), key=lambda x: x['bar'])
+        
+        return JSONResponse({'bars': bars})
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[STRATEGY_LOG_DATA] Error: {ex}")
+        print(f"[STRATEGY_LOG_DATA] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/analyze-trends-and-trades')
+async def analyze_trends_and_trades(request: Request):
+    """Analyze historical data to find trends and match trades to them, identifying optimal parameters"""
+    try:
+        params = await request.json()
+        filename = params.get('filename')
+        min_trend_length = params.get('minTrendLength', 3)
+        min_trend_movement = params.get('minTrendMovement', 5.0)
+        
+        if not filename:
+            return JSONResponse({'error': 'filename required'}, status_code=400)
+        
+        main_log_path = os.path.join(LOG_DIR, filename)
+        if not os.path.exists(main_log_path):
+            return JSONResponse({'error': 'log file not found'}, status_code=404)
+        
+        # Try to find corresponding opportunity log
+        opp_filename = filename.replace('BarsOnTheFlow_', 'BarsOnTheFlow_Opportunities_')
+        opp_log_path = os.path.join(LOG_DIR, opp_filename)
+        has_opp_log = os.path.exists(opp_log_path)
+        
+        # Parse main log to get all bars
+        bars = []
+        with open(main_log_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    bar_data = {
+                        'bar': int(row['bar']),
+                        'timestamp': row['timestamp'],
+                        'open': float(row['open']),
+                        'high': float(row['high']),
+                        'low': float(row['low']),
+                        'close': float(row['close']),
+                        'candleType': row.get('candleType', ''),
+                        'direction': row.get('direction', 'FLAT'),
+                        'action': row.get('action', ''),
+                        'pnl': float(row['pnl']) if row.get('pnl') else 0,
+                        'fastEmaGradDeg': float(row['fastEmaGradDeg']) if row.get('fastEmaGradDeg') and row['fastEmaGradDeg'] not in ('', 'NaN') else None,
+                        'trendUpAtDecision': row.get('trendUpAtDecision', '') == 'True',
+                        'trendDownAtDecision': row.get('trendDownAtDecision', '') == 'True',
+                        'barPattern': row.get('barPattern', '')
+                    }
+                    bars.append(bar_data)
+                except:
+                    continue
+        
+        # Parse opportunity log if available
+        opp_data = {}
+        if has_opp_log:
+            with open(opp_log_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    try:
+                        bar_num = int(row['bar'])
+                        opp_data[bar_num] = {
+                            'trendUpSignal': row.get('trendUpSignal', '') == 'True',
+                            'trendDownSignal': row.get('trendDownSignal', '') == 'True',
+                            'goodCount': int(row.get('goodCount', 0)),
+                            'badCount': int(row.get('badCount', 0)),
+                            'netPnl': float(row.get('netPnl', 0)),
+                            'actionTaken': row.get('actionTaken', ''),
+                            'blockReason': row.get('blockReason', ''),
+                            'gradientValue': float(row['fastEmaGradDeg']) if row.get('fastEmaGradDeg') and row['fastEmaGradDeg'] not in ('', 'NaN') else None
+                        }
+                    except:
+                        continue
+        
+        # Find complete trends (one direction from start to end)
+        trends = find_complete_trends(bars, opp_data, min_trend_length, min_trend_movement)
+        
+        # Parse trades from main log - need to re-read to get price field
+        trades = []
+        current_trade = None
+        with open(main_log_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    bar_num = int(row['bar'])
+                    action = row.get('action', '')
+                    direction = row.get('direction', '')
+                    price_str = row.get('price', '')
+                    pnl_str = row.get('pnl', '')
+                    
+                    if action == 'ENTRY':
+                        current_trade = {
+                            'entryBar': bar_num,
+                            'entryTimestamp': row.get('timestamp', ''),
+                            'direction': direction,
+                            'entryPrice': float(price_str) if price_str and price_str not in ('', '0') else 0,
+                            'entryPattern': row.get('barPattern', ''),
+                            'entryGradient': float(row['fastEmaGradDeg']) if row.get('fastEmaGradDeg') and row['fastEmaGradDeg'] not in ('', 'NaN') else None,
+                            'entryTrend': 'UP' if row.get('trendUpAtDecision', '') == 'True' else 'DOWN' if row.get('trendDownAtDecision', '') == 'True' else 'NONE'
+                        }
+                    elif action == 'EXIT' and current_trade:
+                        current_trade['exitBar'] = bar_num
+                        current_trade['exitTimestamp'] = row.get('timestamp', '')
+                        current_trade['exitPrice'] = float(price_str) if price_str and price_str not in ('', '0') else 0
+                        current_trade['exitReason'] = row.get('reason', '')
+                        current_trade['pnl'] = float(pnl_str) if pnl_str and pnl_str not in ('', '') else 0
+                        current_trade['barsHeld'] = current_trade['exitBar'] - current_trade['entryBar']
+                        trades.append(current_trade)
+                        current_trade = None
+                except Exception as e:
+                    continue
+        
+        # Match trades to trends
+        matched_trends = match_trades_to_trends(trends, trades, bars)
+        
+        # Analyze parameters for each trend
+        analyzed_trends = analyze_trend_parameters(matched_trends, bars, opp_data)
+        
+        # Aggregate optimal parameters across all trends
+        parameter_summary = aggregate_optimal_parameters(analyzed_trends)
+        
+        return JSONResponse({
+            'trends': analyzed_trends,
+            'totalTrends': len(analyzed_trends),
+            'totalTrades': len(trades),
+            'matchedTrends': len([t for t in analyzed_trends if t.get('tradeMatched')]),
+            'parameterSummary': parameter_summary
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[TREND_ANALYSIS] Error: {ex}")
+        print(f"[TREND_ANALYSIS] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+def find_complete_trends(bars, opp_data, min_length=3, min_movement=5.0):
+    """Find complete trends - consecutive bars in one direction (good candles = UP, bad candles = DOWN)
+    Allows for small pullbacks/neutral bars within a trend to avoid premature ending due to break-even stops"""
+    trends = []
+    current_trend = None
+    neutral_bar_count = 0  # Track consecutive neutral bars
+    max_neutral_bars = 2  # Allow up to 2 neutral bars before ending trend
+    
+    for i, bar in enumerate(bars):
+        candle_type = bar.get('candleType', '').lower()
+        is_good = candle_type == 'good'
+        is_bad = candle_type == 'bad'
+        
+        # Handle neutral bars (not clearly good or bad)
+        if not is_good and not is_bad:
+            if current_trend:
+                # Allow a few neutral bars within a trend (break-even scenarios, small pullbacks)
+                neutral_bar_count += 1
+                current_trend['neutralBarsInTrend'] = current_trend.get('neutralBarsInTrend', 0) + 1
+                if neutral_bar_count <= max_neutral_bars:
+                    # Continue the trend, update end bar but don't add to bars list
+                    current_trend['endBar'] = bar['bar']
+                    current_trend['endTimestamp'] = bar['timestamp']
+                    # Update price tracking but don't add bar to trend bars
+                    continue
+                else:
+                    # Too many neutral bars - end the trend
+                    trends.append(current_trend)
+                    current_trend = None
+                    neutral_bar_count = 0
+            continue
+        
+        # Reset neutral bar count when we see a good/bad candle
+        neutral_bar_count = 0
+        
+        # Determine trend direction from candle type
+        # Good candles = upward movement (UP trend for LONG trades)
+        # Bad candles = downward movement (DOWN trend for SHORT trades)
+        if is_good:
+            if current_trend is None or current_trend['direction'] != 'UP':
+                # Start new UP trend or switch from DOWN to UP
+                if current_trend:
+                    trends.append(current_trend)
+                current_trend = {
+                    'direction': 'UP',
+                    'startBar': bar['bar'],
+                    'startTimestamp': bar['timestamp'],
+                    'startPrice': bar['close'],
+                    'endBar': bar['bar'],
+                    'endTimestamp': bar['timestamp'],
+                    'endPrice': bar['close'],
+                    'bars': [bar],
+                    'netMovement': 0,
+                    'maxProfit': 0,
+                    'minLoss': 0
+                }
+            else:
+                # Continue UP trend
+                current_trend['endBar'] = bar['bar']
+                current_trend['endTimestamp'] = bar['timestamp']
+                current_trend['endPrice'] = bar['close']
+                current_trend['bars'].append(bar)
+                # Calculate movement from start
+                current_trend['netMovement'] = bar['close'] - current_trend['startPrice']
+                # For LONG trades: profit = high - entry, loss = entry - low
+                current_trend['maxProfit'] = max(current_trend['maxProfit'], bar['high'] - current_trend['startPrice'])
+                current_trend['minLoss'] = min(current_trend['minLoss'], current_trend['startPrice'] - bar['low'])
+        
+        elif is_bad:
+            if current_trend is None or current_trend['direction'] != 'DOWN':
+                # Start new DOWN trend or switch from UP to DOWN
+                if current_trend:
+                    trends.append(current_trend)
+                current_trend = {
+                    'direction': 'DOWN',
+                    'startBar': bar['bar'],
+                    'startTimestamp': bar['timestamp'],
+                    'startPrice': bar['close'],
+                    'endBar': bar['bar'],
+                    'endTimestamp': bar['timestamp'],
+                    'endPrice': bar['close'],
+                    'bars': [bar],
+                    'netMovement': 0,
+                    'maxProfit': 0,
+                    'minLoss': 0
+                }
+            else:
+                # Continue DOWN trend
+                current_trend['endBar'] = bar['bar']
+                current_trend['endTimestamp'] = bar['timestamp']
+                current_trend['endPrice'] = bar['close']
+                current_trend['bars'].append(bar)
+                # Calculate movement from start (DOWN = start - end)
+                current_trend['netMovement'] = current_trend['startPrice'] - bar['close']
+                # For SHORT trades: profit = entry - low, loss = high - entry
+                current_trend['maxProfit'] = max(current_trend['maxProfit'], current_trend['startPrice'] - bar['low'])
+                current_trend['minLoss'] = min(current_trend['minLoss'], bar['high'] - current_trend['startPrice'])
+    
+    # Add final trend if exists
+    if current_trend:
+        trends.append(current_trend)
+    
+    # Filter trends by minimum length and movement (using parameters passed in)
+    filtered_trends = [
+        t for t in trends 
+        if len(t['bars']) >= min_length and abs(t['netMovement']) >= min_movement
+    ]
+    
+    return filtered_trends
+
+def match_trades_to_trends(trends, trades, bars):
+    """Match trades to trends and calculate how well they captured the trend"""
+    matched = []
+    
+    for trend in trends:
+        trend_info = trend.copy()
+        trend_info['tradeMatched'] = False
+        trend_info['trade'] = None
+        trend_info['entryBar'] = None
+        trend_info['exitBar'] = None
+        trend_info['capturedMovement'] = 0
+        trend_info['capturePercentage'] = 0
+        trend_info['missedMovement'] = abs(trend['netMovement'])
+        
+        # Find trades that overlap with this trend
+        for trade in trades:
+            # Check if trade direction matches trend direction
+            # UP trend = LONG trades, DOWN trend = SHORT trades
+            trade_dir = trade['direction']
+            if (trend['direction'] == 'UP' and trade_dir != 'LONG') or \
+               (trend['direction'] == 'DOWN' and trade_dir != 'SHORT'):
+                continue
+            
+            # Check if trade overlaps with trend
+            trade_start = trade['entryBar']
+            trade_end = trade['exitBar']
+            trend_start = trend['startBar']
+            trend_end = trend['endBar']
+            
+            # Overlap if trade starts/ends within trend or trend starts/ends within trade
+            if (trend_start <= trade_start <= trend_end) or (trend_start <= trade_end <= trend_end) or \
+               (trade_start <= trend_start <= trade_end) or (trade_start <= trend_end <= trade_end):
+                
+                # Calculate how much of the trend was captured
+                entry_price = trade['entryPrice']
+                exit_price = trade['exitPrice']
+                
+                if trend['direction'] == 'UP' and trade_dir == 'LONG':
+                    # LONG trade in UP trend
+                    captured = exit_price - entry_price
+                    # Calculate what was missed before entry and after exit
+                    missed_before = max(0, entry_price - trend['startPrice'])
+                    missed_after = max(0, trend['endPrice'] - exit_price)
+                elif trend['direction'] == 'DOWN' and trade_dir == 'SHORT':
+                    # SHORT trade in DOWN trend
+                    captured = entry_price - exit_price
+                    missed_before = max(0, trend['startPrice'] - entry_price)
+                    missed_after = max(0, exit_price - trend['endPrice'])
+                else:
+                    # Mismatch - shouldn't happen but handle gracefully
+                    continue
+                
+                total_missed = missed_before + missed_after
+                capture_pct = (captured / abs(trend['netMovement']) * 100) if trend['netMovement'] != 0 else 0
+                
+                trend_info['tradeMatched'] = True
+                trend_info['trade'] = trade
+                trend_info['entryBar'] = trade['entryBar']
+                trend_info['exitBar'] = trade['exitBar']
+                trend_info['capturedMovement'] = captured
+                trend_info['capturePercentage'] = capture_pct
+                trend_info['missedMovement'] = total_missed
+                trend_info['missedBefore'] = missed_before
+                trend_info['missedAfter'] = missed_after
+                break
+        
+        matched.append(trend_info)
+    
+    return matched
+
+def analyze_trend_parameters(matched_trends, bars, opp_data):
+    """Analyze what parameters would have been needed to enter/exit each trend optimally"""
+    analyzed = []
+    
+    for trend in matched_trends:
+        analysis = trend.copy()
+        
+        # Find entry parameters needed
+        start_bar = trend['startBar']
+        start_bar_data = next((b for b in bars if b['bar'] == start_bar), None)
+        
+        if start_bar_data:
+            # What would have triggered entry at trend start?
+            entry_params = {
+                'trendLookbackBars': 5,  # Default
+                'minMatchingBars': 1,  # Would need just 1 bar to trigger
+                'avoidLongsOnBadCandle': not (trend['direction'] == 'LONG' and start_bar_data['candleType'] == 'bad'),
+                'avoidShortsOnGoodCandle': not (trend['direction'] == 'SHORT' and start_bar_data['candleType'] == 'good'),
+                'gradientThreshold': start_bar_data.get('fastEmaGradDeg'),
+                'entryGradient': start_bar_data.get('fastEmaGradDeg')
+            }
+            
+            # Check opportunity log for trend signal
+            if start_bar in opp_data:
+                opp = opp_data[start_bar]
+                entry_params['trendUpSignal'] = opp.get('trendUpSignal', False)
+                entry_params['trendDownSignal'] = opp.get('trendDownSignal', False)
+                entry_params['goodCount'] = opp.get('goodCount', 0)
+                entry_params['badCount'] = opp.get('badCount', 0)
+                entry_params['netPnl'] = opp.get('netPnl', 0)
+                entry_params['actionTaken'] = opp.get('actionTaken', '')
+                entry_params['blockReason'] = opp.get('blockReason', '')
+            
+            analysis['entryParameters'] = entry_params
+        
+        # Find exit parameters needed
+        end_bar = trend['endBar']
+        end_bar_data = next((b for b in bars if b['bar'] == end_bar), None)
+        
+        if end_bar_data:
+            # Calculate optimal stop loss (wouldn't have been hit during trend)
+            if trend['direction'] == 'UP':
+                # For LONG: stop below lowest point
+                min_low = min(b['low'] for b in trend['bars'])
+                optimal_stop = trend['startPrice'] - (trend['startPrice'] - min_low) * 1.1  # 10% buffer
+                stop_distance = trend['startPrice'] - optimal_stop
+            else:  # DOWN
+                # For SHORT: stop above highest point
+                max_high = max(b['high'] for b in trend['bars'])
+                optimal_stop = trend['startPrice'] + (max_high - trend['startPrice']) * 1.1  # 10% buffer
+                stop_distance = optimal_stop - trend['startPrice']
+            
+            exit_params = {
+                'optimalStopLossPoints': stop_distance,
+                'optimalStopLossTicks': int(stop_distance * 4),  # 4 ticks per point for MNQ
+                'trendRetraceFraction': 0.0,  # Would exit at trend end (no retrace)
+                'exitOnTrendBreak': True,
+                'exitBar': end_bar,
+                'exitPrice': trend['endPrice']
+            }
+            
+            analysis['exitParameters'] = exit_params
+        
+        # Calculate what parameters would capture full trend
+        if trend['tradeMatched']:
+            trade = trend['trade']
+            analysis['optimalEntryBar'] = trend['startBar']
+            analysis['optimalExitBar'] = trend['endBar']
+            analysis['optimalEntryPrice'] = trend['startPrice']
+            analysis['optimalExitPrice'] = trend['endPrice']
+            analysis['optimalPnL'] = abs(trend['netMovement'])
+            analysis['actualPnL'] = trade['pnl']
+            analysis['pnlDifference'] = abs(trend['netMovement']) - trade['pnl']
+        else:
+            analysis['optimalEntryBar'] = trend['startBar']
+            analysis['optimalExitBar'] = trend['endBar']
+            analysis['optimalEntryPrice'] = trend['startPrice']
+            analysis['optimalExitPrice'] = trend['endPrice']
+            analysis['optimalPnL'] = abs(trend['netMovement'])
+            analysis['actualPnL'] = 0
+            analysis['pnlDifference'] = abs(trend['netMovement'])
+            analysis['missedOpportunity'] = True
+        
+        analyzed.append(analysis)
+    
+    return analyzed
+
+def aggregate_optimal_parameters(analyzed_trends):
+    """Aggregate optimal parameters across all trends to find best settings for maximum P&L capture"""
+    if not analyzed_trends:
+        return {
+            'maxCapturablePnL': 0,
+            'optimalParameters': {},
+            'parameterStats': {},
+            'coverage': {}
+        }
+    
+    # Calculate maximum capturable P&L (if all trends were captured optimally)
+    max_capturable_pnl = sum(t.get('optimalPnL', 0) for t in analyzed_trends)
+    
+    # Collect all entry parameters
+    entry_params_list = []
+    exit_params_list = []
+    
+    for trend in analyzed_trends:
+        if trend.get('entryParameters'):
+            entry_params_list.append(trend['entryParameters'])
+        if trend.get('exitParameters'):
+            exit_params_list.append(trend['exitParameters'])
+    
+    # Find most common/optimal values for entry parameters
+    entry_param_stats = {}
+    if entry_params_list:
+        # TrendLookbackBars
+        lookback_values = [p.get('trendLookbackBars', 5) for p in entry_params_list if p.get('trendLookbackBars')]
+        if lookback_values:
+            entry_param_stats['trendLookbackBars'] = {
+                'min': min(lookback_values),
+                'max': max(lookback_values),
+                'most_common': max(set(lookback_values), key=lookback_values.count),
+                'avg': sum(lookback_values) / len(lookback_values)
+            }
+        
+        # MinMatchingBars
+        matching_values = [p.get('minMatchingBars', 1) for p in entry_params_list if p.get('minMatchingBars')]
+        if matching_values:
+            entry_param_stats['minMatchingBars'] = {
+                'min': min(matching_values),
+                'max': max(matching_values),
+                'most_common': max(set(matching_values), key=matching_values.count),
+                'avg': sum(matching_values) / len(matching_values)
+            }
+        
+        # Gradient thresholds
+        gradient_values = [p.get('entryGradient') for p in entry_params_list if p.get('entryGradient') is not None]
+        if gradient_values:
+            entry_param_stats['entryGradient'] = {
+                'min': min(gradient_values),
+                'max': max(gradient_values),
+                'avg': sum(gradient_values) / len(gradient_values)
+            }
+        
+        # AvoidLongsOnBadCandle
+        avoid_long_bad = [p.get('avoidLongsOnBadCandle', True) for p in entry_params_list]
+        entry_param_stats['avoidLongsOnBadCandle'] = {
+            'true_count': sum(avoid_long_bad),
+            'false_count': len(avoid_long_bad) - sum(avoid_long_bad),
+            'recommended': sum(avoid_long_bad) > len(avoid_long_bad) / 2
+        }
+        
+        # AvoidShortsOnGoodCandle
+        avoid_short_good = [p.get('avoidShortsOnGoodCandle', True) for p in entry_params_list]
+        entry_param_stats['avoidShortsOnGoodCandle'] = {
+            'true_count': sum(avoid_short_good),
+            'false_count': len(avoid_short_good) - sum(avoid_short_good),
+            'recommended': sum(avoid_short_good) > len(avoid_short_good) / 2
+        }
+        
+        # Block reasons analysis
+        block_reasons = [p.get('blockReason', '') for p in entry_params_list if p.get('blockReason')]
+        if block_reasons:
+            reason_counts = {}
+            for reason in block_reasons:
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+            entry_param_stats['commonBlockReasons'] = sorted(reason_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    
+    # Find optimal stop loss settings
+    exit_param_stats = {}
+    if exit_params_list:
+        # Stop loss points
+        stop_points = [p.get('optimalStopLossPoints') for p in exit_params_list if p.get('optimalStopLossPoints')]
+        if stop_points:
+            exit_param_stats['optimalStopLossPoints'] = {
+                'min': min(stop_points),
+                'max': max(stop_points),
+                'avg': sum(stop_points) / len(stop_points),
+                'median': sorted(stop_points)[len(stop_points) // 2]
+            }
+        
+        # Stop loss ticks
+        stop_ticks = [p.get('optimalStopLossTicks') for p in exit_params_list if p.get('optimalStopLossTicks')]
+        if stop_ticks:
+            exit_param_stats['optimalStopLossTicks'] = {
+                'min': min(stop_ticks),
+                'max': max(stop_ticks),
+                'avg': sum(stop_ticks) / len(stop_ticks),
+                'median': sorted(stop_ticks)[len(stop_ticks) // 2]
+            }
+    
+    # Calculate coverage statistics
+    total_trends = len(analyzed_trends)
+    captured_trends = len([t for t in analyzed_trends if t.get('tradeMatched')])
+    fully_captured = len([t for t in analyzed_trends if t.get('tradeMatched') and t.get('capturePercentage', 0) >= 80])
+    missed_trends = len([t for t in analyzed_trends if not t.get('tradeMatched')])
+    
+    # Calculate actual vs optimal P&L
+    actual_pnl = sum(t.get('actualPnL', 0) for t in analyzed_trends if t.get('tradeMatched'))
+    optimal_pnl = sum(t.get('optimalPnL', 0) for t in analyzed_trends)
+    missed_pnl = optimal_pnl - actual_pnl
+    
+    # Determine recommended parameters (most common values that would capture most trends)
+    recommended_params = {
+        'entry': {
+            'trendLookbackBars': entry_param_stats.get('trendLookbackBars', {}).get('most_common', 5),
+            'minMatchingBars': entry_param_stats.get('minMatchingBars', {}).get('most_common', 1),
+            'avoidLongsOnBadCandle': entry_param_stats.get('avoidLongsOnBadCandle', {}).get('recommended', True),
+            'avoidShortsOnGoodCandle': entry_param_stats.get('avoidShortsOnGoodCandle', {}).get('recommended', True),
+            'minGradientThreshold': entry_param_stats.get('entryGradient', {}).get('min') if entry_param_stats.get('entryGradient') else None
+        },
+        'exit': {
+            'stopLossPoints': exit_param_stats.get('optimalStopLossPoints', {}).get('median') if exit_param_stats.get('optimalStopLossPoints') else None,
+            'stopLossTicks': exit_param_stats.get('optimalStopLossTicks', {}).get('median') if exit_param_stats.get('optimalStopLossTicks') else None,
+            'exitOnTrendBreak': True
+        }
+    }
+    
+    return {
+        'maxCapturablePnL': max_capturable_pnl,
+        'actualPnL': actual_pnl,
+        'missedPnL': missed_pnl,
+        'optimalParameters': recommended_params,
+        'parameterStats': {
+            'entry': entry_param_stats,
+            'exit': exit_param_stats
+        },
+    }
+
+@app.get('/api/databases/status')
+async def get_databases_status():
+    """Get status of all databases and tables with their current state and history."""
+    try:
+        databases = {}
+        # VOLATILITY_DB_PATH is defined later in the file, but will be available at runtime
+        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
+        db_files = {
+            'dashboard.db': DB_PATH,
+            'bars.db': BARS_DB_PATH,
+            'volatility.db': volatility_db_path
+        }
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        for db_name, db_path in db_files.items():
+            if not os.path.exists(db_path):
+                databases[db_name] = {
+                    'exists': False,
+                    'tables': {}
+                }
+                continue
+            
+            databases[db_name] = {
+                'exists': True,
+                'path': db_path,
+                'tables': {}
+            }
+            
+            # Connect to each database to get table information
+            try:
+                db_conn = sqlite3.connect(db_path)
+                db_cur = db_conn.cursor()
+                
+                # Get all tables
+                db_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+                tables = [row[0] for row in db_cur.fetchall()]
+                
+                for table_name in tables:
+                    # Get row count (table name is safe - comes from sqlite_master)
+                    # Use parameterized query with identifier quoting for safety
+                    db_cur.execute(f'SELECT COUNT(*) FROM "{table_name}"')
+                    row_count = db_cur.fetchone()[0]
+                    
+                    # Determine status
+                    if row_count == 0:
+                        status = 'empty'
+                    else:
+                        # Check if table is actively being populated (has recent entries)
+                        # Look for timestamp columns to determine if actively populating
+                        db_cur.execute(f'PRAGMA table_info("{table_name}")')
+                        columns = db_cur.fetchall()
+                        has_timestamp = any('ts' in col[1].lower() or 'timestamp' in col[1].lower() or 'created_at' in col[1].lower() for col in columns)
+                        
+                        if has_timestamp:
+                            # Check for recent activity (within last hour)
+                            timestamp_cols = [col[1] for col in columns if 'ts' in col[1].lower() or 'timestamp' in col[1].lower() or 'created_at' in col[1].lower()]
+                            if timestamp_cols:
+                                ts_col = timestamp_cols[0]
+                                current_time = time.time()
+                                hour_ago = current_time - 3600
+                                
+                                # Try to query recent entries
+                                try:
+                                    if 'created_at' in ts_col.lower():
+                                        db_cur.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE datetime("{ts_col}") > datetime(\'now\', \'-1 hour\')')
+                                    else:
+                                        db_cur.execute(f'SELECT COUNT(*) FROM "{table_name}" WHERE "{ts_col}" > ?', (hour_ago,))
+                                    recent_count = db_cur.fetchone()[0]
+                                    status = 'populating' if recent_count > 0 else 'populated'
+                                except:
+                                    status = 'populated'
+                            else:
+                                status = 'populated'
+                        else:
+                            status = 'populated'
+                    
+                    # Get responsible strategy from schema documentation or history
+                    strategy_name = None
+                    
+                    # Get last 5 events from history (safely handle if table doesn't exist)
+                    history = []
+                    try:
+                        cur.execute("""
+                            SELECT status, strategy_name, event_type, event_details, timestamp, row_count
+                            FROM table_status_history
+                            WHERE database_name = ? AND table_name = ?
+                            ORDER BY timestamp DESC
+                            LIMIT 5
+                        """, (db_name, table_name))
+                        for row in cur.fetchall():
+                            history.append({
+                                'status': row[0],
+                                'strategy_name': row[1],
+                                'event_type': row[2],
+                                'event_details': row[3],
+                                'timestamp': row[4],
+                                'row_count': row[5]
+                            })
+                    except Exception as hist_ex:
+                        # Table might not exist yet, that's okay
+                        print(f'[DATABASES_STATUS] Could not read history for {db_name}.{table_name}: {hist_ex}')
+                        history = []
+                    
+                    # If no history, try to infer strategy from schema
+                    if not strategy_name and not history:
+                        # Check schema documentation patterns
+                        if 'volatility' in db_name.lower():
+                            strategy_name = 'BarsOnTheFlow'
+                        elif 'bars' in db_name.lower():
+                            strategy_name = 'BarsOnTheFlow'
+                        elif 'dashboard' in db_name.lower():
+                            strategy_name = 'BarsOnTheFlow'
+                    
+                    # Get strategy from most recent history entry
+                    if not strategy_name and history:
+                        strategy_name = history[0].get('strategy_name')
+                    
+                    databases[db_name]['tables'][table_name] = {
+                        'status': status,
+                        'row_count': row_count,
+                        'strategy_name': strategy_name,
+                        'history': history
+                    }
+                
+                db_conn.close()
+            except Exception as db_ex:
+                databases[db_name]['error'] = str(db_ex)
+        
+        return JSONResponse(databases)
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[DATABASES_STATUS] Error: {ex}")
+        print(f"[DATABASES_STATUS] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/databases/table-event')
+async def record_table_event(request: Request):
+    """Record an event for a table (populated, emptied, populating, etc.)"""
+    try:
+        data = await request.json()
+        database_name = data.get('database_name')
+        table_name = data.get('table_name')
+        status = data.get('status')  # 'populated', 'empty', 'populating', 'emptied'
+        strategy_name = data.get('strategy_name')
+        event_type = data.get('event_type')  # 'populate', 'empty', 'start_populating', 'stop_populating'
+        event_details = data.get('event_details', '')
+        
+        if not database_name or not table_name or not status:
+            return JSONResponse({'error': 'database_name, table_name, and status are required'}, status_code=400)
+        
+        # Get current row count
+        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
+        db_files = {
+            'dashboard.db': DB_PATH,
+            'bars.db': BARS_DB_PATH,
+            'volatility.db': volatility_db_path
+        }
+        
+        row_count = 0
+        if database_name in db_files and os.path.exists(db_files[database_name]):
+            try:
+                db_conn = sqlite3.connect(db_files[database_name])
+                db_cur = db_conn.cursor()
+                db_cur.execute(f'SELECT COUNT(*) FROM "{table_name}"')
+                row_count = db_cur.fetchone()[0]
+                db_conn.close()
+            except:
+                pass
+        
+        # Record event in history (safely handle if table doesn't exist)
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO table_status_history 
+                (database_name, table_name, status, strategy_name, row_count, event_type, event_details, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (database_name, table_name, status, strategy_name, row_count, event_type, event_details, time.time()))
+            conn.commit()
+        except Exception as insert_ex:
+            # Table might not exist yet, that's okay - just log and continue
+            print(f'[TABLE_EVENT] Could not record event (table may not exist): {insert_ex}')
+            # Don't fail the request - just return success without recording
+        
+        return JSONResponse({
+            'status': 'ok',
+            'message': 'Event recorded',
+            'row_count': row_count
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[TABLE_EVENT] Error: {ex}")
+        print(f"[TABLE_EVENT] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/api/databases/table-data')
+async def get_table_data(database_name: str, table_name: str, limit: int = 1000, offset: int = 0, barIndex: int = None):
+    """Get table data with pagination. Optionally filter by barIndex."""
+    try:
+        # Get database path
+        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
+        db_files = {
+            'dashboard.db': DB_PATH,
+            'bars.db': BARS_DB_PATH,
+            'volatility.db': volatility_db_path
+        }
+        
+        if database_name not in db_files:
+            return JSONResponse({'error': f'Database {database_name} not found'}, status_code=404)
+        
+        db_path = db_files[database_name]
+        if not os.path.exists(db_path):
+            return JSONResponse({'error': f'Database file not found: {db_path}'}, status_code=404)
+        
+        # Connect to database
+        db_conn = sqlite3.connect(db_path)
+        db_conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+        db_cur = db_conn.cursor()
+        
+        # Get column information
+        db_cur.execute(f'PRAGMA table_info("{table_name}")')
+        columns = [{'name': row[1], 'type': row[2]} for row in db_cur.fetchall()]
+        
+        if not columns:
+            db_conn.close()
+            return JSONResponse({'error': f'Table {table_name} not found'}, status_code=404)
+        
+        # Build WHERE clause if barIndex filter is provided
+        where_clause = ""
+        query_params = []
+        if barIndex is not None:
+            # Check if table has barIndex column (case-insensitive)
+            column_names = [col['name'].lower() for col in columns]
+            if 'barindex' in column_names or 'bar_index' in column_names:
+                # Find the actual column name
+                bar_col = next((col['name'] for col in columns if col['name'].lower() in ['barindex', 'bar_index']), None)
+                if bar_col:
+                    where_clause = f'WHERE "{bar_col}" = ?'
+                    query_params = [barIndex]
+        
+        # Get total row count
+        count_query = f'SELECT COUNT(*) FROM "{table_name}"'
+        if where_clause:
+            count_query += ' ' + where_clause
+        db_cur.execute(count_query, query_params)
+        total_rows = db_cur.fetchone()[0]
+        
+        # For BarsOnTheFlowStateAndBar, also get some statistics
+        table_stats = {}
+        if table_name == 'BarsOnTheFlowStateAndBar':
+            try:
+                # Get min/max barIndex, unique runs, and date range
+                db_cur.execute(f'''
+                    SELECT 
+                        MIN(barIndex) as min_bar,
+                        MAX(barIndex) as max_bar,
+                        COUNT(DISTINCT runId) as unique_runs,
+                        MIN(receivedTs) as first_ts,
+                        MAX(receivedTs) as last_ts,
+                        COUNT(DISTINCT barIndex) as unique_bars
+                    FROM "{table_name}"
+                ''')
+                stat_row = db_cur.fetchone()
+                if stat_row and stat_row[0] is not None:
+                    table_stats = {
+                        'min_bar_index': stat_row[0],
+                        'max_bar_index': stat_row[1],
+                        'unique_runs': stat_row[2] if stat_row[2] else 1,
+                        'unique_bars': stat_row[5] if stat_row[5] else 0,
+                        'first_timestamp': stat_row[3],
+                        'last_timestamp': stat_row[4],
+                        'bar_range_size': (stat_row[1] - stat_row[0] + 1) if stat_row[1] and stat_row[0] else 0
+                    }
+            except Exception as stat_ex:
+                print(f'[TABLE_DATA] Could not get stats: {stat_ex}')
+                pass
+        
+        # Get data with pagination - order by most recent first for specific tables
+        if table_name == 'BarsOnTheFlowStateAndBar':
+            query = f'SELECT * FROM "{table_name}"'
+            if where_clause:
+                query += ' ' + where_clause
+            query += ' ORDER BY receivedTs DESC, barIndex DESC LIMIT ? OFFSET ?'
+            db_cur.execute(query, query_params + [limit, offset])
+        elif table_name == 'bar_samples':
+            # Order bar_samples by timestamp DESC (newest first)
+            query = f'SELECT * FROM "{table_name}"'
+            if where_clause:
+                query += ' ' + where_clause
+            query += ' ORDER BY timestamp DESC, created_at DESC LIMIT ? OFFSET ?'
+            db_cur.execute(query, query_params + [limit, offset])
+        elif table_name == 'trades':
+            # Order trades by exit_time DESC (newest first), fallback to entry_time for open trades
+            query = f'SELECT * FROM "{table_name}"'
+            if where_clause:
+                query += ' ' + where_clause
+            query += ' ORDER BY COALESCE(exit_time, entry_time) DESC, entry_time DESC LIMIT ? OFFSET ?'
+            db_cur.execute(query, query_params + [limit, offset])
+        else:
+            query = f'SELECT * FROM "{table_name}"'
+            if where_clause:
+                query += ' ' + where_clause
+            query += ' LIMIT ? OFFSET ?'
+            db_cur.execute(query, query_params + [limit, offset])
+        rows = []
+        for row in db_cur.fetchall():
+            rows.append(dict(row))
+        
+        db_conn.close()
+        
+        return JSONResponse({
+            'database_name': database_name,
+            'table_name': table_name,
+            'columns': columns,
+            'total_rows': total_rows,
+            'rows': rows,
+            'limit': limit,
+            'offset': offset,
+            'has_more': (offset + len(rows)) < total_rows,
+            'table_stats': table_stats
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[TABLE_DATA] Error: {ex}")
+        print(f"[TABLE_DATA] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.get('/table-viewer.html')
+async def serve_table_viewer():
+    """Serve the table viewer page."""
+    try:
+        with open('table-viewer.html', 'r', encoding='utf-8') as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse('<h1>Table Viewer page not found</h1>', status_code=404)
+
+@app.get('/database-monitor.html')
+async def serve_database_monitor():
+    """Serve the database monitoring page."""
+    try:
+        with open('database-monitor.html', 'r', encoding='utf-8') as f:
+            return HTMLResponse(content=f.read())
+    except FileNotFoundError:
+        return HTMLResponse('<h1>Database Monitor page not found</h1>', status_code=404)
+
+@app.post('/api/databases/reset-bars-table')
+async def reset_bars_table_endpoint():
+    """Reset (delete and recreate) the BarsOnTheFlowStateAndBar table."""
+    try:
+        if not os.path.exists(BARS_DB_PATH):
+            return JSONResponse({'error': 'Database not found'}, status_code=404)
+        
+        conn = sqlite3.connect(BARS_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Get current row count
+        cursor.execute("SELECT COUNT(*) FROM BarsOnTheFlowStateAndBar")
+        row_count = cursor.fetchone()[0]
+        
+        # Drop the table
+        cursor.execute("DROP TABLE IF EXISTS BarsOnTheFlowStateAndBar")
+        
+        # Drop indexes
+        cursor.execute("DROP INDEX IF EXISTS idx_botf_bar")
+        cursor.execute("DROP INDEX IF EXISTS idx_botf_ts")
+        cursor.execute("DROP INDEX IF EXISTS idx_botf_position")
+        cursor.execute("DROP INDEX IF EXISTS idx_botf_currentbar")
+        
+        # Recreate the table (call init_bars_db to recreate it)
+        init_bars_db()
+        
+        conn.commit()
+        conn.close()
+        
+        return JSONResponse({
+            'status': 'ok',
+            'message': f'Table reset successfully. Deleted {row_count} rows.',
+            'deleted_rows': row_count
+        })
+        
+    except Exception as ex:
+        print(f'[RESET_BARS_TABLE] Error: {ex}')
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+def find_ninjatrader_db_directory() -> Optional[str]:
+    """Find NinjaTrader database directory using multiple methods."""
+    possible_paths = []
+    
+    # Method 1: Use workspace path (most reliable since we know where we are)
+    try:
+        # Current file is at: web/dashboard/server.py
+        # Workspace is at: /Home/Documents/NinjaTrader 8/bin/Custom
+        # So db should be at: /Home/Documents/NinjaTrader 8/db
+        current_file = __file__
+        # Go from web/dashboard/server.py -> web/dashboard -> web -> Custom -> bin -> NinjaTrader 8 -> db
+        current_dir = os.path.dirname(current_file)  # web/dashboard
+        web_dir = os.path.dirname(current_dir)  # web
+        custom_dir = os.path.dirname(web_dir)  # Custom
+        bin_dir = os.path.dirname(custom_dir)  # bin
+        nt8_dir = os.path.dirname(bin_dir)  # NinjaTrader 8
+        db_path = os.path.join(nt8_dir, "db")
+        # Normalize path separators
+        db_path = os.path.normpath(db_path)
+        print(f"[FIND_DB] Checking workspace-derived path: {db_path} (exists: {os.path.exists(db_path)})")
+        if os.path.exists(db_path):
+            print(f"[FIND_DB] Found database at: {db_path}")
+            return db_path
+        possible_paths.insert(0, db_path)  # Add at beginning as it's most likely
+    except Exception as e:
+        print(f"[FIND_DB] Error deriving from workspace: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # Method 2: Standard Windows Documents folder
+    try:
+        docs_path = os.path.join(os.path.expanduser("~"), "Documents", "NinjaTrader 8", "db")
+        possible_paths.append(docs_path)
+    except:
+        pass
+    
+    # Method 3: Windows USERPROFILE environment variable
+    try:
+        userprofile = os.environ.get('USERPROFILE', '')
+        if userprofile:
+            possible_paths.append(os.path.join(userprofile, "Documents", "NinjaTrader 8", "db"))
+    except:
+        pass
+    
+    # Method 4: Try paths with different separators (Windows network share style)
+    try:
+        # Try C:\Users\mm\Documents\NinjaTrader 8\db
+        userprofile = os.environ.get('USERPROFILE', '')
+        if userprofile:
+            # Try both forward and backslash versions
+            possible_paths.append(os.path.join(userprofile, "Documents", "NinjaTrader 8", "db").replace('\\', '/'))
+            possible_paths.append(os.path.join(userprofile, "Documents", "NinjaTrader 8", "db").replace('/', '\\'))
+    except:
+        pass
+    
+    # Method 5: Common Windows paths
+    windows_paths = [
+        "C:/Users/Public/Documents/NinjaTrader 8/db",
+        "C:\\Users\\Public\\Documents\\NinjaTrader 8\\db",
+        os.path.join("C:", "Users", "Public", "Documents", "NinjaTrader 8", "db"),
+    ]
+    possible_paths.extend(windows_paths)
+    
+    # Method 6: macOS/Unix paths and Windows network share paths to Mac
+    mac_paths = [
+        "/Users/mm/Documents/NinjaTrader 8/db",
+        os.path.expanduser("~/Documents/NinjaTrader 8/db"),
+        "/Home/Documents/NinjaTrader 8/db",  # Based on workspace path
+        # Windows network share paths to Mac (common when Mac is shared over network)
+        "c:\\Mac\\Home\\Documents\\NinjaTrader 8\\db",
+        "c:/Mac/Home/Documents/NinjaTrader 8/db",
+        "C:\\Mac\\Home\\Documents\\NinjaTrader 8\\db",
+        "C:/Mac/Home/Documents/NinjaTrader 8/db",
+        "\\\\Mac\\Home\\Documents\\NinjaTrader 8\\db",
+    ]
+    possible_paths.extend(mac_paths)
+    
+    # Method 7: Check for NinjaTrader installation directory
+    program_files_paths = [
+        os.path.join(os.environ.get('ProgramFiles', ''), 'NinjaTrader 8', 'db'),
+        os.path.join(os.environ.get('ProgramFiles(x86)', ''), 'NinjaTrader 8', 'db'),
+        "C:/Program Files/NinjaTrader 8/db",
+        "C:/Program Files (x86)/NinjaTrader 8/db",
+    ]
+    possible_paths.extend(program_files_paths)
+    
+    # Try all paths
+    for path in possible_paths:
+        if path and os.path.exists(path):
+            return path
+    
+    return None
+
+@app.get('/api/data/download-tick')
+async def download_tick_data(
+    instrument: str = Query(..., description="Instrument symbol (e.g., 'MNQ 03-26')"),
+    start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    format: str = Query('csv', description="Output format: 'csv' or 'json'"),
+    db_path_override: Optional[str] = Query(None, description="Override database path (optional)"),
+    max_ticks: Optional[int] = Query(None, description="Maximum number of ticks to return (for large files)")
+):
+    """
+    Download historical tick data from NinjaTrader's local database.
+    
+    This endpoint attempts to read tick data from NinjaTrader's data files.
+    Note: The exact file location and format depends on your data feed provider.
+    """
+    try:
+        # Parse dates
+        start_dt = None
+        end_dt = None
+        if start_date:
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        if end_date:
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+            # Set to end of day
+            end_dt = end_dt.replace(hour=23, minute=59, second=59)
+        
+        # Try to find and read tick data
+        tick_data = []
+        
+        # Find database path
+        if db_path_override:
+            db_path = db_path_override
+            if not os.path.exists(db_path):
+                return JSONResponse({
+                    'error': 'Specified database path does not exist',
+                    'path': db_path
+                }, status_code=404)
+        else:
+            db_path = find_ninjatrader_db_directory()
+            if db_path is None:
+                # Return helpful error with all paths we tried
+                all_tried_paths = []
+                try:
+                    docs_path = os.path.join(os.path.expanduser("~"), "Documents", "NinjaTrader 8", "db")
+                    all_tried_paths.append(docs_path)
+                except:
+                    pass
+                try:
+                    userprofile = os.environ.get('USERPROFILE', '')
+                    if userprofile:
+                        all_tried_paths.append(os.path.join(userprofile, "Documents", "NinjaTrader 8", "db"))
+                except:
+                    pass
+                all_tried_paths.extend([
+                    "C:/Users/Public/Documents/NinjaTrader 8/db",
+                    "C:\\Users\\Public\\Documents\\NinjaTrader 8\\db",
+                    "/Users/mm/Documents/NinjaTrader 8/db",
+                ])
+                
+                return JSONResponse({
+                    'error': 'NinjaTrader database directory not found',
+                    'message': 'Please ensure NinjaTrader is installed and data has been downloaded.',
+                    'searched_paths': all_tried_paths,
+                    'suggestion': 'You can specify a custom path using the db_path_override parameter, or check the NinjaTrader installation directory.'
+                }, status_code=404)
+        
+        if db_path is None:
+            return JSONResponse({
+                'error': 'NinjaTrader database directory not found',
+                'message': 'Please ensure NinjaTrader is installed and data has been downloaded.',
+                'searched_paths': possible_paths
+            }, status_code=404)
+        
+        # Look for tick data files
+        # Format varies by provider - this is a generic approach
+        instrument_clean = instrument.replace(" ", "_").replace("/", "-")
+        tick_files = []
+        found_items = []  # Track what we found for debugging
+        
+        # Check custom Historical directory first (user's dedicated directory)
+        # Try multiple possible paths
+        historical_paths = [
+            # Path relative to server.py: web/dashboard -> web -> Custom -> Historical
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "Historical"),
+            # Direct path from workspace root
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "Custom", "Historical"),
+            # Windows network share path
+            r"\\Mac\Home\Documents\NinjaTrader 8\bin\Custom\Historical",
+            # Alternative path format
+            r"c:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\Historical",
+        ]
+        
+        for historical_dir in historical_paths:
+            if os.path.exists(historical_dir):
+                try:
+                    print(f"[DOWNLOAD_TICK] Checking Historical directory: {historical_dir}")
+                    for item in os.listdir(historical_dir):
+                        item_path = os.path.join(historical_dir, item)
+                        if os.path.isfile(item_path):
+                            # Check if file matches instrument
+                            if instrument in item or instrument_clean in item:
+                                # Prioritize .Last.txt files
+                                if item.endswith('.Last.txt') or item.endswith('.last.txt'):
+                                    tick_files.insert(0, item_path)  # Highest priority
+                                    print(f"[DOWNLOAD_TICK] Found .Last.txt file: {item_path}")
+                                elif item.endswith(('.txt', '.csv', '.Last', '.last')):
+                                    tick_files.append(item_path)
+                    break  # Found the directory, no need to check other paths
+                except Exception as e:
+                    print(f"[DOWNLOAD_TICK] Error reading Historical directory {historical_dir}: {e}")
+                    continue
+        
+        # Check tick subdirectory
+        tick_dir = os.path.join(db_path, "tick")
+        if os.path.exists(tick_dir):
+            try:
+                for item in os.listdir(tick_dir):
+                    item_path = os.path.join(tick_dir, item)
+                    found_items.append({
+                        'name': item,
+                        'path': item_path,
+                        'is_dir': os.path.isdir(item_path),
+                        'is_file': os.path.isfile(item_path)
+                    })
+                    
+                    # Check if item matches instrument
+                    if instrument in item or instrument_clean in item:
+                        if os.path.isfile(item_path):
+                            # Prioritize .Last.txt files (most common text format)
+                            if item.endswith('.Last.txt') or item.endswith('.last.txt'):
+                                tick_files.insert(0, item_path)  # Add to beginning (highest priority)
+                            else:
+                                tick_files.append(item_path)
+                        elif os.path.isdir(item_path):
+                            # It's a directory - look inside for files
+                            # NinjaTrader stores tick data in files inside instrument directories
+                            try:
+                                dir_contents = []
+                                for sub_item in os.listdir(item_path):
+                                    sub_item_path = os.path.join(item_path, sub_item)
+                                    is_file = os.path.isfile(sub_item_path)
+                                    is_dir = os.path.isdir(sub_item_path)
+                                    dir_contents.append({
+                                        'name': sub_item,
+                                        'path': sub_item_path,
+                                        'is_file': is_file,
+                                        'is_dir': is_dir,
+                                        'size': os.path.getsize(sub_item_path) if is_file else None
+                                    })
+                                    
+                                    if is_file:
+                                        # Accept ANY file in the directory - NinjaTrader might use various formats
+                                        # Common tick data file patterns
+                                        # NinjaTrader uses: .Last.txt, .Bid.txt, .Ask.txt, .ncd (compressed), or date-based files
+                                        # Priority: .Last.txt files are the most common text format
+                                        if sub_item.endswith('.Last.txt') or sub_item.endswith('.last.txt'):
+                                            tick_files.insert(0, sub_item_path)  # Add .Last.txt files first (highest priority)
+                                        elif any(sub_item.endswith(ext) for ext in ['.txt', '.csv', '.Last', '.last', '.bid', '.ask', '.Bid.txt', '.Ask.txt', '.bin', '.dat', '.ncd']):
+                                            tick_files.append(sub_item_path)
+                                        # Or if it has no extension but matches instrument
+                                        elif instrument in sub_item or instrument_clean in sub_item:
+                                            tick_files.append(sub_item_path)
+                                        # Or if it looks like a date-based file (e.g., 20251228.txt or 20251228)
+                                        elif sub_item.replace('.', '').replace('-', '').replace('_', '').isdigit():
+                                            tick_files.append(sub_item_path)
+                                        # Or if it's a non-empty file (might be tick data), accept it
+                                        elif os.path.getsize(sub_item_path) > 0:
+                                            # Accept any non-empty file as potential tick data
+                                            tick_files.append(sub_item_path)
+                                    elif is_dir:
+                                        # Nested directory - look one level deeper (e.g., by date)
+                                        try:
+                                            for deep_item in os.listdir(sub_item_path):
+                                                deep_item_path = os.path.join(sub_item_path, deep_item)
+                                                if os.path.isfile(deep_item_path):
+                                                    if any(deep_item.endswith(ext) for ext in ['.txt', '.csv', '.Last', '.last', '.bin', '.dat']):
+                                                        tick_files.append(deep_item_path)
+                                                    elif os.path.getsize(deep_item_path) > 0:
+                                                        tick_files.append(deep_item_path)
+                                        except:
+                                            pass
+                                
+                                # Store directory contents for debugging
+                                if not tick_files:
+                                    found_items[-1]['directory_contents'] = dir_contents
+                            except Exception as e:
+                                print(f"[DOWNLOAD_TICK] Error reading directory {item_path}: {e}")
+                                found_items[-1]['error'] = str(e)
+            except Exception as e:
+                print(f"[DOWNLOAD_TICK] Error reading tick directory {tick_dir}: {e}")
+        
+        # Also check root db directory
+        if os.path.exists(db_path):
+            try:
+                for item in os.listdir(db_path):
+                    item_path = os.path.join(db_path, item)
+                    if (instrument in item or instrument_clean in item):
+                        if os.path.isfile(item_path) and item.endswith(('.txt', '.csv', '.Last', '.last')):
+                            tick_files.append(item_path)
+                        elif os.path.isdir(item_path) and 'tick' in item.lower():
+                            # Directory that might contain tick data
+                            try:
+                                for sub_item in os.listdir(item_path):
+                                    sub_item_path = os.path.join(item_path, sub_item)
+                                    if os.path.isfile(sub_item_path) and (instrument in sub_item or instrument_clean in sub_item):
+                                        tick_files.append(sub_item_path)
+                            except:
+                                pass
+            except Exception as e:
+                print(f"[DOWNLOAD_TICK] Error reading db directory {db_path}: {e}")
+        
+        if not tick_files:
+            # Provide helpful debugging info
+            matching_items = [item for item in found_items if instrument in item['name'] or instrument_clean in item['name']]
+            
+            # Get directory contents for matching items if not already populated
+            for item in matching_items:
+                if item.get('is_dir') and 'directory_contents' not in item:
+                    try:
+                        dir_path = item['path']
+                        dir_contents = []
+                        for sub_item in os.listdir(dir_path):
+                            sub_item_path = os.path.join(dir_path, sub_item)
+                            try:
+                                dir_contents.append({
+                                    'name': sub_item,
+                                    'is_file': os.path.isfile(sub_item_path),
+                                    'is_dir': os.path.isdir(sub_item_path),
+                                    'size': os.path.getsize(sub_item_path) if os.path.isfile(sub_item_path) else None
+                                })
+                            except:
+                                dir_contents.append({
+                                    'name': sub_item,
+                                    'error': 'Could not read file info'
+                                })
+                        item['directory_contents'] = dir_contents
+                    except Exception as e:
+                        item['directory_error'] = str(e)
+            
+            return JSONResponse({
+                'error': 'Tick data file not found',
+                'message': f'No tick data files found for instrument: {instrument}',
+                'searched_path': db_path,
+                'tick_directory': tick_dir if os.path.exists(tick_dir) else 'not found',
+                'matching_items_found': matching_items,
+                'all_items_in_tick_dir': [item['name'] for item in found_items[:20]],  # First 20 items
+                'suggestion': 'Ensure historical data has been downloaded in NinjaTrader for this instrument. Tick data files may have different extensions (.txt, .Last, etc.) or may be stored in a different format (binary, database, etc.). Check the directory_contents in matching_items_found to see what files are actually in the directory.'
+            }, status_code=404)
+        
+        # Separate .ncd files (binary) from text files
+        ncd_files = [f for f in tick_files if f.endswith('.ncd')]
+        text_files = [f for f in tick_files if not f.endswith('.ncd')]
+        
+        # Read tick data from text files first
+        for file_path in text_files:
+            try:
+                print(f"[DOWNLOAD_TICK] Reading file: {file_path}")
+                file_size = os.path.getsize(file_path)
+                print(f"[DOWNLOAD_TICK] File size: {file_size / (1024*1024):.2f} MB")
+                
+                max_lines = 1000000  # Limit to 1 million lines to prevent freezing on huge files
+                max_ticks_limit = max_ticks if max_ticks is not None else None  # Store max_ticks parameter in local variable
+                lines_read = 0
+                lines_skipped = 0
+                parse_errors = 0
+                sample_parse_errors = []  # Store first few parse errors for debugging
+                
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line_num, line in enumerate(f, 1):
+                        if line_num > max_lines:
+                            print(f"[DOWNLOAD_TICK] Reached maximum line limit ({max_lines}), stopping read")
+                            break
+                        
+                        # Progress logging every 100k lines
+                        if line_num % 100000 == 0:
+                            print(f"[DOWNLOAD_TICK] Processed {line_num:,} lines, found {len(tick_data):,} valid ticks, {parse_errors:,} parse errors...")
+                        
+                        line = line.strip()
+                        if not line or line.startswith('#'):
+                            lines_skipped += 1
+                            continue
+                        
+                        # Show first few lines for debugging
+                        if line_num <= 5:
+                            print(f"[DOWNLOAD_TICK] Sample line {line_num}: {line[:80]}")
+                        
+                        lines_read = line_num
+                        
+                        # Try to parse different tick data formats
+                        # Format 1: yyyyMMdd HHmmss;price;volume (NinjaTrader .Last.txt standard format)
+                        # Format 2: timestamp,price,volume
+                        # Format 3: yyyyMMdd,HHmmss,price,volume
+                        # Format 4: Unix timestamp,price,volume
+                        
+                        tick_time = None
+                        price = None
+                        volume = 1
+                        
+                        # Try semicolon-separated format first (NinjaTrader standard)
+                        if ';' in line:
+                            parts = line.split(';')
+                            if len(parts) >= 3:
+                                try:
+                                    # Format variations:
+                                    # 1. yyyyMMdd HHmmss;price;volume (simple)
+                                    # 2. yyyyMMdd HHmmss mmmsss;bid;ask;last;volume (with milliseconds and bid/ask/last)
+                                    
+                                    date_time_str = parts[0].strip()
+                                    if line_num <= 5:
+                                        print(f"[DOWNLOAD_TICK] Debug: date_time_str='{date_time_str}', parts count={len(parts)}")
+                                    
+                                    # Check if it has milliseconds component (format 2)
+                                    if ' ' in date_time_str:
+                                        date_parts = date_time_str.split()
+                                        if len(date_parts) >= 3:
+                                            # Format: yyyyMMdd HHmmss mmmsss;bid;ask;last;volume
+                                            date_str = f"{date_parts[0]} {date_parts[1]}"
+                                            # Parse milliseconds/microseconds
+                                            try:
+                                                time_component = int(date_parts[2])
+                                                # The component appears to be in microseconds (e.g., 0160000 = 160000 microseconds = 160ms)
+                                                # Values like 0160000, 0200000 are already in microseconds
+                                                # Use directly as microseconds (ensure it's in valid range 0-999999)
+                                                microseconds = time_component % 1000000
+                                                
+                                                tick_time = datetime.strptime(date_str, "%Y%m%d %H%M%S")
+                                                tick_time = tick_time.replace(microsecond=microseconds)
+                                                
+                                                if line_num <= 5:
+                                                    print(f"[DOWNLOAD_TICK] Debug: time_component={time_component}, microseconds={microseconds}, tick_time={tick_time}")
+                                            except (ValueError, IndexError) as e:
+                                                # If milliseconds parsing fails, just use the date/time
+                                                if line_num <= 5:
+                                                    print(f"[DOWNLOAD_TICK] Error parsing time component: {e}, value: {date_parts[2] if len(date_parts) > 2 else 'N/A'}")
+                                                    import traceback
+                                                    traceback.print_exc()
+                                                tick_time = datetime.strptime(date_str, "%Y%m%d %H%M%S")
+                                            
+                                            # Get Last price (4th field: bid;ask;last;volume)
+                                            # parts[0] = date/time string
+                                            # parts[1] = bid
+                                            # parts[2] = ask
+                                            # parts[3] = last (this is what we want)
+                                            # parts[4] = volume
+                                            if len(parts) >= 4:
+                                                price = float(parts[3].strip())  # Last price
+                                                volume = int(float(parts[4].strip())) if len(parts) > 4 and parts[4].strip() else 1
+                                                if line_num <= 5:
+                                                    print(f"[DOWNLOAD_TICK] Debug: Parsed tick - time={tick_time}, price={price}, volume={volume}")
+                                            else:
+                                                # Fallback to first price if structure is different
+                                                price = float(parts[1].strip())
+                                                volume = int(float(parts[2].strip())) if len(parts) > 2 and parts[2].strip() else 1
+                                                if line_num <= 5:
+                                                    print(f"[DOWNLOAD_TICK] Debug: Using fallback - price={price}, volume={volume}")
+                                        elif len(date_parts) == 2:
+                                            # Format: yyyyMMdd HHmmss;price;volume (simple format)
+                                            tick_time = datetime.strptime(date_time_str, "%Y%m%d %H%M%S")
+                                            price = float(parts[1].strip())
+                                            volume = int(float(parts[2].strip())) if len(parts) > 2 and parts[2].strip() else 1
+                                        else:
+                                            raise ValueError("Unexpected date format")
+                                    elif len(date_time_str) == 14:
+                                        # Format: yyyyMMddHHmmss (no space)
+                                        tick_time = datetime.strptime(date_time_str, "%Y%m%d%H%M%S")
+                                        price = float(parts[1].strip())
+                                        volume = int(float(parts[2].strip())) if len(parts) > 2 and parts[2].strip() else 1
+                                    else:
+                                        # Try as Unix timestamp
+                                        tick_time = datetime.fromtimestamp(float(date_time_str))
+                                        price = float(parts[1].strip())
+                                        volume = int(float(parts[2].strip())) if len(parts) > 2 and parts[2].strip() else 1
+                                except (ValueError, IndexError) as e:
+                                    # Skip this line, try comma format below
+                                    if line_num <= 10:  # Log first few errors
+                                        print(f"[DOWNLOAD_TICK] Parse error on line {line_num}: {e}, line: {line[:60]}")
+                                        import traceback
+                                        traceback.print_exc()
+                                    parse_errors += 1
+                                    if len(sample_parse_errors) < 5:
+                                        sample_parse_errors.append(f"Line {line_num}: {str(e)} - {line[:60]}")
+                                    pass
+                        
+                        # Try comma-separated format
+                        if tick_time is None and ',' in line:
+                            parts = line.split(',')
+                            if len(parts) >= 2:
+                                try:
+                                    if ' ' in parts[0] and len(parts[0].strip()) >= 15:
+                                        # Format: yyyyMMdd HHmmss,price,volume
+                                        tick_time = datetime.strptime(parts[0].strip(), "%Y%m%d %H%M%S")
+                                        price = float(parts[1].strip())
+                                        volume = int(float(parts[2].strip())) if len(parts) > 2 and parts[2].strip() else 1
+                                    else:
+                                        # Unix timestamp format
+                                        tick_time = datetime.fromtimestamp(float(parts[0].strip()))
+                                        price = float(parts[1].strip())
+                                        volume = int(float(parts[2].strip())) if len(parts) > 2 and parts[2].strip() else 1
+                                except (ValueError, IndexError):
+                                    pass
+                        
+                        # Try space-separated format
+                        if tick_time is None:
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                try:
+                                    if len(parts) >= 3 and ' ' in f"{parts[0]} {parts[1]}":
+                                        # Format: yyyyMMdd HHmmss price volume
+                                        tick_time = datetime.strptime(f"{parts[0]} {parts[1]}", "%Y%m%d %H%M%S")
+                                        price = float(parts[2])
+                                        volume = int(float(parts[3])) if len(parts) > 3 else 1
+                                    else:
+                                        # Unix timestamp
+                                        tick_time = datetime.fromtimestamp(float(parts[0]))
+                                        price = float(parts[1])
+                                        volume = int(float(parts[2])) if len(parts) > 2 else 1
+                                except (ValueError, IndexError):
+                                    pass
+                        
+                        # If we successfully parsed the line
+                        if tick_time is not None and price is not None:
+                            # Filter by date range
+                            if start_dt and tick_time < start_dt:
+                                continue
+                            if end_dt and tick_time > end_dt:
+                                continue
+                            
+                            tick_data.append({
+                                'timestamp': tick_time.isoformat(),
+                                'price': price,
+                                'volume': volume
+                            })
+                            
+                            # Limit results if max_ticks parameter is specified
+                            if max_ticks_limit and len(tick_data) >= max_ticks_limit:
+                                print(f"[DOWNLOAD_TICK] Reached max_ticks limit ({max_ticks_limit}), stopping read")
+                                break
+                        
+                        # If parsing failed, skip the line silently (we already tried all formats)
+                        if tick_time is None:
+                            parse_errors += 1
+                            if len(sample_parse_errors) < 5:
+                                sample_parse_errors.append(f"Line {line_num}: {line[:60]}")
+                
+                print(f"[DOWNLOAD_TICK] Finished reading file. Total lines: {lines_read:,}, Valid ticks: {len(tick_data):,}, Parse errors: {parse_errors:,}, Skipped: {lines_skipped:,}")
+                if parse_errors > 0 and len(tick_data) == 0:
+                    print(f"[DOWNLOAD_TICK] WARNING: All lines failed to parse. Sample errors:")
+                    for err in sample_parse_errors:
+                        print(f"  {err}")
+                
+                # If we found data, break (use first file that has data)
+                if tick_data:
+                    break
+            except Exception as e:
+                print(f"[DOWNLOAD_TICK] Error reading {file_path}: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        # If no data was parsed, provide helpful error message
+        if not tick_data:
+            # Check if we tried to read text files
+            if text_files:
+                # We found text files but couldn't parse them
+                # Try to read a sample line to show the format
+                sample_line = None
+                if text_files:
+                    try:
+                        with open(text_files[0], 'r', encoding='utf-8', errors='ignore') as f:
+                            for i, line in enumerate(f):
+                                if i >= 5:  # Get a few sample lines
+                                    break
+                                line = line.strip()
+                                if line and not line.startswith('#'):
+                                    sample_line = line[:100]  # First 100 chars
+                                    break
+                    except:
+                        pass
+                
+                return JSONResponse({
+                    'error': 'No tick data parsed',
+                    'message': f'Found text file(s) but could not parse any tick data. This might indicate a format issue.',
+                    'text_files_found': text_files,
+                    'sample_line': sample_line,
+                    'suggestion': 'Please check the file format. Expected formats:\n'
+                                  '- yyyyMMdd HHmmss;price;volume (semicolon-separated)\n'
+                                  '- yyyyMMdd HHmmss,price,volume (comma-separated)\n'
+                                  '- Unix timestamp,price,volume'
+                }, status_code=400)
+            
+            # Check for .ncd files
+            if ncd_files:
+                # .ncd files are NinjaTrader's proprietary binary format
+                # Check if there are exported CSV files in the tick_export directory
+                export_dir = os.path.join(db_path, "tick_export")
+                exported_files = []
+                if os.path.exists(export_dir):
+                    try:
+                        for file in os.listdir(export_dir):
+                            if file.startswith(instrument.replace(" ", "_").replace("/", "-")) and file.endswith('.csv'):
+                                exported_files.append(os.path.join(export_dir, file))
+                    except:
+                        pass
+                
+                if exported_files:
+                    # Use exported CSV files instead
+                    tick_files = exported_files
+                    # Continue to read from CSV files (code below will handle this)
+                else:
+                    # .ncd files are NinjaTrader's proprietary binary format
+                    # We cannot read them directly without NinjaTrader's API
+                    return JSONResponse({
+                        'error': 'Tick data in binary format (.ncd)',
+                        'message': f'Found {len(ncd_files)} .ncd files for {instrument}, but these are NinjaTrader\'s proprietary binary format and cannot be read directly.',
+                        'files_found': ncd_files[:10],  # Show first 10 files
+                        'total_ncd_files': len(ncd_files),
+                        'export_directory': export_dir,
+                        'suggestion': 'To export tick data from .ncd files, you can:\n'
+                                      '1. Use the TickDataExporter AddOn in NinjaTrader to export data to CSV format\n'
+                                      '2. Use NinjaTrader\'s Historical Data Manager to export data to CSV/text format\n'
+                                      '3. The exported CSV files will be automatically detected in the tick_export directory'
+                    }, status_code=400)
+            
+            # No files found at all
+            return JSONResponse({
+                'error': 'No tick data found',
+                'message': f'No tick data found for {instrument} in the specified date range.',
+                'files_checked': tick_files,
+                'text_files': text_files,
+                'ncd_files': ncd_files[:10] if ncd_files else []
+            }, status_code=404)
+        
+        # Return data in requested format
+        if format.lower() == 'json':
+            return JSONResponse({
+                'instrument': instrument,
+                'count': len(tick_data),
+                'start_date': start_date,
+                'end_date': end_date,
+                'data': tick_data
+            })
+        else:
+            # CSV format
+            output = io.StringIO()
+            writer = csv.DictWriter(output, fieldnames=['timestamp', 'price', 'volume'])
+            writer.writeheader()
+            for tick in tick_data:
+                writer.writerow(tick)
+            output.seek(0)
+            
+            filename = f"{instrument_clean}_tick_data_{start_date or 'all'}_{end_date or 'all'}.csv"
+            return StreamingResponse(
+                iter([output.getvalue()]),
+                media_type="text/csv",
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+    
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f'[DOWNLOAD_TICK_DATA] Error: {ex}\n{error_trace}')
+        return JSONResponse({
+            'error': str(ex),
+            'trace': error_trace
+        }, status_code=500)
+
+@app.get('/api/data/find-db-path')
+async def find_db_path_diagnostic():
+    """
+    Diagnostic endpoint to help find the NinjaTrader database directory.
+    Returns information about paths checked and suggestions.
+    """
+    try:
+        # Try to find the path
+        db_path = find_ninjatrader_db_directory()
+        
+        # Get all paths we checked
+        checked_paths = []
+        
+        # Workspace-derived path
+        try:
+            current_file = __file__
+            current_dir = os.path.dirname(current_file)
+            web_dir = os.path.dirname(current_dir)
+            custom_dir = os.path.dirname(web_dir)
+            bin_dir = os.path.dirname(custom_dir)
+            nt8_dir = os.path.dirname(bin_dir)
+            derived_path = os.path.join(nt8_dir, "db")
+            derived_path = os.path.normpath(derived_path)
+            checked_paths.append({
+                'path': derived_path,
+                'exists': os.path.exists(derived_path),
+                'type': 'workspace-derived'
+            })
+        except Exception as e:
+            checked_paths.append({
+                'path': 'error',
+                'exists': False,
+                'type': 'workspace-derived',
+                'error': str(e)
+            })
+        
+        # Other common paths
+        other_paths = [
+            os.path.join(os.path.expanduser("~"), "Documents", "NinjaTrader 8", "db"),
+            os.path.join(os.environ.get('USERPROFILE', ''), "Documents", "NinjaTrader 8", "db") if os.environ.get('USERPROFILE') else None,
+            "C:/Users/Public/Documents/NinjaTrader 8/db",
+            "/Users/mm/Documents/NinjaTrader 8/db",
+            "/Home/Documents/NinjaTrader 8/db",
+        ]
+        
+        for path in other_paths:
+            if path:
+                checked_paths.append({
+                    'path': path,
+                    'exists': os.path.exists(path),
+                    'type': 'common-path'
+                })
+        
+        # Check if any parent directories exist
+        parent_info = []
+        try:
+            current_file = __file__
+            current_dir = os.path.dirname(current_file)
+            web_dir = os.path.dirname(current_dir)
+            custom_dir = os.path.dirname(web_dir)
+            bin_dir = os.path.dirname(custom_dir)
+            nt8_dir = os.path.dirname(bin_dir)
+            
+            parent_info = [
+                {'name': 'web/dashboard', 'path': current_dir, 'exists': os.path.exists(current_dir)},
+                {'name': 'web', 'path': web_dir, 'exists': os.path.exists(web_dir)},
+                {'name': 'Custom', 'path': custom_dir, 'exists': os.path.exists(custom_dir)},
+                {'name': 'bin', 'path': bin_dir, 'exists': os.path.exists(bin_dir)},
+                {'name': 'NinjaTrader 8', 'path': nt8_dir, 'exists': os.path.exists(nt8_dir)},
+            ]
+        except:
+            pass
+        
+        return JSONResponse({
+            'found': db_path is not None,
+            'db_path': db_path,
+            'checked_paths': checked_paths,
+            'parent_directories': parent_info,
+            'suggestion': 'If no path was found, check your NinjaTrader installation directory. The db folder should be at: [NinjaTrader 8 Installation]/db'
+        })
+    except Exception as ex:
+        import traceback
+        return JSONResponse({
+            'error': str(ex),
+            'trace': traceback.format_exc()
+        }, status_code=500)
+
+@app.get('/api/data/list-instruments')
+async def list_available_instruments(
+    db_path_override: Optional[str] = Query(None, description="Override database path (optional)")
+):
+    """
+    List available instruments with tick data in NinjaTrader's database.
+    """
+    try:
+        # Find database path
+        if db_path_override:
+            db_path = db_path_override
+            if not os.path.exists(db_path):
+                return JSONResponse({
+                    'error': 'Specified database path does not exist',
+                    'path': db_path
+                }, status_code=404)
+        else:
+            db_path = find_ninjatrader_db_directory()
+            if db_path is None:
+                return JSONResponse({
+                    'error': 'NinjaTrader database directory not found',
+                    'message': 'Use db_path_override parameter to specify the path manually.',
+                    'suggestion': 'The database is typically located at: [Your Documents]/NinjaTrader 8/db'
+                }, status_code=404)
+        
+        instruments = set()
+        
+        # Check tick directory
+        tick_dir = os.path.join(db_path, "tick")
+        if os.path.exists(tick_dir):
+            for file in os.listdir(tick_dir):
+                # Extract instrument name from filename
+                # Format: "MNQ 03-26.Last.txt" -> "MNQ 03-26"
+                name = file.replace('.Last.txt', '').replace('.txt', '').replace('_', ' ')
+                if name:
+                    instruments.add(name)
+        
+        # Also check root directory
+        if os.path.exists(db_path):
+            for file in os.listdir(db_path):
+                if file.endswith(('.Last', '.txt', '.csv')):
+                    name = file.replace('.Last', '').replace('.txt', '').replace('.csv', '').replace('_', ' ')
+                    if name and not name.startswith('.'):
+                        instruments.add(name)
+        
+        return JSONResponse({
+            'db_path': db_path,
+            'instruments': sorted(list(instruments)),
+            'count': len(instruments)
+        })
+    
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f'[LIST_INSTRUMENTS] Error: {ex}\n{error_trace}')
+        return JSONResponse({
+            'error': str(ex),
+            'trace': error_trace
+        }, status_code=500)
+
+@app.on_event("startup")
+async def startup_event():
+    """Run migrations and initialization on server startup."""
+    try:
+        # Run volatility database migration
+        try:
+            from migrate_volatility_db import migrate_volatility_db
+            migrate_volatility_db()
+        except ImportError:
+            print('[STARTUP] Migration module not found, skipping')
+        except Exception as mig_ex:
+            print(f'[STARTUP] Migration warning: {mig_ex}')
+    except Exception as ex:
+        print(f'[STARTUP] Startup event error: {ex}')
+        # Don't fail startup if migration fails - might be first run or other issue
 
 if __name__ == '__main__':
     import uvicorn

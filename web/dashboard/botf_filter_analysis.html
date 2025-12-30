@@ -18,8 +18,8 @@
         .pnl-neg { color: #ef4444; font-weight: 700; }
         .muted { color: #9ca3af; font-size: 13px; }
         .badge { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; }
-        .badge-long { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.35); }
-        .badge-short { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.35); }
+        .badge-long { background: rgba(16,185,129,0.15); color: #10b981 !important; border: 1px solid rgba(16,185,129,0.35); }
+        .badge-short { background: rgba(239,68,68,0.15); color: #ef4444 !important; border: 1px solid rgba(239,68,68,0.35); }
         .table-wrapper { max-height: 70vh; overflow-x: auto; overflow-y: auto; border: 1px solid #1f2937; border-radius: 8px; position: relative; }
         thead th { position: sticky; top: 0; z-index: 10; background: #1f2937; box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.4); }
         .candle-good { color: #10b981; font-weight: 700; }
@@ -36,12 +36,18 @@
         .sortable:hover { background: #2d3748; }
         .sort-indicator { margin-left: 4px; color: #60a5fa; font-size: 11px; }
         .has-filter { }
+        /* Simple direction color rule */
+        table#table tbody td span.direction-long { color: #10b981 !important; }
+        table#table tbody td span.direction-short { color: #ef4444 !important; }
     </style>
 </head>
 <body>
     <h1>BarsOnTheFlow - Filter Analysis</h1>
     <div class="card">
         <div class="row">
+            <label><strong>Load Data</strong></label>
+            <button id="loadFromDbBtn" style="padding:6px 12px; background:#1e40af; color:#fff; border:none; border-radius:4px; cursor:pointer;">Load from Trades Table</button>
+            <span class="muted">|</span>
             <label><strong>Load CSV (BarsOnTheFlow log)</strong></label>
             <input type="file" id="fileInput" accept=".csv,.json" multiple />
             <span class="muted">Upload CSV log file. Optional: also upload the matching _params.json file to see strategy parameters.</span>
@@ -178,6 +184,13 @@
                             <option value="all">All</option>
                         </select>
                     </th>
+                    <th>EMA Crossover Filter</th>
+                    <th>EMA Fast Period</th>
+                    <th>EMA Slow Period</th>
+                    <th>EMA Window Bars</th>
+                    <th>Require Crossover</th>
+                    <th>EMA Fast Value</th>
+                    <th>EMA Slow Value</th>
                 </tr>
             </thead>
             <tbody id="tbody"></tbody>
@@ -190,6 +203,7 @@ const fileInput = document.getElementById('fileInput');
 const tbody = document.getElementById('tbody');
 const table = document.getElementById('table');
 const summary = document.getElementById('summary');
+const loadFromDbBtn = document.getElementById('loadFromDbBtn');
 const restoreBtn = document.getElementById('restoreBtn');
 const clearBtn = document.getElementById('clearBtn');
 const pnlFilter = document.getElementById('pnlFilter');
@@ -268,6 +282,7 @@ fileInput.addEventListener('change', (ev) => {
     }
 });
 
+loadFromDbBtn.addEventListener('click', loadFromDatabase);
 restoreBtn.addEventListener('click', restoreFromStorage);
 clearBtn.addEventListener('click', () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -337,6 +352,93 @@ function updateSortIndicators() {
     }
 }
 
+async function loadFromDatabase() {
+    try {
+        summary.textContent = 'Loading trades from database...';
+        loadFromDbBtn.disabled = true;
+        
+        // Fetch trades from API
+        const response = await fetch('/api/databases/table-data?database_name=dashboard.db&table_name=trades&limit=10000');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.rows || data.rows.length === 0) {
+            summary.textContent = 'No trades found in database.';
+            loadFromDbBtn.disabled = false;
+            return;
+        }
+        
+        // Transform trades table data to match CSV format
+        const trades = [];
+        data.rows.forEach((row, index) => {
+            // Map database columns to trade object
+            const direction = (row.direction || 'LONG').toUpperCase();
+            const entryBar = row.entry_bar || 0;
+            const exitBar = row.exit_bar || 0;
+            const barsHeld = row.bars_held || (exitBar - entryBar + 1);
+            
+            // Convert entry_time timestamp to string
+            let timeStart = '';
+            if (row.entry_time) {
+                const date = new Date(row.entry_time * 1000);
+                timeStart = date.toISOString().replace('T', ' ').substring(0, 19);
+            }
+            
+            // Calculate PnL from realized_points (points * 5 for MNQ contract multiplier)
+            const pnl = row.realized_points ? row.realized_points * 5 : 0;
+            
+            trades.push({
+                tradeNumber: index + 1,
+                duration: barsHeld,
+                direction: direction,
+                barStart: entryBar,
+                timeStart: timeStart,
+                barEnd: exitBar,
+                pnl: pnl,
+                entryPrice: row.entry_price || 0,
+                exitPrice: row.exit_price || 0,
+                // Exit bar OHLC and other data from trades table
+                openF: row.open_final !== null && row.open_final !== undefined ? parseFloat(row.open_final) : NaN,
+                highF: row.high_final !== null && row.high_final !== undefined ? parseFloat(row.high_final) : NaN,
+                lowF: row.low_final !== null && row.low_final !== undefined ? parseFloat(row.low_final) : NaN,
+                closeF: row.close_final !== null && row.close_final !== undefined ? parseFloat(row.close_final) : NaN,
+                fastEma: row.fast_ema !== null && row.fast_ema !== undefined ? parseFloat(row.fast_ema) : NaN,
+                fastEmaGradDeg: row.fast_ema_grad_deg !== null && row.fast_ema_grad_deg !== undefined ? parseFloat(row.fast_ema_grad_deg) : NaN,
+                candleType: row.candle_type || '',
+                barPattern: row.bar_pattern || '',
+                // EMA crossover filter fields
+                useEmaCrossover: row.ema_fast_period ? true : false,
+                emaFastPeriod: row.ema_fast_period || 0,
+                emaSlowPeriod: row.ema_slow_period || 0,
+                emaWindowBars: 0, // Not stored in trades table
+                emaRequireCrossover: false, // Not stored in trades table
+                emaFastValue: row.ema_fast_value !== null && row.ema_fast_value !== undefined ? parseFloat(row.ema_fast_value) : NaN,
+                emaSlowValue: row.ema_slow_value !== null && row.ema_slow_value !== undefined ? parseFloat(row.ema_slow_value) : NaN,
+            });
+        });
+        
+        currentTrades = trades;
+        currentName = 'Trades Table (Database)';
+        
+        // Populate bar pattern filter dropdown (will be empty since we don't have bar patterns)
+        if (barPatternFilter) {
+            barPatternFilter.innerHTML = '<option value="all">All</option>';
+        }
+        
+        applyView();
+        persistState();
+        summary.textContent = `Loaded ${trades.length} trades from database.`;
+        loadFromDbBtn.disabled = false;
+    } catch (error) {
+        console.error('Error loading from database:', error);
+        summary.textContent = `Error loading from database: ${error.message}`;
+        loadFromDbBtn.disabled = false;
+    }
+}
+
 function processCsv(text, name) {
     const allLines = text.trim().split(/\r?\n/);
     
@@ -371,6 +473,13 @@ function processCsv(text, name) {
     const iGradDeg = idx('fastEmaGradDeg');
     const iCandle = idx('candleType');
     const iBarPattern = idx('barPattern');
+    const iUseEmaCrossover = idx('useEmaCrossoverFilter');
+    const iEmaFastPeriod = idx('emaFastPeriod');
+    const iEmaSlowPeriod = idx('emaSlowPeriod');
+    const iEmaWindowBars = idx('emaCrossoverWindowBars');
+    const iEmaRequireCrossover = idx('emaCrossoverRequireCrossover');
+    const iEmaFastValue = idx('emaFastValue');
+    const iEmaSlowValue = idx('emaSlowValue');
     if ([iTs,iBar,iAct,iName,iPrice].some(i => i === -1)) {
         summary.textContent = 'Missing required columns in CSV.';
         table.style.display = 'none';
@@ -442,6 +551,13 @@ function processCsv(text, name) {
             const fastEma = iEma >= 0 ? parseFloat(parts[iEma] || 'NaN') : NaN;
             const fastEmaGradDeg = iGradDeg >= 0 ? parseFloat(parts[iGradDeg] || 'NaN') : NaN;
             const candleType = iCandle >= 0 && parts[iCandle] ? parts[iCandle].trim() : '';
+            const useEmaCrossover = iUseEmaCrossover >= 0 && parts[iUseEmaCrossover] ? parts[iUseEmaCrossover].trim().toLowerCase() === 'true' : false;
+            const emaFastPeriod = iEmaFastPeriod >= 0 ? parseInt(parts[iEmaFastPeriod] || '0') : 0;
+            const emaSlowPeriod = iEmaSlowPeriod >= 0 ? parseInt(parts[iEmaSlowPeriod] || '0') : 0;
+            const emaWindowBars = iEmaWindowBars >= 0 ? parseInt(parts[iEmaWindowBars] || '0') : 0;
+            const emaRequireCrossover = iEmaRequireCrossover >= 0 && parts[iEmaRequireCrossover] ? parts[iEmaRequireCrossover].trim().toLowerCase() === 'true' : false;
+            const emaFastValue = iEmaFastValue >= 0 ? parseFloat(parts[iEmaFastValue] || 'NaN') : NaN;
+            const emaSlowValue = iEmaSlowValue >= 0 ? parseFloat(parts[iEmaSlowValue] || 'NaN') : NaN;
             
             // LONG exits: BarsOnTheFlowExit, BarsOnTheFlowRetrace
             // SHORT exits: Buy to cover, BarsOnTheFlowExitS, BarsOnTheFlowRetraceS
@@ -468,6 +584,13 @@ function processCsv(text, name) {
                     fastEmaGradDeg,
                     candleType: entry.candleType,
                     barPattern: entry.barPattern,
+                    useEmaCrossover,
+                    emaFastPeriod,
+                    emaSlowPeriod,
+                    emaWindowBars,
+                    emaRequireCrossover,
+                    emaFastValue,
+                    emaSlowValue,
                 });
                 currentPosition = 'FLAT';
             } else if (isExitShort && entriesShort.length) {
@@ -489,6 +612,13 @@ function processCsv(text, name) {
                     fastEmaGradDeg,
                     candleType: entry.candleType,
                     barPattern: entry.barPattern,
+                    useEmaCrossover,
+                    emaFastPeriod,
+                    emaSlowPeriod,
+                    emaWindowBars,
+                    emaRequireCrossover,
+                    emaFastValue,
+                    emaSlowValue,
                 });
                 currentPosition = 'FLAT';
             }
@@ -697,7 +827,7 @@ function renderTrades(trades, name) {
             <td>${t.tradeNumber || ''}</td>
             <td>${t.duration || ''}</td>
             <td>${t.timeStart}</td>
-            <td><span class="badge ${t.direction === 'LONG' ? 'badge-long' : 'badge-short'}">${t.direction}</span></td>
+            <td><span class="${t.direction === 'LONG' ? 'direction-long' : 'direction-short'}" style="color: ${t.direction === 'LONG' ? '#10b981' : '#ef4444'}; font-weight: 700; display: inline-block;">${t.direction}</span></td>
             <td>${t.barStart}</td>
             <td>${t.barEnd || ''}</td>
             <td class="${cClass}">${cType}</td>
@@ -709,6 +839,13 @@ function renderTrades(trades, name) {
             <td>${Number.isFinite(t.fastEmaGradDeg) ? t.fastEmaGradDeg.toFixed(2) : ''}</td>
             <td class="${pnlClass}">${isNaN(t.pnl) ? '' : t.pnl.toFixed(2)}</td>
             <td>${barPatternHtml}</td>
+            <td>${t.useEmaCrossover ? '✓' : '✗'}</td>
+            <td>${t.emaFastPeriod || ''}</td>
+            <td>${t.emaSlowPeriod || ''}</td>
+            <td>${t.emaWindowBars || ''}</td>
+            <td>${t.emaRequireCrossover ? '✓' : '✗'}</td>
+            <td>${Number.isFinite(t.emaFastValue) ? t.emaFastValue.toFixed(4) : ''}</td>
+            <td>${Number.isFinite(t.emaSlowValue) ? t.emaSlowValue.toFixed(4) : ''}</td>
         `;
         tbody.appendChild(tr);
     });

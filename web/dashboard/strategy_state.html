@@ -324,7 +324,14 @@ function formatCandleType(open, close) {
 
 async function fetchState() {
   try {
-    const response = await fetch(`${API_BASE}/strategy/state?strategy=BarsOnTheFlow`);
+    // Add cache-busting timestamp
+    const response = await fetch(`${API_BASE}/strategy/state?strategy=BarsOnTheFlow&_t=${Date.now()}`, {
+      cache: 'no-cache',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache'
+      }
+    });
     if (!response.ok) {
       if (response.status === 404) {
         document.getElementById('lastUpdate').textContent = 'No state cached yet';

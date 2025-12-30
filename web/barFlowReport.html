@@ -452,7 +452,7 @@
 
             // Get trend detection settings (new flexible system)
             const trendLookbackBars = strategyParams?.TrendLookbackBars || 5;
-            const minConsecutiveBars = strategyParams?.MinConsecutiveBars || 3;
+            const minConsecutiveBars = strategyParams?.MinMatchingBars || 4;
             const usePnlTiebreaker = strategyParams?.UsePnLTiebreaker || false;
             
             // Build trend explanation text based on new system
