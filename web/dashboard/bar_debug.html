@@ -340,25 +340,40 @@
                 
                 const barsData = await barsResponse.json();
                 
+                // Debug logging
+                console.log('[BAR_DEBUG] API Response:', {
+                    hasRows: !!barsData.rows,
+                    rowsLength: barsData.rows ? barsData.rows.length : 0,
+                    totalRows: barsData.total_rows,
+                    keys: Object.keys(barsData)
+                });
+                
                 // API returns: {rows: [...], columns: [...], total_rows: ...}
                 if (barsData.rows && Array.isArray(barsData.rows)) {
                     allBars = barsData.rows;
+                    console.log('[BAR_DEBUG] Loaded', allBars.length, 'bars from rows array');
                 } else if (barsData.error) {
                     throw new Error(barsData.error);
                 } else if (barsData.success && barsData.data) {
                     allBars = barsData.data;
+                    console.log('[BAR_DEBUG] Loaded', allBars.length, 'bars from data array');
                 } else if (Array.isArray(barsData)) {
                     allBars = barsData;
+                    console.log('[BAR_DEBUG] Loaded', allBars.length, 'bars from direct array');
                 } else {
+                    console.error('[BAR_DEBUG] Unexpected format:', barsData);
                     throw new Error('Unexpected response format. Expected "rows" array. Got: ' + Object.keys(barsData).join(', '));
                 }
                 
                 if (allBars.length === 0) {
+                    console.warn('[BAR_DEBUG] No bars found after parsing');
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('error').style.display = 'block';
                     document.getElementById('error').textContent = 'No bar data found. Make sure the strategy is running and recording bar samples.';
                     return;
                 }
+                
+                console.log('[BAR_DEBUG] Successfully loaded', allBars.length, 'bars. Sample bar:', allBars[0]);
                 
                 // Load trades if available
                 if (tradesResponse.ok) {
@@ -402,7 +417,7 @@
                     }
                 }
                 
-                allBars.sort((a, b) => (a.bar_index || 0) - (b.bar_index || 0));
+                allBars.sort((a, b) => (b.bar_index || 0) - (a.bar_index || 0));
                 applyFilters();
                 updateStats();
             } catch (error) {

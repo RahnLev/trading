@@ -10,6 +10,7 @@ using System.Net;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics; // For Process to run Python
 using NinjaTrader.Cbi;
 using NinjaTrader.Gui.Chart;
 using NinjaTrader.NinjaScript;
@@ -150,6 +151,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int EmaCrossoverCooldownBars { get; set; } = 0; // Cooldown bars after crossover
 
         [NinjaScriptProperty]
+        [Display(Name = "Require Body Below/Above Fast EMA", Order = 8, GroupName = "EMA Crossover Filter", Description = "When enabled, requires the entire candle body (Open to Close) to be below Fast EMA for shorts or above Fast EMA for longs. When disabled, only the Close price needs to meet the condition. This filters out weak signals where the close meets the condition but the body extends past the EMA.")]
+        public bool EmaCrossoverRequireBodyBelow { get; set; } = false; // require whole body below/above Fast EMA
+
+        [NinjaScriptProperty]
         [Display(Name = "GradientFilterEnabled", Order = 1, GroupName = "Fast EMA/Gradient")]
         public bool GradientFilterEnabled { get; set; } = false; // enable gradient-based entry filtering
 
@@ -178,6 +183,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "DashboardAsyncHistorical", Order = 3, GroupName = "Database/Dashboard", Description = "If true, dashboard posts run async even during historical playback (faster but may miss late bars). If false, historical runs sync (slower but complete).")]
         public bool DashboardAsyncHistorical { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "RecordBarSamplesInHistorical", Order = 4, GroupName = "Database/Dashboard", Description = "If true, record bar samples to database during historical playback (for debugging). WARNING: May cause timeouts with large datasets. Use only when debugging specific bars.")]
+        public bool RecordBarSamplesInHistorical { get; set; } = false; // enable bar sample recording during historical playback
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "BarSampleDelayMs", Order = 5, GroupName = "Database/Dashboard", Description = "Milliseconds delay between bar sample requests during historical playback to prevent server overload (0 = no delay, 50 = recommended).")]
+        public int BarSampleDelayMs { get; set; } = 50; // delay in milliseconds between requests during historical
 
         [NinjaScriptProperty]
         [Range(0, 60)]
@@ -249,9 +263,38 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Display(Name = "UseEmaTrailingStop", Order = 10, GroupName = "Stop Loss", Description = "When enabled, stop loss follows Fast EMA value. For longs: stop = Fast EMA (only moves up). For shorts: stop = Fast EMA (only moves down). When enabled, this OVERRIDES UseTrailingStop, UseDynamicStopLoss, StopLossPoints, and UseBreakEven.")]
         public bool UseEmaTrailingStop { get; set; } = false; // use Fast EMA as trailing stop loss
 
+        /// <summary>
+        /// Enum for EMA stop loss trigger mode
+        /// </summary>
+        public enum EmaStopTriggerModeType
+        {
+            FullCandle,  // Entire candle (High to Low) must be below/above stop
+            BodyOnly,    // Only the candle body (Open to Close, excluding wicks) must be below/above stop
+            CloseOnly    // Only the close price needs to be below/above stop
+        }
+
         [NinjaScriptProperty]
-        [Display(Name = "EmaStopRequireFullCandleBelow", Order = 11, GroupName = "Stop Loss", Description = "When enabled with UseEmaTrailingStop, stop loss only triggers if the entire completed candle range (High to Low) is below (for longs) or above (for shorts) the Fast EMA stop loss. Checked on bar close.")]
-        public bool EmaStopRequireFullCandleBelow { get; set; } = false; // require entire candle range to be below/above stop loss
+        [Display(Name = "EmaStopTriggerMode", Order = 11, GroupName = "Stop Loss", Description = "How the EMA trailing stop triggers: FullCandle = entire candle range (High to Low) must be below/above stop, BodyOnly = only the candle body (Open to Close, excluding wicks) must be below/above stop, CloseOnly = only the close price needs to be below/above stop. Checked on bar close. NOTE: This parameter only applies when UseEmaTrailingStop is enabled. If UseEmaTrailingStop is disabled, this setting is ignored.")]
+        public EmaStopTriggerModeType EmaStopTriggerMode { get; set; } = EmaStopTriggerModeType.CloseOnly; // default to close only for more responsive exits. Only used when UseEmaTrailingStop is enabled.
+
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "Profit Protection Points", Order = 12, GroupName = "Stop Loss", Description = "When in profit by this many points, allow early exit on close crossing EMA (even if FullCandle/BodyOnly hasn't triggered). 0 = disabled. Helps preserve profits by exiting earlier when trade is profitable. Only applies when EmaStopTriggerMode is FullCandle or BodyOnly.")]
+        public double EmaStopProfitProtectionPoints { get; set; } = 0; // Profit threshold to enable early exit on close crossing EMA
+
+        [NinjaScriptProperty]
+        [Display(Name = "UseGradientStopLoss", Order = 13, GroupName = "Stop Loss", Description = "When enabled, exit position if gradient crosses into unfavorable territory. For longs: exit when gradient drops below ExitLongBelowGradient. For shorts: exit when gradient rises above ExitShortAboveGradient.")]
+        public bool UseGradientStopLoss { get; set; } = false; // exit based on gradient crossing threshold
+
+        [NinjaScriptProperty]
+        [Range(-90, 90)]
+        [Display(Name = "ExitLongBelowGradient", Order = 14, GroupName = "Stop Loss", Description = "Exit LONG position when gradient drops below this value (degrees). E.g., 0 = exit when gradient becomes negative, -10 = exit when gradient < -10°.")]
+        public double ExitLongBelowGradient { get; set; } = 0; // exit long when gradient < this value
+
+        [NinjaScriptProperty]
+        [Range(-90, 90)]
+        [Display(Name = "ExitShortAboveGradient", Order = 15, GroupName = "Stop Loss", Description = "Exit SHORT position when gradient rises above this value (degrees). E.g., 0 = exit when gradient becomes positive, 10 = exit when gradient > 10°.")]
+        public double ExitShortAboveGradient { get; set; } = 0; // exit short when gradient > this value
 
         [NinjaScriptProperty]
         [Display(Name = "EnableOpportunityLog", Order = 1, GroupName = "Logging/JSON")]
@@ -346,7 +389,16 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double currentTradeMAE = 0.0;   // Maximum Adverse Excursion
         private double currentTradeStopLossPoints = 0.0; // Track the stop loss distance that was set
         private string currentTradeEntryReason = ""; // Track all reasons/filters that applied when entering the trade
+        private string currentTradeExitReason = ""; // Track exit reason when trade exits
+        private int lastExitBarIndex = -1; // Track which bar the exit happened on
         private MarketPosition previousPosition = MarketPosition.Flat;
+        
+        // Reset exit reason when a new entry occurs
+        private void ResetExitReason()
+        {
+            currentTradeExitReason = "";
+            lastExitBarIndex = -1;
+        }
 
         private double lastFastEmaGradDeg = double.NaN;
         private Dictionary<int, double> gradientByBar = new Dictionary<int, double>(); // Store gradient per bar for accurate logging
@@ -365,6 +417,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (State == State.SetDefaults)
             {
+                // Initialize cancellation token source
+                cancellationTokenSource = new System.Threading.CancellationTokenSource();
                 Name = "BarsOnTheFlow";
                 Calculate = Calculate.OnEachTick; // evaluate at first tick of new bar using the completed bar
                 IsOverlay = true; // draw labels and trend visuals on the price panel
@@ -384,10 +438,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 InitializeLog();
                 
-                // Clear tables on fresh run
+                // Clear tables on fresh run (called every time strategy starts/restarts)
+                // This ensures clean data for each run - old data from previous runs is cleared
+                // NOTE: Only clear on DataLoaded, NOT when transitioning to Realtime
                 ClearTradesTable();
                 ClearBarsTable();
-                ClearBarSamples();
+                ClearBarSamples(); // Clear bar_samples table - ensures debugging fields start fresh
                 
                 // Export strategy state for API queries
                 ExportStrategyState();
@@ -400,6 +456,29 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.Realtime)
             {
+                // Send ALL accumulated historical bar data in ONE batch request
+                // This avoids the problem of HTTP requests timing out during fast historical playback
+                int historicalBarCount = 0;
+                lock (historicalBarDataLock)
+                {
+                    historicalBarCount = historicalBarDataList.Count;
+                }
+                
+                Print($"[REALTIME_TRANSITION] Transitioned to real-time mode");
+                Print($"[REALTIME_TRANSITION] Accumulated {historicalBarCount} historical bars in memory");
+                
+                if (historicalBarCount > 0)
+                {
+                    Print($"[REALTIME_TRANSITION] Sending historical bar batch to server...");
+                    SendHistoricalBarBatch();
+                }
+                else
+                {
+                    Print($"[REALTIME_TRANSITION] No historical bars to send");
+                }
+                
+                Print($"[REALTIME_TRANSITION] Real-time bar recording will continue from here");
+                
                 // When transitioning to real-time, if trading is disabled, cancel any pending orders
                 if (DisableRealTimeTrading)
                 {
@@ -416,6 +495,38 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.Terminated)
             {
+                // Clear any accumulated historical bar data
+                lock (historicalBarDataLock)
+                {
+                    historicalBarDataList.Clear();
+                }
+                
+                // Cancel all pending HTTP requests
+                if (cancellationTokenSource != null)
+                {
+                    try
+                    {
+                        cancellationTokenSource.Cancel();
+                        cancellationTokenSource.Dispose();
+                    }
+                    catch { }
+                    cancellationTokenSource = null;
+                }
+                
+                // Dispose HttpClient to cancel pending requests
+                lock (clientLock)
+                {
+                    if (sharedClient != null)
+                {
+                    try
+                    {
+                            sharedClient.Dispose();
+                    }
+                    catch { }
+                        sharedClient = null;
+                    }
+                }
+                
                 if (logWriter != null)
                 {
                     try
@@ -470,6 +581,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool pendingExitLongOnGood;  // postpone long exit if next bar is good
         private bool pendingExitShortOnBad;  // postpone short exit if next bar is bad
         
+        // Deferred entry tracking - waits one bar to validate against the bar where entry will appear
+        private bool deferredLongEntry;       // long entry deferred to next bar for validation
+        private bool deferredShortEntry;      // short entry deferred to next bar for validation
+        private string deferredEntryReason;   // entry reason to use when executing deferred entry
+        
         // Mid-bar gradient entry tracking
         private bool waitingForLongGradient;  // all conditions met except gradient for long
         private bool waitingForShortGradient; // all conditions met except gradient for short
@@ -520,10 +636,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             // SECTION 3: BAR CLOSE PROCESSING
             // ====================================================================
             
-            // 3.1: Database Operations (state updates, bar samples)
-            ProcessDatabaseOperations();
-
-            // 3.2: Calculate market state (trends, gradients, etc.)
+            // 3.1: Calculate market state (trends, gradients, etc.) - DO THIS FIRST so RecordBarSample can use the values
             double prevOpen = Open[1];
             double prevClose = Close[1];
             RecordCompletedBar(prevOpen, prevClose);
@@ -556,20 +669,32 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool allowShortThisBar = !(AvoidShortsOnGoodCandle && prevGood);
             bool allowLongThisBar = !(AvoidLongsOnBadCandle && prevBad);
             
-            // Compute gradient
+            // Compute gradient using the bar that just closed ([1])
+            // This ensures the gradient reflects the EMA movement up to the bar that just closed
+            // NOTE: On bar 2408 (CurrentBar=2408), [1] refers to bar 2407 (the bar that just closed)
+            // The gradient calculation uses a lookback window ending at [1], so it reflects movement up to bar 2407
+            // However, for entry decisions, we want to know the gradient at the END of the bar that just closed
+            // So we calculate it here, and it will be used for decisions on the NEXT bar
             int gradWindow = Math.Max(2, FastGradLookbackBars);
-                        double regDeg;
-                        lastFastEmaSlope = ComputeFastEmaGradient(gradWindow, out regDeg);
+            double regDeg;
+            lastFastEmaSlope = ComputeFastEmaGradient(gradWindow, out regDeg);
 
-                        double chartDeg = double.NaN;
-                        if (UseChartScaledFastGradDeg)
-                        {
-                            chartDeg = ComputeChartScaledFastEmaDeg(gradWindow);
-                        }
+            double chartDeg = double.NaN;
+            if (UseChartScaledFastGradDeg)
+            {
+                chartDeg = ComputeChartScaledFastEmaDeg(gradWindow);
+            }
 
-                        lastFastEmaGradDeg = !double.IsNaN(chartDeg) ? chartDeg : regDeg;
-                        if (!double.IsNaN(lastFastEmaGradDeg))
-                            gradientByBar[CurrentBar] = lastFastEmaGradDeg;
+            lastFastEmaGradDeg = !double.IsNaN(chartDeg) ? chartDeg : regDeg;
+            if (!double.IsNaN(lastFastEmaGradDeg))
+                gradientByBar[CurrentBar] = lastFastEmaGradDeg;
+            
+            // Store gradient for the bar that just closed (for logging/debugging)
+            // On bar 2408, this stores the gradient for bar 2407
+            if (CurrentBar >= 1 && !double.IsNaN(lastFastEmaGradDeg))
+            {
+                gradientByBar[CurrentBar - 1] = lastFastEmaGradDeg;
+            }
 
             // Reset mid-bar gradient waiting flags at start of new bar
             waitingForLongGradient = false;
@@ -593,6 +718,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             
             bool placedEntry = ProcessTradingDecisions(prevOpen, prevClose, prevGood, prevBad, trendUp, trendDown, allowLongThisBar, allowShortThisBar);
+
+            // Store the final decision state for RecordBarSample (after ProcessTradingDecisions has updated pending flags)
+            lastTrendUp = trendUp;
+            lastTrendDown = trendDown;
+            lastAllowLongThisBar = allowLongThisBar;
+            lastAllowShortThisBar = allowShortThisBar;
+            lastPendingLongFromBad = pendingLongFromBad;
+            lastPendingShortFromGood = pendingShortFromGood;
+
+            // 3.3.1: Database Operations (state updates, bar samples) - DO THIS AFTER ProcessTradingDecisions
+            // so RecordBarSample captures the final decision state including entry reasons and updated pending flags
+            ProcessDatabaseOperations();
 
             // 3.4: Visualization (trend overlays, labels)
             UpdateVisualizations(trendUp, trendDown);
@@ -651,6 +788,91 @@ namespace NinjaTrader.NinjaScript.Strategies
             
             bool placedEntry = false;
             MarketPosition currentPos = Position.MarketPosition;
+            
+            // Reset intendedPosition if we're flat but intendedPosition is stuck from a previous unfilled entry
+            // This prevents blocking valid entries when a previous entry order didn't fill
+            if (Position.Quantity == 0 && intendedPosition != MarketPosition.Flat)
+            {
+                Print($"[INTENDED_POSITION_RESET] Bar {CurrentBar}: Resetting intendedPosition from {intendedPosition} to Flat (position is Flat, previous entry didn't fill)");
+                intendedPosition = MarketPosition.Flat;
+            }
+
+            // ====================================================================
+            // DEFERRED ENTRY VALIDATION
+            // Entries are deferred by one bar so we can validate using the bar where the entry will appear
+            // Now [1] is the bar that was forming when we made the decision - check if its close validates entry
+            // ====================================================================
+            if (deferredLongEntry && Position.Quantity == 0)
+            {
+                double closeOfDecisionBar = Close[1];
+                double fastEmaOfDecisionBar = emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1] : double.NaN;
+                
+                Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred LONG - Close[1]={closeOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
+                
+                bool closeBelowFastEma = !double.IsNaN(fastEmaOfDecisionBar) && closeOfDecisionBar < fastEmaOfDecisionBar;
+                
+                if (closeBelowFastEma)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: LONG entry BLOCKED - Close ({closeOfDecisionBar:F4}) < Fast EMA ({fastEmaOfDecisionBar:F4}) on the bar where entry would appear");
+                    deferredLongEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else
+                {
+                    Print($"[DEFERRED_ENTRY_EXECUTE] Bar {CurrentBar}: LONG entry VALIDATED - Close ({closeOfDecisionBar:F4}) >= Fast EMA ({fastEmaOfDecisionBar:F4}), executing entry");
+                    CaptureDecisionContext(Open[1], Close[1], allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                    currentTradeEntryReason = deferredEntryReason;
+                    ResetExitReason();
+                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (deferred, validated), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
+                    SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
+                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                    lastEntryBarIndex = CurrentBar;
+                    lastEntryDirection = MarketPosition.Long;
+                    intendedPosition = MarketPosition.Long;
+                    placedEntry = true;
+                    deferredLongEntry = false;
+                    deferredEntryReason = "";
+                    pendingLongFromBad = false;
+                    pendingShortFromGood = false;
+                }
+            }
+            
+            if (deferredShortEntry && Position.Quantity == 0)
+            {
+                double closeOfDecisionBar = Close[1];
+                double fastEmaOfDecisionBar = emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1] : double.NaN;
+                
+                Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred SHORT - Close[1]={closeOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
+                
+                bool closeAboveFastEma = !double.IsNaN(fastEmaOfDecisionBar) && closeOfDecisionBar > fastEmaOfDecisionBar;
+                
+                if (closeAboveFastEma)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: SHORT entry BLOCKED - Close ({closeOfDecisionBar:F4}) > Fast EMA ({fastEmaOfDecisionBar:F4}) on the bar where entry would appear");
+                    deferredShortEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else
+                {
+                    Print($"[DEFERRED_ENTRY_EXECUTE] Bar {CurrentBar}: SHORT entry VALIDATED - Close ({closeOfDecisionBar:F4}) <= Fast EMA ({fastEmaOfDecisionBar:F4}), executing entry");
+                    CaptureDecisionContext(Open[1], Close[1], allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                    currentTradeEntryReason = deferredEntryReason;
+                    ResetExitReason();
+                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (deferred, validated), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
+                    SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
+                    EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                    lastEntryBarIndex = CurrentBar;
+                    lastEntryDirection = MarketPosition.Short;
+                    intendedPosition = MarketPosition.Short;
+                    placedEntry = true;
+                    deferredShortEntry = false;
+                    deferredEntryReason = "";
+                    pendingLongFromBad = false;
+                    pendingShortFromGood = false;
+                }
+            }
 
             // ====================================================================
             // GUARD 1: Exit if entry bar closes opposite to position
@@ -665,10 +887,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 bool longExits = currentPos == MarketPosition.Long && entryBarWasBad;
                 bool shortExits = currentPos == MarketPosition.Short && entryBarWasGood;
 
+                Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitIfEntryBarOpposite check - lastEntryBarIndex={lastEntryBarIndex}, CurrentBar-1={CurrentBar - 1}, currentPos={currentPos}, entryBarWasGood={entryBarWasGood}, entryBarWasBad={entryBarWasBad}, longExits={longExits}, shortExits={shortExits}");
+
                 if (longExits)
                 {
                     Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitIfEntryBarOpposite triggering LONG exit - entry bar was BAD (O:{Open[1]:F2}, C:{Close[1]:F2})");
                     CaptureDecisionContext(Open[1], Close[1], true, true, trendUp, trendDown);
+                    currentTradeExitReason = "BarsOnTheFlowEntryBarOpp";
+                    lastExitBarIndex = CurrentBar;
                     ExitLong("BarsOnTheFlowEntryBarOpp", "BarsOnTheFlowLong");
                     intendedPosition = MarketPosition.Flat;
                     RecordExitForCooldown(MarketPosition.Long);
@@ -679,6 +905,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitIfEntryBarOpposite triggering SHORT exit - entry bar was GOOD (O:{Open[1]:F2}, C:{Close[1]:F2})");
                     CaptureDecisionContext(Open[1], Close[1], true, true, trendUp, trendDown);
+                    currentTradeExitReason = "BarsOnTheFlowEntryBarOppS";
+                    lastExitBarIndex = CurrentBar;
                     ExitShort("BarsOnTheFlowEntryBarOppS", "BarsOnTheFlowShort");
                     intendedPosition = MarketPosition.Flat;
                     RecordExitForCooldown(MarketPosition.Short);
@@ -712,7 +940,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         // Otherwise, set it directly
                         if (!UseEmaTrailingStop)
                         {
-                            SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
+                        SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
                             currentTradeStopLossPoints = BreakEvenOffset;
                         }
                         
@@ -727,7 +955,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         // Otherwise, set it directly
                         if (!UseEmaTrailingStop)
                         {
-                            SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
+                        SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
                             currentTradeStopLossPoints = BreakEvenOffset;
                         }
                         
@@ -789,13 +1017,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                         
                         // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
                         // Otherwise, set the stop loss normally
-                        if (!EmaStopRequireFullCandleBelow)
+                        if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
                         {
                             SetStopLoss(orderName, CalculationMode.Price, newStopLossPrice, false);
                         }
                         
                         currentTradeStopLossPoints = Math.Abs(Position.AveragePrice - newStopLossPrice);
-                        Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, BreakEvenFloor={breakEvenFloor:F4}, RequireFullCandleBelow={EmaStopRequireFullCandleBelow}");
+                        Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, BreakEvenFloor={breakEvenFloor:F4}, TriggerMode={EmaStopTriggerMode}");
                     }
                 }
                 else if (currentPos == MarketPosition.Short)
@@ -820,24 +1048,31 @@ namespace NinjaTrader.NinjaScript.Strategies
                         
                         // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
                         // Otherwise, set the stop loss normally
-                        if (!EmaStopRequireFullCandleBelow)
+                        if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
                         {
                             SetStopLoss(orderName, CalculationMode.Price, newStopLossPrice, false);
                         }
                         
                         currentTradeStopLossPoints = Math.Abs(Position.AveragePrice - newStopLossPrice);
-                        Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, BreakEvenCeiling={breakEvenCeiling:F4}, RequireFullCandleBelow={EmaStopRequireFullCandleBelow}");
+                        Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, BreakEvenCeiling={breakEvenCeiling:F4}, TriggerMode={EmaStopTriggerMode}");
                     }
                 }
             }
 
             // ====================================================================
-            // GUARD 4: EMA Stop Loss - Full Candle Range Check (Bar Close)
-            // Uses FINAL OHLC [1] - Checks if entire completed candle is below/above stop loss
-            // Only executes if EmaStopRequireFullCandleBelow is enabled
+            // GUARD 4: EMA Stop Loss - Bar Close Check (Both FullCandle and CloseOnly modes)
+            // Uses FINAL OHLC [1] - Checks if entire completed candle (FullCandle) or just close (CloseOnly) is below/above stop loss
+            // Executes for both modes: FullCandle checks entire candle, CloseOnly checks just close (as backup to SetStopLoss)
             // ====================================================================
-            if (UseEmaTrailingStop && EmaStopRequireFullCandleBelow && currentPos != MarketPosition.Flat && CurrentBar >= 1)
+            if (UseEmaTrailingStop && currentPos != MarketPosition.Flat && CurrentBar >= 1 && fastEma != null && CurrentBar >= FastEmaPeriod)
             {
+                // Use completed bar [1] for the check (matches the bar we're checking)
+                double completedBarHigh = High[1];
+                double completedBarLow = Low[1];
+                double completedBarClose = Close[1];
+                double completedBarFastEma = fastEma[1]; // Use completed bar's EMA to match the bar we're checking
+                bool shouldExit = false;
+                
                 // Determine the effective stop loss level (considering break-even floor/ceiling)
                 double effectiveStopLoss = double.NaN;
                 
@@ -857,64 +1092,218 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                 }
                 
-                // Use the higher of EMA stop or break-even floor (longs), or lower (shorts)
-                if (currentPos == MarketPosition.Long)
+                // For FullCandle mode: Use completed bar's EMA only (ignore break-even and currentEmaStopLoss)
+                // This ensures we're checking the bar against the EMA value at the time the bar closed
+                if (EmaStopTriggerMode == EmaStopTriggerModeType.FullCandle)
                 {
-                    if (!double.IsNaN(currentEmaStopLoss) && !double.IsNaN(breakEvenFloor))
+                    if (!double.IsNaN(completedBarFastEma))
                     {
-                        effectiveStopLoss = Math.Max(currentEmaStopLoss, breakEvenFloor);
-                    }
-                    else if (!double.IsNaN(currentEmaStopLoss))
-                    {
-                        effectiveStopLoss = currentEmaStopLoss;
-                    }
-                    else if (!double.IsNaN(breakEvenFloor))
-                    {
-                        effectiveStopLoss = breakEvenFloor;
+                        effectiveStopLoss = completedBarFastEma;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: FullCandle mode - Using completed bar's EMA={completedBarFastEma:F4} (ignoring break-even and currentEmaStopLoss={currentEmaStopLoss})");
                     }
                 }
-                else if (currentPos == MarketPosition.Short)
+                // For CloseOnly/BodyOnly modes: Use the higher of EMA or break-even (normal behavior)
+                else
                 {
-                    if (!double.IsNaN(currentEmaStopLoss) && !double.IsNaN(breakEvenCeiling))
+                    // Use currentEmaStopLoss (which is the trailing stop that only moves in favorable direction)
+                    // But for consistency, we could also use completedBarFastEma here
+                    double emaStopToUse = !double.IsNaN(currentEmaStopLoss) ? currentEmaStopLoss : completedBarFastEma;
+                    
+                    if (currentPos == MarketPosition.Long)
                     {
-                        effectiveStopLoss = Math.Min(currentEmaStopLoss, breakEvenCeiling);
+                        if (!double.IsNaN(emaStopToUse) && !double.IsNaN(breakEvenFloor))
+                        {
+                            effectiveStopLoss = Math.Max(emaStopToUse, breakEvenFloor);
+                        }
+                        else if (!double.IsNaN(emaStopToUse))
+                        {
+                            effectiveStopLoss = emaStopToUse;
+                        }
+                        else if (!double.IsNaN(breakEvenFloor))
+                        {
+                            effectiveStopLoss = breakEvenFloor;
+                        }
                     }
-                    else if (!double.IsNaN(currentEmaStopLoss))
+                    else if (currentPos == MarketPosition.Short)
                     {
-                        effectiveStopLoss = currentEmaStopLoss;
-                    }
-                    else if (!double.IsNaN(breakEvenCeiling))
-                    {
-                        effectiveStopLoss = breakEvenCeiling;
+                        if (!double.IsNaN(emaStopToUse) && !double.IsNaN(breakEvenCeiling))
+                        {
+                            effectiveStopLoss = Math.Min(emaStopToUse, breakEvenCeiling);
+                        }
+                        else if (!double.IsNaN(emaStopToUse))
+                        {
+                            effectiveStopLoss = emaStopToUse;
+                        }
+                        else if (!double.IsNaN(breakEvenCeiling))
+                        {
+                            effectiveStopLoss = breakEvenCeiling;
+                        }
                     }
                 }
                 
                 if (double.IsNaN(effectiveStopLoss))
-                    return false; // No valid stop loss to check
-                
-                // Use completed bar [1] for the check
-                double completedBarHigh = High[1];
-                double completedBarLow = Low[1];
-                bool shouldExit = false;
+                {
+                    Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: WARNING - No valid stop loss to check (currentEmaStopLoss={currentEmaStopLoss}, breakEvenActivated={breakEvenActivated}, breakEvenFloor={breakEvenFloor}, breakEvenCeiling={breakEvenCeiling})");
+                    // Don't return - continue to check if we can use break-even or EMA directly
+                    // Try to use break-even if activated, or EMA if available
+                    if (currentPos == MarketPosition.Long && !double.IsNaN(breakEvenFloor))
+                    {
+                        effectiveStopLoss = breakEvenFloor;
+                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: Using break-even floor as stop loss: {effectiveStopLoss:F4}");
+                    }
+                    else if (currentPos == MarketPosition.Short && !double.IsNaN(breakEvenCeiling))
+                    {
+                        effectiveStopLoss = breakEvenCeiling;
+                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: Using break-even ceiling as stop loss: {effectiveStopLoss:F4}");
+                    }
+                    else if (!double.IsNaN(currentEmaStopLoss))
+                    {
+                        effectiveStopLoss = currentEmaStopLoss;
+                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: Using EMA stop loss: {effectiveStopLoss:F4}");
+                    }
+                    else
+                    {
+                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: ERROR - Cannot determine stop loss, skipping check");
+                        return false; // No valid stop loss to check
+                    }
+                }
                 
                 if (currentPos == MarketPosition.Long)
                 {
-                    // For longs: exit only if entire candle (High to Low) is below the effective stop loss
-                    // This means both High and Low must be below the stop loss
-                    if (completedBarHigh < effectiveStopLoss && completedBarLow < effectiveStopLoss)
+                    // For longs: check based on trigger mode
+                    bool shouldTrigger = false;
+                    bool earlyExitDueToProfit = false;
+                    
+                    if (EmaStopTriggerMode == EmaStopTriggerModeType.FullCandle)
+                    {
+                        // Full candle: both High and Low must be below the stop loss
+                        shouldTrigger = completedBarHigh < effectiveStopLoss && completedBarLow < effectiveStopLoss;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: LONG - FullCandle mode - High={completedBarHigh:F4}, Low={completedBarLow:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                        
+                        // Profit protection: if in profit and close crossed below EMA, exit early
+                        if (!shouldTrigger && EmaStopProfitProtectionPoints > 0)
+                        {
+                            double entryPrice = Position.AveragePrice;
+                            double currentProfit = completedBarClose - entryPrice;
+                            if (currentProfit >= EmaStopProfitProtectionPoints)
+                            {
+                                // Check if close crossed below EMA (CloseOnly check)
+                                bool closeCrossedBelow = completedBarClose < effectiveStopLoss;
+                                if (closeCrossedBelow)
+                                {
+                                    earlyExitDueToProfit = true;
+                                    Print($"[EMA_STOP_PROFIT_PROTECTION] Bar {CurrentBar}: LONG - Early exit triggered! Profit={currentProfit:F4} >= {EmaStopProfitProtectionPoints:F4}, Close={completedBarClose:F4} < EMA={effectiveStopLoss:F4}");
+                                }
+                            }
+                        }
+                    }
+                    else if (EmaStopTriggerMode == EmaStopTriggerModeType.BodyOnly)
+                    {
+                        // Body only: both Open and Close (the candle body, excluding wicks) must be below the stop loss
+                        double completedBarOpen = Open[1];
+                        double bodyTop = Math.Max(completedBarOpen, completedBarClose);
+                        double bodyBottom = Math.Min(completedBarOpen, completedBarClose);
+                        shouldTrigger = bodyTop < effectiveStopLoss && bodyBottom < effectiveStopLoss;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: LONG - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                        
+                        // Profit protection: if in profit and close crossed below EMA, exit early
+                        if (!shouldTrigger && EmaStopProfitProtectionPoints > 0)
+                        {
+                            double entryPrice = Position.AveragePrice;
+                            double currentProfit = completedBarClose - entryPrice;
+                            if (currentProfit >= EmaStopProfitProtectionPoints)
+                            {
+                                // Check if close crossed below EMA (CloseOnly check)
+                                bool closeCrossedBelow = completedBarClose < effectiveStopLoss;
+                                if (closeCrossedBelow)
+                                {
+                                    earlyExitDueToProfit = true;
+                                    Print($"[EMA_STOP_PROFIT_PROTECTION] Bar {CurrentBar}: LONG - Early exit triggered! Profit={currentProfit:F4} >= {EmaStopProfitProtectionPoints:F4}, Close={completedBarClose:F4} < EMA={effectiveStopLoss:F4}");
+                                }
+                            }
+                        }
+                    }
+                    else if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
+                    {
+                        // Close only: just the close needs to be below the stop loss
+                        shouldTrigger = completedBarClose < effectiveStopLoss;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: LONG - CloseOnly mode - Close={completedBarClose:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                    }
+                    
+                    if (shouldTrigger || earlyExitDueToProfit)
                     {
                         shouldExit = true;
-                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: LONG exit triggered - Entire candle range (High={completedBarHigh:F4}, Low={completedBarLow:F4}) is below effective stop loss ({effectiveStopLoss:F4}, EMA={currentEmaStopLoss:F4}, BreakEvenFloor={breakEvenFloor:F4})");
+                        string exitReason = earlyExitDueToProfit ? "ProfitProtection" : EmaStopTriggerMode.ToString();
+                        Print($"[EMA_STOP_EXIT] Bar {CurrentBar}: LONG exit triggered - Mode={exitReason}, Effective stop loss={effectiveStopLoss:F4} (EMA={completedBarFastEma:F4}, Entry={Position.AveragePrice:F4})");
                     }
                 }
                 else if (currentPos == MarketPosition.Short)
                 {
-                    // For shorts: exit only if entire candle (High to Low) is above the effective stop loss
-                    // This means both High and Low must be above the stop loss
-                    if (completedBarHigh > effectiveStopLoss && completedBarLow > effectiveStopLoss)
+                    // For shorts: check based on trigger mode
+                    bool shouldTrigger = false;
+                    bool earlyExitDueToProfit = false;
+                    
+                    if (EmaStopTriggerMode == EmaStopTriggerModeType.FullCandle)
+                    {
+                        // Full candle: both High and Low must be above the stop loss
+                        shouldTrigger = completedBarHigh > effectiveStopLoss && completedBarLow > effectiveStopLoss;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: SHORT - FullCandle mode - High={completedBarHigh:F4}, Low={completedBarLow:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                        
+                        // Profit protection: if in profit and close crossed above EMA, exit early
+                        if (!shouldTrigger && EmaStopProfitProtectionPoints > 0)
+                        {
+                            double entryPrice = Position.AveragePrice;
+                            double currentProfit = entryPrice - completedBarClose;
+                            if (currentProfit >= EmaStopProfitProtectionPoints)
+                            {
+                                // Check if close crossed above EMA (CloseOnly check)
+                                bool closeCrossedAbove = completedBarClose > effectiveStopLoss;
+                                if (closeCrossedAbove)
+                                {
+                                    earlyExitDueToProfit = true;
+                                    Print($"[EMA_STOP_PROFIT_PROTECTION] Bar {CurrentBar}: SHORT - Early exit triggered! Profit={currentProfit:F4} >= {EmaStopProfitProtectionPoints:F4}, Close={completedBarClose:F4} > EMA={effectiveStopLoss:F4}");
+                                }
+                            }
+                        }
+                    }
+                    else if (EmaStopTriggerMode == EmaStopTriggerModeType.BodyOnly)
+                    {
+                        // Body only: both Open and Close (the candle body, excluding wicks) must be above the stop loss
+                        double completedBarOpen = Open[1];
+                        double bodyTop = Math.Max(completedBarOpen, completedBarClose);
+                        double bodyBottom = Math.Min(completedBarOpen, completedBarClose);
+                        shouldTrigger = bodyTop > effectiveStopLoss && bodyBottom > effectiveStopLoss;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: SHORT - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                        
+                        // Profit protection: if in profit and close crossed above EMA, exit early
+                        if (!shouldTrigger && EmaStopProfitProtectionPoints > 0)
+                        {
+                            double entryPrice = Position.AveragePrice;
+                            double currentProfit = entryPrice - completedBarClose;
+                            if (currentProfit >= EmaStopProfitProtectionPoints)
+                            {
+                                // Check if close crossed above EMA (CloseOnly check)
+                                bool closeCrossedAbove = completedBarClose > effectiveStopLoss;
+                                if (closeCrossedAbove)
+                                {
+                                    earlyExitDueToProfit = true;
+                                    Print($"[EMA_STOP_PROFIT_PROTECTION] Bar {CurrentBar}: SHORT - Early exit triggered! Profit={currentProfit:F4} >= {EmaStopProfitProtectionPoints:F4}, Close={completedBarClose:F4} > EMA={effectiveStopLoss:F4}");
+                                }
+                            }
+                        }
+                    }
+                    else if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
+                    {
+                        // Close only: just the close needs to be above the stop loss
+                        shouldTrigger = completedBarClose > effectiveStopLoss;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: SHORT - CloseOnly mode - Close={completedBarClose:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                    }
+                    
+                    if (shouldTrigger || earlyExitDueToProfit)
                     {
                         shouldExit = true;
-                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: SHORT exit triggered - Entire candle range (High={completedBarHigh:F4}, Low={completedBarLow:F4}) is above effective stop loss ({effectiveStopLoss:F4}, EMA={currentEmaStopLoss:F4}, BreakEvenCeiling={breakEvenCeiling:F4})");
+                        string exitReason = earlyExitDueToProfit ? "ProfitProtection" : EmaStopTriggerMode.ToString();
+                        Print($"[EMA_STOP_EXIT] Bar {CurrentBar}: SHORT exit triggered - Mode={exitReason}, Effective stop loss={effectiveStopLoss:F4} (EMA={completedBarFastEma:F4}, Entry={Position.AveragePrice:F4})");
                     }
                 }
                 
@@ -922,15 +1311,69 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     if (currentPos == MarketPosition.Long)
                     {
+                        currentTradeExitReason = "BarsOnTheFlowEmaStop";
+                        lastExitBarIndex = CurrentBar;
                         ExitLong("BarsOnTheFlowEmaStop", "BarsOnTheFlowLong");
                         intendedPosition = MarketPosition.Flat;
                         RecordExitForCooldown(MarketPosition.Long);
                     }
                     else if (currentPos == MarketPosition.Short)
                     {
+                        currentTradeExitReason = "BarsOnTheFlowEmaStopS";
+                        lastExitBarIndex = CurrentBar;
                         ExitShort("BarsOnTheFlowEmaStopS", "BarsOnTheFlowShort");
                         intendedPosition = MarketPosition.Flat;
                         RecordExitForCooldown(MarketPosition.Short);
+                    }
+                }
+            }
+
+            // ====================================================================
+            // GRADIENT-BASED STOP LOSS
+            // Exit when gradient crosses into unfavorable territory
+            // For longs: exit when gradient drops below ExitLongBelowGradient
+            // For shorts: exit when gradient rises above ExitShortAboveGradient
+            // ====================================================================
+            if (UseGradientStopLoss && currentPos != MarketPosition.Flat)
+            {
+                // IMPORTANT: Recalculate gradient using the bar that just closed ([1])
+                // This ensures we're checking the gradient of the bar where the decision appears
+                // (same timing fix as for entry decisions)
+                int gradWindow = Math.Max(2, FastGradLookbackBars);
+                double currentGradDeg;
+                double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                double currentGradient = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                
+                if (currentPos == MarketPosition.Long)
+                {
+                    Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: LONG - Gradient={currentGradient:F2}° (recalculated), ExitThreshold={ExitLongBelowGradient:F2}°");
+                    
+                    if (!double.IsNaN(currentGradient) && currentGradient < ExitLongBelowGradient)
+                    {
+                        Print($"[GRADIENT_STOP_EXIT] Bar {CurrentBar}: LONG exit triggered - Gradient ({currentGradient:F2}°) < ExitThreshold ({ExitLongBelowGradient:F2}°)");
+                        currentTradeExitReason = "GradientStopLong";
+                        lastExitBarIndex = CurrentBar;
+                        ExitLong("GradientStopLong", "BarsOnTheFlowLong");
+                        intendedPosition = MarketPosition.Flat;
+                        RecordExitForCooldown(MarketPosition.Long);
+                        deferredLongEntry = false;
+                        deferredShortEntry = false;
+                    }
+                }
+                else if (currentPos == MarketPosition.Short)
+                {
+                    Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: SHORT - Gradient={currentGradient:F2}° (recalculated), ExitThreshold={ExitShortAboveGradient:F2}°");
+                    
+                    if (!double.IsNaN(currentGradient) && currentGradient > ExitShortAboveGradient)
+                    {
+                        Print($"[GRADIENT_STOP_EXIT] Bar {CurrentBar}: SHORT exit triggered - Gradient ({currentGradient:F2}°) > ExitThreshold ({ExitShortAboveGradient:F2}°)");
+                        currentTradeExitReason = "GradientStopShort";
+                        lastExitBarIndex = CurrentBar;
+                        ExitShort("GradientStopShort", "BarsOnTheFlowShort");
+                        intendedPosition = MarketPosition.Flat;
+                        RecordExitForCooldown(MarketPosition.Short);
+                        deferredLongEntry = false;
+                        deferredShortEntry = false;
                     }
                 }
             }
@@ -949,6 +1392,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitShortOnBad resolving - prevGood, exiting SHORT (O:{prevOpen:F2}, C:{prevClose:F2})");
                     // Previous bar was good, confirms reversal - exit now
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                    currentTradeExitReason = "BarsOnTheFlowExitS";
+                    lastExitBarIndex = CurrentBar;
                     ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
                     intendedPosition = MarketPosition.Flat;
                     pendingExitShortOnBad = false;
@@ -970,6 +1415,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitLongOnGood resolving - prevBad, exiting LONG (O:{prevOpen:F2}, C:{prevClose:F2})");
                     // Previous bar was bad, confirms reversal - exit now
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                    currentTradeExitReason = "BarsOnTheFlowExit";
+                    lastExitBarIndex = CurrentBar;
                     ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                     intendedPosition = MarketPosition.Flat;
                     pendingExitLongOnGood = false;
@@ -991,9 +1438,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 if (trendUp)
                 {
-                    bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
+                    // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                    int gradWindow = Math.Max(2, FastGradLookbackBars);
+                    double currentGradDeg;
+                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    
+                    // CRITICAL: If Fast EMA is below Slow EMA on the bar that just closed, block LONG entry
+                    bool emaCrossedBelow = false;
+                    if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                    {
+                        double fastEmaAtBarClose = emaFast[1];
+                        double slowEmaAtBarClose = emaSlow[1];
+                        emaCrossedBelow = fastEmaAtBarClose < slowEmaAtBarClose;
+                        if (emaCrossedBelow)
+                        {
+                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingShortFromGood->LONG): Fast EMA ({fastEmaAtBarClose:F4}) < Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING LONG entry");
+                        }
+                    }
+                    
+                    bool skipDueToGradient = emaCrossedBelow || ShouldSkipLongDueToGradient(gradDegToUse);
                     bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
-                    PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (pendingShortFromGood) | gradient={lastFastEmaGradDeg:F2}°, threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
+                    PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (pendingShortFromGood) | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
                     PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: LONG entry (pendingShortFromGood) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: TrendUp detected, reversing to LONG | skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     if (!skipDueToGradient && !skipDueToEmaCrossover)
@@ -1005,7 +1471,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         else
                         {
                             CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                            currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingShortFromGood", lastFastEmaGradDeg);
+                            currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingShortFromGood", gradDegToUse);
+                            ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG from pendingShortFromGood, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}", "ENTRY");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
                             SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
@@ -1026,9 +1493,40 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (trendDown && prevBad)
                 {
-                    bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
+                    // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                    int gradWindow = Math.Max(2, FastGradLookbackBars);
+                    double currentGradDeg;
+                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    
+                    // CRITICAL: Block SHORT entry if close is above Fast EMA OR if Fast EMA is above Slow EMA
+                    // This ensures shorts only enter when price is below Fast EMA (bearish condition)
+                    bool emaCrossedAbove = false;
+                    bool closeAboveFastEma = false;
+                    if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                    {
+                        double fastEmaAtBarClose = emaFast[1];
+                        double slowEmaAtBarClose = emaSlow[1];
+                        double closeAtBarClose = Close[1];
+                        
+                        // Block if Fast EMA > Slow EMA (bearish crossover condition)
+                        emaCrossedAbove = fastEmaAtBarClose > slowEmaAtBarClose;
+                        if (emaCrossedAbove)
+                        {
+                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingShortFromGood->SHORT): Fast EMA ({fastEmaAtBarClose:F4}) > Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING SHORT entry");
+                        }
+                        
+                        // Block if close is above Fast EMA (price is bullish, not suitable for short entry)
+                        closeAboveFastEma = closeAtBarClose > fastEmaAtBarClose;
+                        if (closeAboveFastEma)
+                        {
+                            Print($"[PRICE_BLOCK] Bar {CurrentBar} (pendingShortFromGood->SHORT): Close ({closeAtBarClose:F4}) > Fast EMA ({fastEmaAtBarClose:F4}) - BLOCKING SHORT entry (price is above Fast EMA)");
+                        }
+                    }
+                    
+                    bool skipDueToGradient = emaCrossedAbove || closeAboveFastEma || ShouldSkipShortDueToGradient(gradDegToUse);
                     bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
-                    PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: TrendDown + prevBad, executing pending SHORT | skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
+                    PrintAndLog($"[PENDING_SHORT_DEBUG] Bar {CurrentBar}: TrendDown + prevBad, executing pending SHORT | gradient={gradDegToUse:F2}° (recalculated), skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     if (!skipDueToGradient && !skipDueToEmaCrossover)
                     {
                         if (intendedPosition == MarketPosition.Short)
@@ -1038,7 +1536,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         else
                         {
                             CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                            currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingShortFromGood", lastFastEmaGradDeg);
+                            currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingShortFromGood", gradDegToUse);
+                            ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT from pendingShortFromGood, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}", "ENTRY");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
                             SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
@@ -1080,9 +1579,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 if (trendDown)
                 {
-                    bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
+                    // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                    int gradWindow = Math.Max(2, FastGradLookbackBars);
+                    double currentGradDeg;
+                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    
+                    // CRITICAL: If Fast EMA is above Slow EMA on the bar that just closed, block SHORT entry
+                    bool emaCrossedAbove = false;
+                    if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                    {
+                        double fastEmaAtBarClose = emaFast[1];
+                        double slowEmaAtBarClose = emaSlow[1];
+                        emaCrossedAbove = fastEmaAtBarClose > slowEmaAtBarClose;
+                        if (emaCrossedAbove)
+                        {
+                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingLongFromBad->SHORT): Fast EMA ({fastEmaAtBarClose:F4}) > Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING SHORT entry");
+                        }
+                    }
+                    
+                    bool skipDueToGradient = emaCrossedAbove || ShouldSkipShortDueToGradient(gradDegToUse);
                     bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
-                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendDown detected, reversing to SHORT | skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
+                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendDown detected, reversing to SHORT | gradient={gradDegToUse:F2}° (recalculated), skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     if (!skipDueToGradient && !skipDueToEmaCrossover)
                     {
                         if (intendedPosition == MarketPosition.Short)
@@ -1092,7 +1610,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         else
                         {
                             CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                            currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingLongFromBad", lastFastEmaGradDeg);
+                            currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingLongFromBad", gradDegToUse);
+                            ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT from pendingLongFromBad, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
                             SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
@@ -1119,15 +1638,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (trendUp && prevGood)
                 {
                     Print($"[PENDING_LONG_ENTRY_PATH] Bar {CurrentBar}: Entering via pendingLongFromBad path");
-                    bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
+                    
+                    // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                    int gradWindow = Math.Max(2, FastGradLookbackBars);
+                    double currentGradDeg;
+                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    
+                    Print($"[GRADIENT_RECALC] Bar {CurrentBar} (pendingLongFromBad): Recalculated gradient: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
+                    
+                    // CRITICAL: If Fast EMA is below Slow EMA on the bar that just closed, block LONG entry
+                    bool emaCrossedBelow = false;
+                    if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                    {
+                        double fastEmaAtBarClose = emaFast[1];
+                        double slowEmaAtBarClose = emaSlow[1];
+                        emaCrossedBelow = fastEmaAtBarClose < slowEmaAtBarClose;
+                        if (emaCrossedBelow)
+                        {
+                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingLongFromBad): Fast EMA ({fastEmaAtBarClose:F4}) < Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING LONG entry regardless of gradient");
+                        }
+                    }
+                    
+                    bool skipDueToGradient = emaCrossedBelow || ShouldSkipLongDueToGradient(gradDegToUse);
                     bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
                     Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: LONG entry (pendingLongFromBad)");
-                    Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: lastFastEmaGradDeg={lastFastEmaGradDeg:F2}°");
+                    Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDegToUse={gradDegToUse:F2}° (recalculated from bar that just closed)");
                     Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: SkipLongsBelowGradient={SkipLongsBelowGradient:F2}°");
                     Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: GradientFilterEnabled={GradientFilterEnabled}");
-                    Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: double.IsNaN(lastFastEmaGradDeg)={double.IsNaN(lastFastEmaGradDeg)}");
-                    Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDeg < SkipLongsBelowGradient = {lastFastEmaGradDeg:F2} < {SkipLongsBelowGradient:F2} = {lastFastEmaGradDeg < SkipLongsBelowGradient}");
-                    PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (pendingLongFromBad) | gradient={lastFastEmaGradDeg:F2}°, threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
+                    Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: double.IsNaN(gradDegToUse)={double.IsNaN(gradDegToUse)}");
+                    Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDeg < SkipLongsBelowGradient = {gradDegToUse:F2} < {SkipLongsBelowGradient:F2} = {gradDegToUse < SkipLongsBelowGradient}");
+                    PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (pendingLongFromBad) | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
                     PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: LONG entry (pendingLongFromBad) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendUp + prevGood, executing pending LONG | skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     Print($"[ENTRY_DECISION] Bar {CurrentBar} (pendingLongFromBad): skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, willEnter={!skipDueToGradient && !skipDueToEmaCrossover}");
@@ -1140,7 +1681,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         else
                         {
                             CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                            currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingLongFromBad", lastFastEmaGradDeg);
+                            currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "PendingLongFromBad", gradDegToUse);
+                            ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG from pendingLongFromBad, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
                             SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
@@ -1176,8 +1718,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             // Fresh signals with deferral logic.
+            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Checking trend signals - trendUp={trendUp}, trendDown={trendDown}, currentPos={currentPos}, placedEntry={placedEntry}");
+            
             if (trendUp)
             {
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: trendUp=True - checking entry conditions");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: currentPos={currentPos}, Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: placedEntry={placedEntry}, allowLongThisBar={allowLongThisBar}");
+                
                 if (currentPos == MarketPosition.Short)
                 {
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
@@ -1188,24 +1736,36 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT (no reverse due to bad candle)");
                             // Don't reverse if we would avoid longs on bad candles
+                            currentTradeExitReason = "BarsOnTheFlowExitS";
+                            lastExitBarIndex = CurrentBar;
                             ExitShort();
                             RecordExitForCooldown(MarketPosition.Short);
                         }
                         else
                         {
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT and REVERSING to LONG");
+                            
+                            // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
+                            int gradWindow = Math.Max(2, FastGradLookbackBars);
+                            double currentGradDeg;
+                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            
                             // ReverseOnTrendBreak overrides gradient filter, but EMA crossover filter still applies
-                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (reverse from short) | gradient={lastFastEmaGradDeg:F2}°, threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, BYPASSED (ReverseOnTrendBreak={ReverseOnTrendBreak})", "DEBUG");
+                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (reverse from short) | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, BYPASSED (ReverseOnTrendBreak={ReverseOnTrendBreak})", "DEBUG");
                             
                             // Check EMA crossover filter (still applies even during reversals)
                             bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: LONG entry (reverse from short) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
+                            currentTradeExitReason = "BarsOnTheFlowExitS";
+                            lastExitBarIndex = CurrentBar;
                             ExitShort();
                             RecordExitForCooldown(MarketPosition.Short);
                             if (intendedPosition != MarketPosition.Long && !skipDueToEmaCrossover)
                             {
-                                currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ReverseFromShort", lastFastEmaGradDeg);
+                                currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ReverseFromShort", gradDegToUse);
+                                ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (reverse from short), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
                                 SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
@@ -1228,13 +1788,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                     else
                     {
                         Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
+                        currentTradeExitReason = "BarsOnTheFlowExitS";
+                        lastExitBarIndex = CurrentBar;
                         ExitShort();
                         RecordExitForCooldown(MarketPosition.Short);
                     }
                 }
 
-                if (!placedEntry && currentPos == MarketPosition.Flat)
+                // Check entry conditions for LONG when flat
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Checking LONG entry block - placedEntry={placedEntry}, currentPos={currentPos}, Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry block condition: !placedEntry={!placedEntry}, currentPos==Flat={currentPos == MarketPosition.Flat}, Position.Quantity==0={Position.Quantity == 0}");
+                
+                // Use Position.Quantity for more reliable flat check (handles historical playback issues)
+                bool isActuallyFlat = Position.Quantity == 0;
+                
+                if (!placedEntry && isActuallyFlat)
                 {
+                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: ENTRY BLOCK REACHED - checking LONG entry conditions");
                     if (AvoidLongsOnBadCandle && prevBad)
                     {
                         Print($"[Entry Block] Bar {CurrentBar}: Deferring LONG - bar closed BAD (O:{prevOpen:F2}, C:{prevClose:F2})");
@@ -1243,6 +1813,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (allowLongThisBar)
                     {
+                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: allowLongThisBar=True - proceeding with LONG entry checks");
                         // Double-check: don't enter long if bar just closed bad
                         if (AvoidLongsOnBadCandle && prevBad)
                         {
@@ -1252,15 +1823,51 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else
                         {
-                            // Check gradient filter: skip longs if EMA gradient is below threshold
-                            bool skipDueToGradient = ShouldSkipLongDueToGradient(lastFastEmaGradDeg);
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: No bad candle block - checking gradient and EMA filters");
+                            
+                            // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                            // This is important because the gradient calculated at the start of the bar may not reflect the bar's final movement
+                            int gradWindow = Math.Max(2, FastGradLookbackBars);
+                            double currentGradDeg;
+                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            
+                            Print($"[GRADIENT_RECALC] Bar {CurrentBar}: Recalculated gradient for entry decision: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
+                            
+                            // CRITICAL: Block LONG entry if close is below Fast EMA OR if Fast EMA is below Slow EMA
+                            // This ensures longs only enter when price is above Fast EMA (bullish condition)
+                            bool emaCrossedBelow = false;
+                            bool closeBelowFastEma = false;
+                            if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                            {
+                                double fastEmaAtBarClose = emaFast[1];
+                                double slowEmaAtBarClose = emaSlow[1];
+                                double closeAtBarClose = Close[1];
+                                
+                                // Block if Fast EMA < Slow EMA (bearish crossover condition)
+                                emaCrossedBelow = fastEmaAtBarClose < slowEmaAtBarClose;
+                                if (emaCrossedBelow)
+                                {
+                                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaAtBarClose:F4}) < Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING LONG entry regardless of gradient");
+                                }
+                                
+                                // Block if close is below Fast EMA (price is bearish, not suitable for long entry)
+                                closeBelowFastEma = closeAtBarClose < fastEmaAtBarClose;
+                                if (closeBelowFastEma)
+                                {
+                                    Print($"[PRICE_BLOCK] Bar {CurrentBar}: Close ({closeAtBarClose:F4}) < Fast EMA ({fastEmaAtBarClose:F4}) - BLOCKING LONG entry (price is below Fast EMA)");
+                                }
+                            }
+                            
+                            // Check gradient filter: skip longs if EMA gradient is below threshold OR if EMA crossed below OR if close is below Fast EMA
+                            bool skipDueToGradient = emaCrossedBelow || closeBelowFastEma || ShouldSkipLongDueToGradient(gradDegToUse);
                             Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: LONG entry check");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: lastFastEmaGradDeg={lastFastEmaGradDeg:F2}°");
+                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDegToUse={gradDegToUse:F2}° (recalculated from bar that just closed)");
                             Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: SkipLongsBelowGradient={SkipLongsBelowGradient:F2}°");
                             Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: GradientFilterEnabled={GradientFilterEnabled}");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: double.IsNaN(lastFastEmaGradDeg)={double.IsNaN(lastFastEmaGradDeg)}");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDeg < SkipLongsBelowGradient = {lastFastEmaGradDeg:F2} < {SkipLongsBelowGradient:F2} = {lastFastEmaGradDeg < SkipLongsBelowGradient}");
-                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry check | gradient={lastFastEmaGradDeg:F2}°, threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
+                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: double.IsNaN(gradDegToUse)={double.IsNaN(gradDegToUse)}");
+                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDeg < SkipLongsBelowGradient = {gradDegToUse:F2} < {SkipLongsBelowGradient:F2} = {gradDegToUse < SkipLongsBelowGradient}");
+                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry check | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
                             
                             // Check EMA crossover filter (only when trend detection is enabled - when disabled, EMA crossover generates signals directly)
                             bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
@@ -1270,40 +1877,60 @@ namespace NinjaTrader.NinjaScript.Strategies
                             
                             if (!skipDueToGradient && !skipDueToEmaCrossover)
                             {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: All filters passed! skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}");
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Position check - Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
                                 // Don't re-enter if already long - check both actual and intended position
-                                if (Position.MarketPosition != MarketPosition.Long && intendedPosition != MarketPosition.Long)
+                                if (Position.Quantity == 0 && intendedPosition != MarketPosition.Long)
                                 {
-                                    CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                                    currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", lastFastEmaGradDeg);
-                                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (fresh signal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
-                                    // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                                    SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                                    lastEntryBarIndex = CurrentBar;
-                                    lastEntryDirection = MarketPosition.Long;
-                                    intendedPosition = MarketPosition.Long;
-                                    placedEntry = true;
+                                    // DEFER ENTRY: Instead of entering immediately, defer to next bar for validation
+                                    // This ensures we check the bar where the entry will actually appear
+                                    string entryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", gradDegToUse);
+                                    Print($"[DEFERRED_ENTRY_SET] Bar {CurrentBar}: Deferring LONG entry to next bar for validation. Reason: {entryReason}");
+                                    deferredLongEntry = true;
+                                    deferredShortEntry = false;
+                                    deferredEntryReason = entryReason;
+                                    intendedPosition = MarketPosition.Long; // Mark intent to prevent duplicate signals
                                     pendingLongFromBad = false;
                                     pendingShortFromGood = false;
                                 }
                                 else
                                 {
+                                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked - Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
                                     Print($"[Entry Skip] Bar {CurrentBar}: Already LONG (actual={Position.MarketPosition}, intended={intendedPosition}), not re-entering");
                                 }
                             }
                             else if (AllowMidBarGradientEntry && skipDueToGradient)
                             {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Gradient blocked but AllowMidBarGradientEntry=True - waiting for mid-bar cross");
                                 // All conditions met except gradient - wait for mid-bar cross
                                 waitingForLongGradient = true;
                             }
+                            else
+                            {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked by filters - skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
+                            }
                         }
                     }
+                    else
+                    {
+                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked - allowLongThisBar={allowLongThisBar}");
+                    }
+                }
+                else
+                {
+                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry block SKIPPED - placedEntry={placedEntry}, isActuallyFlat={isActuallyFlat}, Position.Quantity={Position.Quantity}");
                 }
             }
             else if (trendDown)
             {
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: trendDown=True - checking entry conditions");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: currentPos={currentPos}, Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: placedEntry={placedEntry}, allowShortThisBar={allowShortThisBar}");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, ExitOnTrendBreak={ExitOnTrendBreak}");
+                
                 if (currentPos == MarketPosition.Long)
                 {
+                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: In LONG position with trendDown=True - checking exit conditions");
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
                     
                     Print($"[Reverse Debug] Bar {CurrentBar}: ReverseOnTrendBreak={ReverseOnTrendBreak}, allowShortThisBar={allowShortThisBar}, AvoidShortsOnGoodCandle={AvoidShortsOnGoodCandle}, prevGood={prevGood}, prevOpen={prevOpen:F2}, prevClose={prevClose:F2}");
@@ -1316,6 +1943,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                             // Don't reverse if we would avoid shorts on good candles
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendDown break - exiting LONG (no reverse due to good candle)");
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidShortsOnGoodCandle");
+                            currentTradeExitReason = "BarsOnTheFlowExit";
+                            lastExitBarIndex = CurrentBar;
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                             RecordExitForCooldown(MarketPosition.Long);
                         }
@@ -1329,10 +1958,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                             bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: SHORT entry (reverse from long) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
+                            // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
+                            int gradWindow = Math.Max(2, FastGradLookbackBars);
+                            double currentGradDeg;
+                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            
+                            currentTradeExitReason = "BarsOnTheFlowExit";
+                            lastExitBarIndex = CurrentBar;
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                             if (intendedPosition != MarketPosition.Short && !skipDueToEmaCrossover)
                             {
-                                currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ReverseFromLong", lastFastEmaGradDeg);
+                                currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ReverseFromLong", gradDegToUse);
+                                ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (reverse from long), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
                                 SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
@@ -1356,13 +1994,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendDown break - exiting LONG (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         Print($"[Reverse Debug] Bar {CurrentBar}: Not reversing - ReverseOnTrendBreak={ReverseOnTrendBreak}, allowShortThisBar={allowShortThisBar}");
+                        currentTradeExitReason = "BarsOnTheFlowExit";
+                        lastExitBarIndex = CurrentBar;
                         ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                         RecordExitForCooldown(MarketPosition.Long);
                     }
                 }
 
-                if (!placedEntry && currentPos == MarketPosition.Flat)
+                // Check entry conditions for SHORT when flat
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Checking SHORT entry block - placedEntry={placedEntry}, currentPos={currentPos}, Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}");
+                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry block condition: !placedEntry={!placedEntry}, currentPos==Flat={currentPos == MarketPosition.Flat}, Position.Quantity==0={Position.Quantity == 0}");
+                
+                // Use Position.Quantity for more reliable flat check (handles historical playback issues)
+                bool isActuallyFlat = Position.Quantity == 0;
+                
+                if (!placedEntry && isActuallyFlat)
                 {
+                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: ENTRY BLOCK REACHED - checking SHORT entry conditions");
                     Print($"[SHORT_ENTRY_DEBUG] Bar {CurrentBar}: Checking SHORT entry - trendDown={trendDown}, prevBad={prevBad}, prevGood={prevGood}, allowShortThisBar={allowShortThisBar}, AvoidShortsOnGoodCandle={AvoidShortsOnGoodCandle}");
                     
                     if (AvoidShortsOnGoodCandle && prevGood)
@@ -1372,21 +2020,45 @@ namespace NinjaTrader.NinjaScript.Strategies
                         pendingLongFromBad = false;
                     }
                     else if (trendDown && prevBad && allowShortThisBar)
-                    {
-                        // Double-check: don't enter short if bar just closed good
-                        if (AvoidShortsOnGoodCandle && prevGood)
                         {
-                            Print($"[Entry Block] Bar {CurrentBar}: BLOCKED SHORT - bar closed GOOD despite allowShortThisBar=true (O:{prevOpen:F2}, C:{prevClose:F2})");
-                            pendingShortFromGood = true;
-                            pendingLongFromBad = false;
-                        }
-                        else
-                        {
-                            // Check gradient filter: skip shorts if EMA gradient is above threshold
-                            bool skipDueToGradient = ShouldSkipShortDueToGradient(lastFastEmaGradDeg);
-                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: SHORT entry check | gradient={lastFastEmaGradDeg:F2}°, threshold={SkipShortsAboveGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
+                            // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                            int gradWindow = Math.Max(2, FastGradLookbackBars);
+                            double currentGradDeg;
+                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
                             
-                            // Check EMA crossover filter
+                            Print($"[GRADIENT_RECALC] Bar {CurrentBar}: Recalculated gradient for SHORT entry decision: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
+                            
+                            // CRITICAL: Block SHORT entry if close is above Fast EMA OR if Fast EMA is above Slow EMA
+                            // This ensures shorts only enter when price is below Fast EMA (bearish condition)
+                            bool emaCrossedAbove = false;
+                            bool closeAboveFastEma = false;
+                            if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                            {
+                                double fastEmaAtBarClose = emaFast[1];
+                                double slowEmaAtBarClose = emaSlow[1];
+                                double closeAtBarClose = Close[1];
+                                
+                                // Block if Fast EMA > Slow EMA (bearish crossover condition)
+                                emaCrossedAbove = fastEmaAtBarClose > slowEmaAtBarClose;
+                                if (emaCrossedAbove)
+                                {
+                                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaAtBarClose:F4}) > Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING SHORT entry regardless of gradient");
+                                }
+                                
+                                // Block if close is above Fast EMA (price is bullish, not suitable for short entry)
+                                closeAboveFastEma = closeAtBarClose > fastEmaAtBarClose;
+                                if (closeAboveFastEma)
+                                {
+                                    Print($"[PRICE_BLOCK] Bar {CurrentBar}: Close ({closeAtBarClose:F4}) > Fast EMA ({fastEmaAtBarClose:F4}) - BLOCKING SHORT entry (price is above Fast EMA)");
+                                }
+                            }
+                            
+                            // Check gradient filter: skip shorts if EMA gradient is above threshold OR if EMA crossed above OR if close is above Fast EMA
+                            bool skipDueToGradient = emaCrossedAbove || closeAboveFastEma || ShouldSkipShortDueToGradient(gradDegToUse);
+                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: SHORT entry check | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipShortsAboveGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
+                            
+                            // Check EMA crossover filter (this already uses [1], so it's using the bar that just closed)
                             bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: SHORT entry check | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
@@ -1394,34 +2066,47 @@ namespace NinjaTrader.NinjaScript.Strategies
                             
                             if (!skipDueToGradient && !skipDueToEmaCrossover)
                             {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: All filters passed! skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}");
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Position check - Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
                                 // Don't re-enter if already short - check both actual and intended position
-                                if (Position.MarketPosition != MarketPosition.Short && intendedPosition != MarketPosition.Short)
+                                if (Position.Quantity == 0 && intendedPosition != MarketPosition.Short)
                                 {
-                                    CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
-                                    currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", lastFastEmaGradDeg);
-                                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (fresh signal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
-                                    // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                                    SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                                    EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                                    lastEntryBarIndex = CurrentBar;
-                                    lastEntryDirection = MarketPosition.Short;
-                                    intendedPosition = MarketPosition.Short;
-                                    placedEntry = true;
+                                    // DEFER ENTRY: Instead of entering immediately, defer to next bar for validation
+                                    // This ensures we check the bar where the entry will actually appear
+                                    string entryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", gradDegToUse);
+                                    Print($"[DEFERRED_ENTRY_SET] Bar {CurrentBar}: Deferring SHORT entry to next bar for validation. Reason: {entryReason}");
+                                    deferredShortEntry = true;
+                                    deferredLongEntry = false;
+                                    deferredEntryReason = entryReason;
+                                    intendedPosition = MarketPosition.Short; // Mark intent to prevent duplicate signals
                                     pendingShortFromGood = false;
                                     pendingLongFromBad = false;
                                 }
                                 else
                                 {
+                                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked - Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
                                     Print($"[Entry Skip] Bar {CurrentBar}: Already SHORT (actual={Position.MarketPosition}, intended={intendedPosition}), not re-entering");
                                 }
                             }
                             else if (AllowMidBarGradientEntry && skipDueToGradient)
                             {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Gradient blocked but AllowMidBarGradientEntry=True - waiting for mid-bar cross");
                                 // All conditions met except gradient - wait for mid-bar cross
                                 waitingForShortGradient = true;
                             }
+                            else
+                            {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked by filters - skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
+                            }
                         }
-                    }
+                        else
+                        {
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked - allowShortThisBar={allowShortThisBar} or conditions not met");
+                        }
+                }
+                else
+                {
+                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: SHORT entry block SKIPPED - placedEntry={placedEntry}, isActuallyFlat={isActuallyFlat}, Position.Quantity={Position.Quantity}");
                 }
             }
             // ExitOnTrendBreak only works when BarsOnTheFlow trend detection is enabled
@@ -1451,19 +2136,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else
                         {
+                            // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
+                            int gradWindow = Math.Max(2, FastGradLookbackBars);
+                            double currentGradDeg;
+                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            
                             // ReverseOnTrendBreak overrides gradient filter, but EMA crossover filter still applies
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG and REVERSING to SHORT");
-                            Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to short! (gradient filter overridden)");
+                            Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to short! (gradient filter overridden, gradient={gradDegToUse:F2}° recalculated)");
                             
                             // Check EMA crossover filter (still applies even during reversals)
                             bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: SHORT entry (ExitOnTrendBreak reversal) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
+                            currentTradeExitReason = "BarsOnTheFlowExit";
+                            lastExitBarIndex = CurrentBar;
                             ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
                             RecordExitForCooldown(MarketPosition.Long);
                             if (intendedPosition != MarketPosition.Short && !skipDueToEmaCrossover)
                             {
-                                currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ExitOnTrendBreakReversal", lastFastEmaGradDeg);
+                                currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ExitOnTrendBreakReversal", gradDegToUse);
+                                ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (ExitOnTrendBreak reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
                                 SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
@@ -1519,19 +2213,28 @@ namespace NinjaTrader.NinjaScript.Strategies
                         }
                         else
                         {
+                            // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
+                            int gradWindow = Math.Max(2, FastGradLookbackBars);
+                            double currentGradDeg;
+                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            
                             // ReverseOnTrendBreak overrides gradient filter, but EMA crossover filter still applies
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT and REVERSING to LONG");
-                            Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to long! (gradient filter overridden)");
+                            Print($"[Reverse Debug] Bar {CurrentBar}: REVERSING to long! (gradient filter overridden, gradient={gradDegToUse:F2}° recalculated)");
                             
                             // Check EMA crossover filter (still applies even during reversals)
                             bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: LONG entry (ExitOnTrendBreak reversal) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
+                            currentTradeExitReason = "BarsOnTheFlowExitS";
+                            lastExitBarIndex = CurrentBar;
                             ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
                             RecordExitForCooldown(MarketPosition.Short);
                             if (intendedPosition != MarketPosition.Long && !skipDueToEmaCrossover)
                             {
-                                currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ExitOnTrendBreakReversal", lastFastEmaGradDeg);
+                                currentTradeEntryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ExitOnTrendBreakReversal", gradDegToUse);
+                                ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (ExitOnTrendBreak reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
                                 SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
@@ -1678,22 +2381,47 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             // CRITICAL: Always update strategy state on bar close
             // This ensures every bar is logged to the database
-            UpdateStrategyState();
-            lastStateUpdateTime = DateTime.Now;
-            lastStateUpdatePrice = Close[0];
-
-            // Optionally stream diagnostics (incl. gradient) to dashboard
-            if (EnableDashboardDiagnostics)
+            try
             {
-                bool allowShortThisBar = !(AvoidShortsOnGoodCandle && Close[1] > Open[1]);
-                bool allowLongThisBar = !(AvoidLongsOnBadCandle && Close[1] < Open[1]);
-                SendDashboardDiag(allowLongThisBar, allowShortThisBar);
+                UpdateStrategyState();
+                lastStateUpdateTime = DateTime.Now;
+                lastStateUpdatePrice = Close[0];
+            }
+            catch (Exception ex)
+            {
+                Print($"[ProcessDatabaseOperations] Bar {CurrentBar}: ✗ Error in UpdateStrategyState: {ex.GetType().Name}: {ex.Message}");
             }
 
-            // Record bar sample for volatility database (non-blocking)
-            // Always record bar samples for debugging, not just when UseVolumeAwareStop is enabled
-            if (CurrentBar > 10)
+            // Optionally stream diagnostics (incl. gradient) to dashboard
+            try
             {
+                if (EnableDashboardDiagnostics)
+                {
+                    bool allowShortThisBar = !(AvoidShortsOnGoodCandle && Close[1] > Open[1]);
+                    bool allowLongThisBar = !(AvoidLongsOnBadCandle && Close[1] < Open[1]);
+                    SendDashboardDiag(allowLongThisBar, allowShortThisBar);
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[ProcessDatabaseOperations] Bar {CurrentBar}: ✗ Error in SendDashboardDiag: {ex.GetType().Name}: {ex.Message}");
+            }
+
+            // Record bar sample for volatility database
+            // - Historical mode: Stores in memory (no HTTP), batch sent when transitioning to real-time
+            // - Real-time mode: Sends via HTTP (bars come slowly, server can handle it)
+            if (CurrentBar >= 1)
+            {
+                // Log progress periodically
+                if (CurrentBar <= 10 || CurrentBar % 500 == 0)
+                {
+                    int memCount = 0;
+                    lock (historicalBarDataLock)
+                    {
+                        memCount = historicalBarDataList.Count;
+                    }
+                    Print($"[BAR_RECORD] Bar {CurrentBar}: Calling RecordBarSample() (State={State}, memory={memCount} bars)");
+                }
                 RecordBarSample();
             }
         }
@@ -1886,11 +2614,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "EmaCrossoverCooldownBars", EmaCrossoverCooldownBars },
                     { "EmaCrossoverMinTicksCloseToFast", EmaCrossoverMinTicksCloseToFast },
                     { "EmaCrossoverMinTicksFastToSlow", EmaCrossoverMinTicksFastToSlow },
+                    { "EmaCrossoverRequireBodyBelow", EmaCrossoverRequireBodyBelow },
                     
                     // Entry/Exit parameters
-                    { "Contracts", Contracts },
                     { "DisableRealTimeTrading", DisableRealTimeTrading },
-                    { "ExitOnTrendBreak", ExitOnTrendBreak },
                     { "EnableBarsOnTheFlowTrendDetection", EnableBarsOnTheFlowTrendDetection },
                     { "TrendLookbackBars", TrendLookbackBars },
                     { "MinMatchingBars", MinMatchingBars },
@@ -1902,6 +2629,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "UseDynamicStopLoss", UseDynamicStopLoss },
                     { "DynamicStopLookback", DynamicStopLookback },
                     { "DynamicStopMultiplier", DynamicStopMultiplier },
+                    { "UseEmaTrailingStop", UseEmaTrailingStop },
+                    { "EmaStopTriggerMode", EmaStopTriggerMode.ToString() },
+                    { "EmaStopProfitProtectionPoints", EmaStopProfitProtectionPoints },
+                    { "UseGradientStopLoss", UseGradientStopLoss },
+                    { "ExitLongBelowGradient", ExitLongBelowGradient },
+                    { "ExitShortAboveGradient", ExitShortAboveGradient },
                     
                     // Mid-bar parameters
                     { "AllowMidBarGradientEntry", AllowMidBarGradientEntry },
@@ -1913,6 +2646,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "EnableDashboardDiagnostics", EnableDashboardDiagnostics },
                     { "DashboardBaseUrl", DashboardBaseUrl },
                     { "DashboardAsyncHistorical", DashboardAsyncHistorical },
+                    { "RecordBarSamplesInHistorical", RecordBarSamplesInHistorical },
+                    { "BarSampleDelayMs", BarSampleDelayMs },
                     { "EnableOpportunityLog", EnableOpportunityLog },
                     
                     // Metadata
@@ -1961,16 +2696,55 @@ namespace NinjaTrader.NinjaScript.Strategies
         /// </summary>
         private void UpdateVisualizations(bool trendUp, bool trendDown)
         {
-            if (showBarIndexLabels && CurrentBar >= 0)
+            // Calculate label positions to stack vertically on the completed bar (barsAgo=1)
+            // All labels should be on the same bar to avoid overlap and match the logged bar index
+            double labelBaseY = High[1] + (8 * TickSize); // Start just above the completed bar
+            int labelStackOffset = 0; // Track vertical offset for stacking labels
+            
+            // Draw bar index label on the completed bar (barsAgo=1) to match logged bar index
+            if (showBarIndexLabels && CurrentBar >= 1)
             {
-                string tag = "BarLabel_" + CurrentBar;
-                double yPosition = High[0] + (6 * TickSize);
-                Draw.Text(this, tag, CurrentBar.ToString(), 0, yPosition, Brushes.Black);
+                int completedBarIndex = CurrentBar - 1; // Bar that just closed
+                string tag = "BarLabel_" + completedBarIndex;
+                double barIndexY = labelBaseY + (labelStackOffset * 12 * TickSize);
+                labelStackOffset++; // Move offset for next label
+                Draw.Text(this, tag, completedBarIndex.ToString(), 1, barIndexY, Brushes.Black); // barsAgo = 1
             }
 
-            // Calculate label positions to stack vertically - determine what labels will be shown first
-            double labelBaseY = High[1] + (8 * TickSize); // Start just above the bar
-            int labelStackOffset = 0; // Track vertical offset for stacking labels
+            // EMA Crossover Labels - shows visual indicators for EMA crossover conditions
+            // Positioned right below bar label, above the bar
+            if (ShowEmaCrossoverLabels && CurrentBar >= 1 && emaFast != null && emaSlow != null && 
+                CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+            {
+                // Use completed bar data [1] for bar-close decisions
+                double close = Close[1];
+                double fastEma = emaFast[1];
+                double slowEma = emaSlow[1];
+                
+                // Check for valid values
+                if (!double.IsNaN(close) && !double.IsNaN(fastEma) && !double.IsNaN(slowEma))
+                {
+                    string emaLabelTag = "EmaCrossoverLabel_" + (CurrentBar - 1);
+                    
+                    // Green circle above bar: Close > Fast EMA > Slow EMA (bullish condition)
+                    if (close > fastEma && fastEma > slowEma)
+                    {
+                        // Position right below bar label, above the bar
+                        double circleY = labelBaseY + (labelStackOffset * 12 * TickSize);
+                        labelStackOffset++; // Move offset for next label (gradient label)
+                        // Use a filled circle character (●) for visibility
+                        Draw.Text(this, emaLabelTag, "●", 1, circleY, Brushes.Green);
+                    }
+                    // Red circle below bar: Close < Fast EMA < Slow EMA (bearish condition)
+                    else if (close < fastEma && fastEma < slowEma)
+                    {
+                        // Position well below the bar to avoid overlap with any labels
+                        double circleY = Low[1] - (14 * TickSize); // 20 ticks below the bar (further than before)
+                        // Use a filled circle character (●) for visibility
+                        Draw.Text(this, emaLabelTag, "●", 1, circleY, Brushes.Red);
+                    }
+                }
+            }
             
             // Check if gradient label will be shown
             bool willShowGradient = false;
@@ -1990,7 +2764,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
             
-            // Draw gradient label first (top of stack)
+            // Draw gradient label on the same completed bar (barsAgo=1)
             if (willShowGradient)
             {
                 int prevBarIndex = CurrentBar - 1;
@@ -1999,37 +2773,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                 labelStackOffset++; // Move offset for next label
                 string gradText = "F:" + gradForLabel.ToString("F1");
                 Draw.Text(this, gradTag, gradText, 1, gradY, Brushes.Black); // barsAgo = 1
-            }
-
-            // EMA Crossover Labels - shows visual indicators for EMA crossover conditions
-            if (ShowEmaCrossoverLabels && CurrentBar >= 1 && emaFast != null && emaSlow != null && 
-                CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
-            {
-                // Use completed bar data [1] for bar-close decisions
-                double close = Close[1];
-                double fastEma = emaFast[1];
-                double slowEma = emaSlow[1];
-                
-                // Check for valid values
-                if (!double.IsNaN(close) && !double.IsNaN(fastEma) && !double.IsNaN(slowEma))
-                {
-                    string emaLabelTag = "EmaCrossoverLabel_" + (CurrentBar - 1);
-                    
-                    // Green circle above bar: Close > Fast EMA > Slow EMA (bullish condition)
-                    if (close > fastEma && fastEma > slowEma)
-                    {
-                        double circleY = High[1] + (8 * TickSize); // Above the bar
-                        // Use a filled circle character (●) for visibility
-                        Draw.Text(this, emaLabelTag, "●", 1, circleY, Brushes.Green);
-                    }
-                    // Red circle below bar: Close < Fast EMA < Slow EMA (bearish condition)
-                    else if (close < fastEma && fastEma < slowEma)
-                    {
-                        double circleY = Low[1] - (8 * TickSize); // Below the bar
-                        // Use a filled circle character (●) for visibility
-                        Draw.Text(this, emaLabelTag, "●", 1, circleY, Brushes.Red);
-                    }
-                }
             }
 
             // Tick Gap Indicators - shows visual confirmation/cancellation for minimum tick gap requirements
@@ -2205,6 +2948,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             string reason = GetOrderReason(order, isEntry, isExit);
+            
+            // Capture exit reason for RecordBarSample (fallback if not already set)
+            if (isExit && string.IsNullOrEmpty(currentTradeExitReason))
+            {
+                currentTradeExitReason = order.Name ?? reason;
+                lastExitBarIndex = CurrentBar;
+            }
 
             string candleType = GetCandleType(Open[0], Close[0]);
             double fastEmaVal = double.NaN;
@@ -2239,6 +2989,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             pendingLogs.Add(new PendingLogEntry
             {
+                // Use CurrentBar for entry/exit logging - this will be adjusted when the bar closes
+                // The actual bar index logged will be the completed bar (justClosedBar) when ProcessPendingCSVLogs runs
                 BarIndex = CurrentBar,
                 Timestamp = ts,
                 Direction = directionAtExec,
@@ -2308,9 +3060,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             else if (previousPosition != MarketPosition.Flat && marketPosition == MarketPosition.Flat)
             {
                 // Trade exit - send trade data to dashboard
-                SendTradeCompletedToDashboard();
+                // IMPORTANT: Reset entry bar BEFORE sending to prevent duplicate sends if OnPositionUpdate is called multiple times
+                int entryBarToSend = currentTradeEntryBar;
+                double entryPriceToSend = currentTradeEntryPrice;
+                DateTime entryTimeToSend = currentTradeEntryTime;
+                MarketPosition directionToSend = currentTradeDirection;
+                int contractsToSend = currentTradeContracts;
+                string entryReasonToSend = currentTradeEntryReason; // BUG FIX: Save entry reason before resetting
+                double mfeToSend = currentTradeMFE;
+                double maeToSend = currentTradeMAE;
+                double stopLossPointsToSend = currentTradeStopLossPoints;
                 
-                // Reset tracking
+                // Reset tracking IMMEDIATELY to prevent duplicate sends
                 currentTradeEntryBar = -1;
                 currentTradeEntryReason = "";
                 currentTradeEntryPrice = double.NaN;
@@ -2320,6 +3081,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentTradeMFE = 0.0;
                 currentTradeMAE = 0.0;
                 currentTradeStopLossPoints = 0.0;
+                
+                // Now send with the saved values (only if we had a valid entry)
+                if (entryBarToSend >= 0 && !double.IsNaN(entryPriceToSend))
+                {
+                    // Temporarily restore values for SendTradeCompletedToDashboard
+                    currentTradeEntryBar = entryBarToSend;
+                    currentTradeEntryPrice = entryPriceToSend;
+                    currentTradeEntryTime = entryTimeToSend;
+                    currentTradeDirection = directionToSend;
+                    currentTradeContracts = contractsToSend;
+                    currentTradeEntryReason = entryReasonToSend; // BUG FIX: Restore entry reason
+                    currentTradeMFE = mfeToSend;
+                    currentTradeMAE = maeToSend;
+                    currentTradeStopLossPoints = stopLossPointsToSend;
+                    
+                    SendTradeCompletedToDashboard();
+                    
+                    // Reset again after sending
+                    currentTradeEntryBar = -1;
+                    currentTradeEntryPrice = double.NaN;
+                    currentTradeEntryTime = DateTime.MinValue;
+                    currentTradeDirection = MarketPosition.Flat;
+                    currentTradeContracts = 0;
+                    currentTradeEntryReason = "";
+                    currentTradeMFE = 0.0;
+                    currentTradeMAE = 0.0;
+                    currentTradeStopLossPoints = 0.0;
+                }
             }
             // Update MFE/MAE while position is open
             else if (marketPosition != MarketPosition.Flat && currentTradeEntryBar >= 0)
@@ -2536,23 +3325,47 @@ namespace NinjaTrader.NinjaScript.Strategies
                 sb.Append("}");
 
                 string json = sb.ToString();
-                string url = DashboardBaseUrl.TrimEnd('/') + "/trade_completed";
+                
+                // Send to both endpoints:
+                // 1. Original dashboard.db endpoint (for backward compatibility)
+                string url1 = DashboardBaseUrl.TrimEnd('/') + "/trade_completed";
+                // 2. New volatility.db endpoint (same database as bar_samples)
+                string url2 = DashboardBaseUrl.TrimEnd('/') + "/api/volatility/record-trade";
 
-                // Send asynchronously
+                // Send asynchronously to both endpoints
                 Task.Run(() =>
                 {
                     try
                     {
-                        SendJsonToServer(json, url);
-                        Print($"[TRADE_EXIT] Bar {CurrentBar}: Trade data sent to dashboard");
+                        // Send to original endpoint
+                        SendJsonToServer(json, url1);
+                        Print($"[TRADE_EXIT] Bar {CurrentBar}: Trade data sent to dashboard.db");
                     }
                     catch (ObjectDisposedException ex)
                     {
-                        Print($"[TRADE_EXIT] Bar {CurrentBar}: HttpClient disposed, skipping send: {ex.Message}");
+                        Print($"[TRADE_EXIT] Bar {CurrentBar}: HttpClient disposed for dashboard.db, skipping: {ex.Message}");
                     }
                     catch (Exception ex)
                     {
-                        Print($"[TRADE_EXIT] Bar {CurrentBar}: Error sending trade data: {ex.Message}");
+                        Print($"[TRADE_EXIT] Bar {CurrentBar}: Error sending to dashboard.db: {ex.Message}");
+                    }
+                });
+                
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        // Send to volatility.db endpoint
+                        SendJsonToServer(json, url2);
+                        Print($"[TRADE_EXIT] Bar {CurrentBar}: Trade data sent to volatility.db");
+                    }
+                    catch (ObjectDisposedException ex)
+                    {
+                        Print($"[TRADE_EXIT] Bar {CurrentBar}: HttpClient disposed for volatility.db, skipping: {ex.Message}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Print($"[TRADE_EXIT] Bar {CurrentBar}: Error sending to volatility.db: {ex.Message}");
                     }
                 });
             }
@@ -2564,105 +3377,339 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private void ClearTradesTable()
         {
-            // Clear trades table on fresh run
+            // Clear trades tables on fresh run (both dashboard.db and volatility.db)
+            // MUST BE SYNCHRONOUS to complete before historical playback starts!
             try
             {
-                string url = DashboardBaseUrl.TrimEnd('/') + "/api/trades/clear";
+                // Clear dashboard.db trades table
+                string url1 = DashboardBaseUrl.TrimEnd('/') + "/api/trades/clear";
+                Print($"[TRADES_CLEAR] Clearing dashboard.db trades table (SYNC)...");
                 
-                // Send asynchronously
-                Task.Run(async () =>
+                using (var client = new System.Net.Http.HttpClient())
                 {
-                    try
+                    client.Timeout = TimeSpan.FromSeconds(10);
+                    var response1 = client.PostAsync(url1, null).Result; // BLOCKING
+                    
+                    if (response1.IsSuccessStatusCode)
                     {
-                        EnsureHttpClient();
-                        var response = await sharedClient.PostAsync(url, null);
-                        
-                        if (response.IsSuccessStatusCode)
-                        {
-                            Print($"[TRADES_CLEAR] Trades table cleared for fresh run");
-                        }
-                        else
-                        {
-                            Print($"[TRADES_CLEAR] Failed to clear trades - HTTP {response.StatusCode}");
-                        }
+                        var responseText1 = response1.Content.ReadAsStringAsync().Result;
+                        Print($"[TRADES_CLEAR] ✓ Cleared dashboard.db. Response: {responseText1}");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        Print($"[TRADES_CLEAR] Error clearing trades: {ex.Message}");
+                        var errorText1 = response1.Content.ReadAsStringAsync().Result;
+                        Print($"[TRADES_CLEAR] ✗ HTTP {response1.StatusCode}: {errorText1}");
                     }
-                });
+                    response1.Dispose();
+                }
+                
+                // Clear volatility.db trades table
+                string url2 = DashboardBaseUrl.TrimEnd('/') + "/api/volatility/clear-trades";
+                Print($"[TRADES_CLEAR] Clearing volatility.db trades table (SYNC)...");
+                
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(10);
+                    var response2 = client.PostAsync(url2, null).Result; // BLOCKING
+                    
+                    if (response2.IsSuccessStatusCode)
+                    {
+                        var responseText2 = response2.Content.ReadAsStringAsync().Result;
+                        Print($"[TRADES_CLEAR] ✓ Cleared volatility.db. Response: {responseText2}");
+                    }
+                    else
+                    {
+                        var errorText2 = response2.Content.ReadAsStringAsync().Result;
+                        Print($"[TRADES_CLEAR] ✗ HTTP {response2.StatusCode}: {errorText2}");
+                    }
+                    response2.Dispose();
+                }
             }
             catch (Exception ex)
             {
-                Print($"[TRADES_CLEAR] Error preparing clear request: {ex.Message}");
+                Print($"[TRADES_CLEAR] Error clearing trades: {ex.Message}");
             }
         }
 
         private void ClearBarsTable()
         {
             // Clear BarsOnTheFlowStateAndBar table on fresh run
+            // MUST BE SYNCHRONOUS to complete before historical playback starts!
             try
             {
                 string url = DashboardBaseUrl.TrimEnd('/') + "/api/databases/clear-bars-table";
+                Print($"[BARS_CLEAR] Clearing BarsOnTheFlowStateAndBar table (SYNC)...");
                 
-                // Send asynchronously
-                Task.Run(async () =>
+                // Use dedicated HttpClient to avoid issues
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(10);
+                    var response = client.PostAsync(url, null).Result; // BLOCKING
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var responseText = response.Content.ReadAsStringAsync().Result;
+                        Print($"[BARS_CLEAR] ✓ Cleared. Response: {responseText}");
+                    }
+                    else
+                    {
+                        var errorText = response.Content.ReadAsStringAsync().Result;
+                        Print($"[BARS_CLEAR] ✗ HTTP {response.StatusCode}: {errorText}");
+                    }
+                    response.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[BARS_CLEAR] Error clearing bars table: {ex.Message}");
+            }
+        }
+
+        private void ImportHistoricalCsvToDatabase(string csvPath)
+        {
+            // Import CSV to database by calling Python script directly
+            // This is more reliable than HTTP as it doesn't require the server to be running
+            // and doesn't suffer from timeout issues
+            try
+            {
+                Print($"[CSV_IMPORT] Starting Python-based CSV import: {Path.GetFileName(csvPath)}");
+                
+                // Get the Python import script path
+                // logFilePath is like: C:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\strategy_logs\BarsOnTheFlow_...
+                // We need: C:\Mac\Home\Documents\NinjaTrader 8\bin\Custom\web\dashboard
+                string logDir = Path.GetDirectoryName(logFilePath);
+                string customDir = Path.GetDirectoryName(logDir); // Go up from strategy_logs to Custom
+                string dashboardDir = Path.Combine(customDir, "web", "dashboard");
+                string importScript = Path.Combine(dashboardDir, "import_csv_to_database.py");
+                
+                Print($"[CSV_IMPORT] ========================================");
+                Print($"[CSV_IMPORT] CSV Import Starting");
+                Print($"[CSV_IMPORT] Log file: {Path.GetFileName(csvPath)}");
+                Print($"[CSV_IMPORT] Log dir: {logDir}");
+                Print($"[CSV_IMPORT] Custom dir: {customDir}");
+                Print($"[CSV_IMPORT] Dashboard dir: {dashboardDir}");
+                Print($"[CSV_IMPORT] Import script: {importScript}");
+                Print($"[CSV_IMPORT] Script exists: {File.Exists(importScript)}");
+                Print($"[CSV_IMPORT] CSV exists: {File.Exists(csvPath)}");
+                Print($"[CSV_IMPORT] ========================================");
+                
+                if (!File.Exists(importScript))
+                {
+                    Print($"[CSV_IMPORT] Import script not found, falling back to HTTP");
+                    ImportHistoricalCsvViaHttp(csvPath);
+                    return;
+                }
+                
+                // Run import in background (don't block strategy startup)
+                Task.Run(() =>
                 {
                     try
                     {
-                        EnsureHttpClient();
-                        var response = await sharedClient.PostAsync(url, null);
-                        
-                        if (response.IsSuccessStatusCode)
+                        bool success = ImportCsvViaPython(csvPath, importScript, dashboardDir);
+                        if (!success)
                         {
-                            Print($"[BARS_CLEAR] BarsOnTheFlowStateAndBar table cleared for fresh run");
-                        }
-                        else
-                        {
-                            Print($"[BARS_CLEAR] Failed to clear bars table - HTTP {response.StatusCode}");
+                            Print($"[CSV_IMPORT] Python import failed, trying HTTP fallback...");
+                            ImportHistoricalCsvViaHttp(csvPath);
                         }
                     }
                     catch (Exception ex)
                     {
-                        Print($"[BARS_CLEAR] Error clearing bars table: {ex.Message}");
+                        Print($"[CSV_IMPORT] Error during Python import: {ex.Message}");
+                        Print($"[CSV_IMPORT] Trying HTTP fallback...");
+                        try
+                        {
+                            ImportHistoricalCsvViaHttp(csvPath);
+                        }
+                        catch (Exception ex2)
+                        {
+                            Print($"[CSV_IMPORT] HTTP fallback also failed: {ex2.Message}");
+                        }
+                    }
+                    finally
+                    {
+                        historicalCsvImportComplete = true;
+                        Print($"[CSV_IMPORT] Import process complete - real-time recording enabled");
                     }
                 });
             }
             catch (Exception ex)
             {
-                Print($"[BARS_CLEAR] Error preparing clear request: {ex.Message}");
+                Print($"[CSV_IMPORT] Error preparing CSV import: {ex.Message}");
+                historicalCsvImportComplete = true;
             }
         }
-
-        private void ClearBarSamples()
+        
+        private bool ImportCsvViaPython(string csvPath, string scriptPath, string workingDir)
         {
-            // Clear bar_samples table on fresh run
+            // Run Python script to import CSV directly to SQLite database
             try
             {
-                string url = DashboardBaseUrl.TrimEnd('/') + "/api/databases/clear-bar-samples";
+                // Try python3 first, then python
+                string pythonExe = "python";
+                try
+                {
+                    var testProcess = new ProcessStartInfo { FileName = "python3", Arguments = "--version", UseShellExecute = false, RedirectStandardOutput = true, CreateNoWindow = true };
+                    using (var test = Process.Start(testProcess))
+                    {
+                        if (test != null)
+                        {
+                            test.WaitForExit(1000);
+                            pythonExe = "python3";
+                        }
+                    }
+                }
+                catch { }
                 
-                // Send asynchronously
+                var startInfo = new ProcessStartInfo
+                {
+                    FileName = pythonExe,
+                    Arguments = $"\"{scriptPath}\" \"{csvPath}\"",
+                    WorkingDirectory = workingDir,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                
+                Print($"[CSV_IMPORT] Running: {pythonExe} \"{Path.GetFileName(scriptPath)}\" \"{Path.GetFileName(csvPath)}\"");
+                Print($"[CSV_IMPORT] Working directory: {workingDir}");
+                
+                using (var process = new Process { StartInfo = startInfo })
+                {
+                    process.Start();
+                    
+                    // Read output
+                    string output = process.StandardOutput.ReadToEnd();
+                    string error = process.StandardError.ReadToEnd();
+                    
+                    // Wait for completion (max 120 seconds for large files)
+                    bool completed = process.WaitForExit(120000);
+                    
+                    if (!completed)
+                    {
+                        Print($"[CSV_IMPORT] Python process timed out after 120 seconds");
+                        try { process.Kill(); } catch { }
+                        return false; // Timeout
+                    }
+                    
+                    int exitCode = process.ExitCode;
+                    Print($"[CSV_IMPORT] Python process exited with code: {exitCode}");
+                    
+                    // Print ALL output lines (not just first 10) to see what happened
+                    if (!string.IsNullOrWhiteSpace(output))
+                    {
+                        string[] outputLines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in outputLines)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line))
+                                Print($"[CSV_IMPORT_OUT] {line.Trim()}");
+                        }
+                    }
+                    
+                    if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        string[] errorLines = error.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in errorLines)
+                        {
+                            if (!string.IsNullOrWhiteSpace(line))
+                                Print($"[CSV_IMPORT_ERR] {line.Trim()}");
+                        }
+                    }
+                    
+                    if (exitCode != 0)
+                    {
+                        Print($"[CSV_IMPORT] WARNING: Python script exited with error code {exitCode}");
+                        return false;
+                    }
+                    else
+                    {
+                        Print($"[CSV_IMPORT] SUCCESS: CSV import completed successfully");
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[CSV_IMPORT] Python execution error: {ex.GetType().Name}: {ex.Message}");
+                if (ex.InnerException != null)
+                    Print($"[CSV_IMPORT] Inner exception: {ex.InnerException.Message}");
+                return false;
+            }
+        }
+        
+        private void ImportHistoricalCsvViaHttp(string csvPath)
+        {
+            // Fallback: Import CSV via HTTP request to server
+            try
+            {
+                string url = DashboardBaseUrl.TrimEnd('/') + "/api/databases/import-csv";
+                string jsonPayload = $"{{\"csv_path\":\"{csvPath.Replace("\\", "\\\\")}\"}}";
+                
+                Print($"[CSV_IMPORT_HTTP] Triggering HTTP import for: {Path.GetFileName(csvPath)}");
+                
+                EnsureHttpClient();
+                var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                
+                var cts = cancellationTokenSource;
                 Task.Run(async () =>
                 {
                     try
                     {
-                        EnsureHttpClient();
-                        var response = await sharedClient.PostAsync(url, null);
+                        if (cts == null || cts.IsCancellationRequested)
+                            return;
                         
-                        if (response.IsSuccessStatusCode)
+                        using (var quickTimeoutCts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5)))
                         {
-                            Print($"[BAR_SAMPLES_CLEAR] bar_samples table cleared for fresh run");
+                            var response = await sharedClient.PostAsync(url, content, quickTimeoutCts.Token).ConfigureAwait(false);
+                            Print($"[CSV_IMPORT_HTTP] Request accepted (status: {response.StatusCode})");
+                            response.Dispose();
                         }
-                        else
-                        {
-                            Print($"[BAR_SAMPLES_CLEAR] Failed to clear bar_samples - HTTP {response.StatusCode}");
-                        }
+                        
+                        historicalCsvImportComplete = true;
                     }
                     catch (Exception ex)
                     {
-                        Print($"[BAR_SAMPLES_CLEAR] Error clearing bar_samples: {ex.Message}");
+                        Print($"[CSV_IMPORT_HTTP] Error: {ex.Message}");
+                        historicalCsvImportComplete = true;
                     }
                 });
+            }
+            catch (Exception ex)
+            {
+                Print($"[CSV_IMPORT_HTTP] Error preparing request: {ex.Message}");
+                historicalCsvImportComplete = true;
+            }
+        }
+        
+        private void ClearBarSamples()
+        {
+            // Clear bar_samples table on fresh run
+            // Called automatically when strategy starts (State.DataLoaded)
+            // This ensures each run starts with a clean bar_samples table
+            // MUST BE SYNCHRONOUS to complete before historical playback starts!
+            try
+            {
+                string url = DashboardBaseUrl.TrimEnd('/') + "/api/databases/clear-bar-samples";
+                Print($"[BAR_SAMPLES_CLEAR] Clearing bar_samples table (SYNC)...");
+                
+                // Use dedicated HttpClient to avoid issues
+                using (var client = new System.Net.Http.HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(10);
+                    var response = client.PostAsync(url, null).Result; // BLOCKING
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var responseText = response.Content.ReadAsStringAsync().Result;
+                        Print($"[BAR_SAMPLES_CLEAR] ✓ Cleared. Response: {responseText}");
+                    }
+                    else
+                    {
+                        var errorText = response.Content.ReadAsStringAsync().Result;
+                        Print($"[BAR_SAMPLES_CLEAR] ✗ HTTP {response.StatusCode}: {errorText}");
+                    }
+                    response.Dispose();
+                }
             }
             catch (Exception ex)
             {
@@ -2721,6 +3768,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 logWriter.WriteLine($"# ShowFastGradLabels={ShowFastGradLabels}");
                 logWriter.WriteLine($"# EnableDashboardDiagnostics={EnableDashboardDiagnostics}");
                 logWriter.WriteLine($"# DashboardBaseUrl={DashboardBaseUrl}");
+                logWriter.WriteLine($"# RecordBarSamplesInHistorical={RecordBarSamplesInHistorical}");
+                logWriter.WriteLine($"# BarSampleDelayMs={BarSampleDelayMs}");
                 
                 logWriter.WriteLine("#");
                 logWriter.WriteLine("# --- End Parameters ---");
@@ -2806,12 +3855,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 state.AppendLine($"  \"emaCrossoverCooldownBars\": {EmaCrossoverCooldownBars},");
                 state.AppendLine($"  \"emaCrossoverMinTicksCloseToFast\": {EmaCrossoverMinTicksCloseToFast},");
                 state.AppendLine($"  \"emaCrossoverMinTicksFastToSlow\": {EmaCrossoverMinTicksFastToSlow},");
+                state.AppendLine($"  \"emaCrossoverRequireBodyBelow\": {EmaCrossoverRequireBodyBelow.ToString().ToLower()},");
                 state.AppendLine($"  \"enableBarsOnTheFlowTrendDetection\": {EnableBarsOnTheFlowTrendDetection.ToString().ToLower()},");
                 state.AppendLine($"  \"trendLookbackBars\": {TrendLookbackBars},");
                 state.AppendLine($"  \"minMatchingBars\": {MinMatchingBars},");
                 state.AppendLine($"  \"usePnLTiebreaker\": {UsePnLTiebreaker.ToString().ToLower()},");
                 state.AppendLine($"  \"pendingLongFromBad\": {pendingLongFromBad.ToString().ToLower()},");
-                state.AppendLine($"  \"pendingShortFromGood\": {pendingShortFromGood.ToString().ToLower()}");
+                state.AppendLine($"  \"pendingShortFromGood\": {pendingShortFromGood.ToString().ToLower()},");
+                state.AppendLine($"  \"recordBarSamplesInHistorical\": {RecordBarSamplesInHistorical.ToString().ToLower()},");
+                state.AppendLine($"  \"barSampleDelayMs\": {BarSampleDelayMs}");
                 state.AppendLine("}");
 
                 File.WriteAllText(statePath, state.ToString());
@@ -2857,37 +3909,57 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     catch { }
                     
-                    // For historical data, use synchronous to ensure all bars are logged
-                    // For realtime, use async to avoid blocking
-                    bool useAsync = (State == State.Realtime) && (State != State.Historical || DashboardAsyncHistorical);
-
-                if (useAsync)
-                {
-                    // Async fire-and-forget to avoid blocking (fast, may miss late bars in historical)
-                        Task.Run(() => {
-                            try
-                            {
-                                SendJsonToServer(jsonPayload, url);
-                            }
-                            catch (Exception ex)
-                            {
-                                Print($"[Dashboard] Background send failed for bar {barIndexForLog}: {ex.Message}");
-                            }
-                        });
-                }
-                else
-                {
-                    // Synchronous during historical when completeness is required
-                        // This ensures all bars are sent even if some requests are slow
+                    // ALWAYS use async to prevent blocking the strategy
+                    // Synchronous calls can cause hangs/deadlocks
+                    var cts = cancellationTokenSource; // Capture cancellation token
+                    Task.Run(async () => {
                         try
                         {
-                    SendJsonToServer(jsonPayload, url);
+                            // Check if strategy is still running or cancelled
+                            if (State == State.Terminated || State == State.SetDefaults || cts == null || cts.IsCancellationRequested)
+                            {
+                                return; // Strategy stopped, don't send request
+                            }
+                            
+                            EnsureHttpClient();
+                            var content = new StringContent(jsonPayload, Encoding.UTF8, "application/json");
+                            var response = await sharedClient.PostAsync(url, content, cts.Token).ConfigureAwait(false);
+                            
+                            // Check again after request completes
+                            if (State == State.Terminated || State == State.SetDefaults || cts.IsCancellationRequested)
+                            {
+                                response.Dispose();
+                                return; // Strategy stopped, don't log
+                            }
+                            
+                            if (!response.IsSuccessStatusCode)
+                            {
+                                Print($"[Dashboard] POST failed for bar {barIndexForLog}: {(int)response.StatusCode} {response.StatusCode}");
+                            }
+                            else if (!dashboardPostLoggedSuccess)
+                            {
+                                dashboardPostLoggedSuccess = true;
+                                Print($"[Dashboard] POST succeeded: {(int)response.StatusCode} {response.StatusCode} (bar {barIndexForLog})");
+                            }
+                            response.Dispose();
+                        }
+                        catch (TaskCanceledException)
+                        {
+                            // Request was cancelled - don't log (strategy was stopped)
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            // Request was cancelled - don't log (strategy was stopped)
                         }
                         catch (Exception ex)
                         {
-                            Print($"[Dashboard] Sync send exception for bar {barIndexForLog}: {ex.Message}");
+                            // Only log if strategy is still running and not cancelled
+                            if (State != State.Terminated && State != State.SetDefaults && (cts == null || !cts.IsCancellationRequested))
+                            {
+                                Print($"[Dashboard] POST failed for bar {barIndexForLog}: {ex.Message}");
+                            }
                         }
-                    }
+                    });
                     
                     // Log every 100 bars to track progress
                     if (barIndexForLog % 100 == 0)
@@ -2948,12 +4020,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Print($"[Dashboard] POST failed for bar {sentBarIndex}: {(int)response.StatusCode} {response.StatusCode}");
+                    string responseBody = "";
+                    try
+                    {
+                        responseBody = response.Content.ReadAsStringAsync().Result;
+                    }
+                    catch { }
+                    Print($"[Dashboard] POST failed for {url}: {(int)response.StatusCode} {response.StatusCode}, Response: {responseBody}");
                 }
-                else if (!dashboardPostLoggedSuccess)
+                else
                 {
-                    dashboardPostLoggedSuccess = true;
-                    Print($"[Dashboard] POST succeeded: {(int)response.StatusCode} {response.StatusCode} (bar {sentBarIndex})");
+                    string responseBody = "";
+                    try
+                    {
+                        responseBody = response.Content.ReadAsStringAsync().Result;
+                    }
+                    catch { }
+                    Print($"[Dashboard] POST succeeded to {url}: {(int)response.StatusCode} {response.StatusCode}, Response: {responseBody}");
                 }
             }
             catch (ObjectDisposedException ex)
@@ -3080,6 +4163,11 @@ namespace NinjaTrader.NinjaScript.Strategies
             json.Append("\"breakEvenOffset\":").Append(BreakEvenOffset).Append(',');
             json.Append("\"breakEvenActivated\":").Append(breakEvenActivated ? "true" : "false").Append(',');
             
+            // EMA trailing stop configuration
+            json.Append("\"useEmaTrailingStop\":").Append(UseEmaTrailingStop ? "true" : "false").Append(',');
+            json.Append("\"emaStopTriggerMode\":\"").Append(EmaStopTriggerMode.ToString()).Append("\",");
+            json.Append("\"emaStopProfitProtectionPoints\":").Append(EmaStopProfitProtectionPoints.ToString(ci)).Append(',');
+            
             // Strategy parameters
             json.Append("\"enableShorts\":").Append(EnableShorts ? "true" : "false").Append(',');
             json.Append("\"avoidLongsOnBadCandle\":").Append(AvoidLongsOnBadCandle ? "true" : "false").Append(',');
@@ -3098,6 +4186,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             json.Append("\"emaCrossoverWindowBars\":").Append(EmaCrossoverWindowBars).Append(',');
             json.Append("\"emaCrossoverRequireCrossover\":").Append(EmaCrossoverRequireCrossover ? "true" : "false").Append(',');
             json.Append("\"emaCrossoverCooldownBars\":").Append(EmaCrossoverCooldownBars).Append(',');
+            json.Append("\"emaCrossoverRequireBodyBelow\":").Append(EmaCrossoverRequireBodyBelow ? "true" : "false").Append(',');
             
             // Gradient values (degrees)
             if (!double.IsNaN(lastFastEmaGradDeg))
@@ -3293,6 +4382,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void LogBarSnapshot(int barsAgo, bool allowLongThisBar, bool allowShortThisBar, bool trendUp, bool trendDown)
         {
             // Log a completed bar even when no orders fired. Use barsAgo=1 for the most recently closed bar.
+            // Note: CurrentBar is 0-based in NinjaTrader. When CurrentBar=152, the bar that just closed is bar 151 (CurrentBar-1).
+            // This barIndex matches the chart's bar index display.
             if (barsAgo < 1)
                 return;
 
@@ -3338,9 +4429,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Get bar pattern for snapshot (empty for non-entry bars)
                 string barPattern = string.Empty;
 
+                // Get EMA values for logging
+                double emaFastValForLog = (emaFast != null && CurrentBar >= EmaFastPeriod) ? emaFast[barsAgo] : double.NaN;
+                double emaSlowValForLog = (emaSlow != null && CurrentBar >= EmaSlowPeriod) ? emaSlow[barsAgo] : double.NaN;
+                string emaFastValueStr = double.IsNaN(emaFastValForLog) ? string.Empty : emaFastValForLog.ToString("F4");
+                string emaSlowValueStr = double.IsNaN(emaSlowValForLog) ? string.Empty : emaSlowValForLog.ToString("F4");
+
                 // Reuse the existing CSV schema; mark action as BAR snapshot
+                // CSV columns: timestamp,bar,direction,open,high,low,close,openFinal,highFinal,lowFinal,closeFinal,candleType,fastEma,fastEmaGradDeg,volume,bodyPct,upperWick,lowerWick,action,orderName,quantity,price,pnl,reason,prevOpen,prevClose,prevCandleType,allowLongThisBar,allowShortThisBar,trendUpAtDecision,trendDownAtDecision,decisionBarIndex,pendingShortFromGood,pendingLongFromBad,barPattern,useEmaCrossoverFilter,emaFastPeriod,emaSlowPeriod,emaCrossoverWindowBars,emaCrossoverRequireCrossover,emaCrossoverCooldownBars,emaFastValue,emaSlowValue
                 string line = string.Format(
-                    "{0},{1},{2},{3:F4},{4:F4},{5:F4},{6:F4},{7:F4},{8:F4},{9:F4},{10:F4},{11},{12},{13},{14},{15:F6},{16:F4},{17:F4},{18},{19},{20},{21},{22},{23},{24},{25},{26},{27},{28},{29},{30},{31},{32},{33},{34}",
+                    "{0},{1},{2},{3:F4},{4:F4},{5:F4},{6:F4},{7:F4},{8:F4},{9:F4},{10:F4},{11},{12},{13},{14},{15:F6},{16:F4},{17:F4},{18},{19},{20},{21},{22},{23},{24},{25},{26},{27},{28},{29},{30},{31},{32},{33},{34},{35},{36},{37},{38},{39},{40},{41},{42}",
                     ts, // 0 timestamp
                     barIndex, // 1 bar
                     direction, // 2 direction (position at bar close)
@@ -3375,7 +4473,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                     barIndex, // 31 decisionBarIndex (same as bar for snapshot)
                     pendingShortFromGood, // 32 pendingShortFromGood
                     pendingLongFromBad, // 33 pendingLongFromBad
-                    barPattern // 34 barPattern
+                    barPattern, // 34 barPattern
+                    UseEmaCrossoverFilter, // 35 useEmaCrossoverFilter
+                    EmaFastPeriod, // 36 emaFastPeriod
+                    EmaSlowPeriod, // 37 emaSlowPeriod
+                    EmaCrossoverWindowBars, // 38 emaCrossoverWindowBars
+                    EmaCrossoverRequireCrossover, // 39 emaCrossoverRequireCrossover
+                    EmaCrossoverCooldownBars, // 40 emaCrossoverCooldownBars
+                    emaFastValueStr, // 41 emaFastValue
+                    emaSlowValueStr // 42 emaSlowValue
                 );
 
                 logWriter.WriteLine(line);
@@ -3735,6 +4841,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Dashboard diagnostics (optional)
         private static System.Net.Http.HttpClient sharedClient;
         private static readonly object clientLock = new object();
+        private static DateTime lastBarSampleRequestTime = DateTime.MinValue; // track last request time for rate limiting
+        private static System.Threading.SemaphoreSlim barSampleSemaphore = new System.Threading.SemaphoreSlim(3, 3); // limit to 3 concurrent requests (very low to prevent blocking)
+        private System.Threading.CancellationTokenSource cancellationTokenSource; // cancellation token for HTTP requests
+        
+        // In-memory storage for historical bar data - avoids HTTP during fast historical playback
+        private System.Collections.Generic.List<string> historicalBarDataList = new System.Collections.Generic.List<string>();
+        private readonly object historicalBarDataLock = new object();
 
         private void CreateBarNavPanel()
         {
@@ -4117,12 +5230,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
                 // Otherwise, set the stop loss normally
-                if (!EmaStopRequireFullCandleBelow)
+                if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
                 {
                     SetStopLoss(orderName, CalculationMode.Price, stopLossPrice, false);
                 }
                 
-                Print($"[SetInitialStopLoss] EMA Trailing Stop: Setting stop loss to Fast EMA value at entry: {entryFastEmaValue:F4} (price: {stopLossPrice:F4}), Direction={direction}, RequireFullCandleBelow={EmaStopRequireFullCandleBelow}");
+                Print($"[SetInitialStopLoss] EMA Trailing Stop: Setting stop loss to Fast EMA value at entry: {entryFastEmaValue:F4} (price: {stopLossPrice:F4}), Direction={direction}, TriggerMode={EmaStopTriggerMode}");
                 
                 // Store stop loss points for reporting (calculate distance from entry)
                 double entryPrice = Close[0]; // Approximate entry price
@@ -4269,7 +5382,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Get current volume from the last completed bar
                 long currentVolume = (long)Volume[1];
                 
-                string url = $"http://localhost:51888/api/volatility/recommended-stop?hour={currentHour}&volume={currentVolume}&symbol=MNQ";
+                string url = $"{DashboardBaseUrl.TrimEnd('/')}/api/volatility/recommended-stop?hour={currentHour}&volume={currentVolume}&symbol=MNQ";
                 
                 var task = sharedClient.GetStringAsync(url);
                 if (!task.Wait(200)) // 200ms timeout
@@ -4424,6 +5537,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 
                 // Use [1] for completed bar data
+                double open = Open[1];
                 double close = Close[1];
                 double fastEma = emaFast[1];
                 double slowEma = emaSlow[1];
@@ -4438,7 +5552,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // For longs: Close >= Fast EMA + minGap AND Fast EMA >= Slow EMA + minGap
                     bool closeAboveFast = close >= fastEma + minGapCloseToFast;
                     bool fastAboveSlow = fastEma >= slowEma + minGapFastToSlow;
-                    conditionsMet = closeAboveFast && fastAboveSlow;
+                    
+                    // If body requirement is enabled, check that entire body is above Fast EMA (with minimum gap)
+                    if (EmaCrossoverRequireBodyBelow)
+                    {
+                        double bodyTop = Math.Max(open, close);
+                        double bodyBottom = Math.Min(open, close);
+                        // Body must be above Fast EMA with minimum gap (same as close requirement)
+                        bool bodyAboveFast = bodyBottom >= fastEma + minGapCloseToFast && bodyTop >= fastEma + minGapCloseToFast;
+                        conditionsMet = bodyAboveFast && fastAboveSlow;
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, minGap={minGapCloseToFast:F4}, bodyAboveFast={bodyAboveFast} (bodyBottom >= fastEma+gap: {bodyBottom >= fastEma + minGapCloseToFast}, bodyTop >= fastEma+gap: {bodyTop >= fastEma + minGapCloseToFast})");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: conditionsMet={conditionsMet} (bodyAboveFast={bodyAboveFast}, fastAboveSlow={fastAboveSlow})");
+                    }
+                    else
+                    {
+                        conditionsMet = closeAboveFast && fastAboveSlow;
+                    }
                     
                     // Track when conditions are met (for cooldown calculation)
                     // Record the most recent bar where conditions became true (for cooldown)
@@ -4482,7 +5611,21 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // For shorts: Close <= Fast EMA - minGap AND Fast EMA <= Slow EMA - minGap
                     bool closeBelowFast = close <= fastEma - minGapCloseToFast;
                     bool fastBelowSlow = fastEma <= slowEma - minGapFastToSlow;
-                    conditionsMet = closeBelowFast && fastBelowSlow;
+                    
+                    // If body requirement is enabled, check that entire body is below Fast EMA (with minimum gap)
+                    if (EmaCrossoverRequireBodyBelow)
+                    {
+                        double bodyTop = Math.Max(open, close);
+                        double bodyBottom = Math.Min(open, close);
+                        // Body must be below Fast EMA with minimum gap (same as close requirement)
+                        bool bodyBelowFast = bodyTop <= fastEma - minGapCloseToFast && bodyBottom <= fastEma - minGapCloseToFast;
+                        conditionsMet = bodyBelowFast && fastBelowSlow;
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, minGap={minGapCloseToFast:F4}, bodyBelowFast={bodyBelowFast} (bodyTop <= fastEma-gap: {bodyTop <= fastEma - minGapCloseToFast}, bodyBottom <= fastEma-gap: {bodyBottom <= fastEma - minGapCloseToFast})");
+                    }
+                    else
+                    {
+                        conditionsMet = closeBelowFast && fastBelowSlow;
+                    }
                     
                     Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: close={close:F4}, fastEma={fastEma:F4}, slowEma={slowEma:F4}");
                     Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: closeBelowFast={closeBelowFast} (close={close:F4} <= fastEma-minGap={fastEma - minGapCloseToFast:F4})");
@@ -4529,6 +5672,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 // Cooldown was already checked above (before conditions check)
                 // Now just return whether conditions are met
+                Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} {(isLong ? "LONG" : "SHORT")}: EmaCrossoverFilterPasses returning {conditionsMet}");
                 return conditionsMet;
             }
 
@@ -4632,6 +5776,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Cooldown was already checked above (before crossover detection)
 
             // After crossovers are found, check minimum gap requirements on current bar [1]
+            double openCurrent = Open[1];
             double closeCurrent = Close[1];
             double fastEmaCurrent = emaFast[1];
             double slowEmaCurrent = emaSlow[1];
@@ -4645,29 +5790,160 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // For longs: Close >= Fast EMA + minGap AND Fast EMA >= Slow EMA + minGap
                 bool closeAboveFast = closeCurrent >= fastEmaCurrent + minGapCloseToFastCurrent;
                 bool fastAboveSlow = fastEmaCurrent >= slowEmaCurrent + minGapFastToSlowCurrent;
-                return closeAboveFast && fastAboveSlow;
+                
+                // If body requirement is enabled, check that entire body is above Fast EMA (with minimum gap)
+                if (EmaCrossoverRequireBodyBelow)
+                {
+                    double bodyTop = Math.Max(openCurrent, closeCurrent);
+                    double bodyBottom = Math.Min(openCurrent, closeCurrent);
+                    // Body must be above Fast EMA with minimum gap (same as close requirement)
+                    bool bodyAboveFast = bodyBottom >= fastEmaCurrent + minGapCloseToFastCurrent && bodyTop >= fastEmaCurrent + minGapCloseToFastCurrent;
+                    Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode (RequireCrossover=true) - Open={openCurrent:F4}, Close={closeCurrent:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEmaCurrent:F4}, minGap={minGapCloseToFastCurrent:F4}, bodyAboveFast={bodyAboveFast}");
+                    return bodyAboveFast && fastAboveSlow;
+                }
+                else
+                {
+                    return closeAboveFast && fastAboveSlow;
+                }
             }
             else
             {
                 // For shorts: Close <= Fast EMA - minGap AND Fast EMA <= Slow EMA - minGap
                 bool closeBelowFast = closeCurrent <= fastEmaCurrent - minGapCloseToFastCurrent;
                 bool fastBelowSlow = fastEmaCurrent <= slowEmaCurrent - minGapFastToSlowCurrent;
-                return closeBelowFast && fastBelowSlow;
+                
+                // If body requirement is enabled, check that entire body is below Fast EMA (with minimum gap)
+                if (EmaCrossoverRequireBodyBelow)
+                {
+                    double bodyTop = Math.Max(openCurrent, closeCurrent);
+                    double bodyBottom = Math.Min(openCurrent, closeCurrent);
+                    // Body must be below Fast EMA with minimum gap (same as close requirement)
+                    bool bodyBelowFast = bodyTop <= fastEmaCurrent - minGapCloseToFastCurrent && bodyBottom <= fastEmaCurrent - minGapCloseToFastCurrent;
+                    Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode (RequireCrossover=true) - Open={openCurrent:F4}, Close={closeCurrent:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEmaCurrent:F4}, minGap={minGapCloseToFastCurrent:F4}, bodyBelowFast={bodyBelowFast}");
+                    return bodyBelowFast && fastBelowSlow;
+                }
+                else
+                {
+                    return closeBelowFast && fastBelowSlow;
+                }
             }
         }
 
         // Rate limit bar sample recording
         private int lastRecordedBarSample = -1;
+        private bool historicalCsvImportComplete = false; // Track when historical CSV import is done
 
-        private void RecordBarSample()
+        /// <summary>
+        /// Sends all accumulated historical bar data to the server in one batch.
+        /// Called when transitioning from Historical to Realtime mode.
+        /// </summary>
+        private void SendHistoricalBarBatch()
         {
-            // Only record once per bar
-            if (CurrentBar == lastRecordedBarSample) return;
-            lastRecordedBarSample = CurrentBar;
-
+            Print($"[BATCH_SEND] ===== SendHistoricalBarBatch() CALLED =====");
+            
+            string[] barsToSend;
+            lock (historicalBarDataLock)
+            {
+                barsToSend = historicalBarDataList.ToArray();
+                Print($"[BATCH_SEND] Lock acquired, found {historicalBarDataList.Count} bars in memory");
+                historicalBarDataList.Clear(); // Clear the list after copying
+            }
+            
+            if (barsToSend.Length == 0)
+            {
+                Print($"[BATCH_SEND] ✗ ERROR: No historical bars to send! (barsToSend.Length = 0)");
+                Print($"[BATCH_SEND] This means RecordBarSample() was not called during historical playback!");
+                return;
+            }
+            
+            Print($"[BATCH_SEND] Preparing to send {barsToSend.Length} historical bars...");
+            
+            // Build batch JSON array
+            string batchJson = "[" + string.Join(",", barsToSend) + "]";
+            Print($"[BATCH_SEND] Batch JSON size: {batchJson.Length} bytes ({batchJson.Length / 1024.0:F1} KB)");
+            
+            // Send SYNCHRONOUSLY to ensure data is saved before strategy can terminate
+            // This blocks for a few seconds but guarantees the data is saved
             try
             {
                 EnsureHttpClient();
+                
+                string batchUrl = DashboardBaseUrl.TrimEnd('/') + "/api/volatility/batch-record-bars";
+                var content = new StringContent(batchJson, System.Text.Encoding.UTF8, "application/json");
+                
+                Print($"[BATCH_SEND] Sending POST to {batchUrl} (SYNC - will block until complete)...");
+                
+                // Use a dedicated HttpClient for this request to avoid disposal issues
+                using (var batchClient = new System.Net.Http.HttpClient())
+                {
+                    batchClient.Timeout = TimeSpan.FromMinutes(5);
+                    
+                    var response = batchClient.PostAsync(batchUrl, content).Result; // Blocking call
+                    
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string responseBody = response.Content.ReadAsStringAsync().Result;
+                        Print($"[BATCH_SEND] ✓ SUCCESS! Sent {barsToSend.Length} bars. Response: {responseBody.Substring(0, Math.Min(200, responseBody.Length))}");
+                    }
+                    else
+                    {
+                        string errorBody = response.Content.ReadAsStringAsync().Result;
+                        Print($"[BATCH_SEND] ✗ HTTP {response.StatusCode}: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}");
+                    }
+                    response.Dispose();
+                }
+                
+                Print($"[BATCH_SEND] Batch upload complete - real-time recording can proceed");
+            }
+            catch (AggregateException ae)
+            {
+                var innerEx = ae.InnerException ?? ae;
+                Print($"[BATCH_SEND] ✗ Error: {innerEx.GetType().Name}: {innerEx.Message}");
+            }
+            catch (Exception ex)
+            {
+                Print($"[BATCH_SEND] ✗ Error: {ex.GetType().Name}: {ex.Message}");
+            }
+        }
+
+        private void RecordBarSample()
+        {
+            // IMPORTANT: RecordBarSample is called at the START of a new bar (CurrentBar=2407)
+            // At this point, [1] refers to the bar that just closed (bar 2406)
+            // So we record bar_index as CurrentBar - 1 (the bar that just closed)
+            int barIndexToRecord = CurrentBar >= 1 ? CurrentBar - 1 : CurrentBar;
+            
+            // Only record once per bar (check using the bar index we're actually recording)
+            if (barIndexToRecord == lastRecordedBarSample)
+            {
+                if (CurrentBar <= 5) // Only log for first few bars to avoid spam
+                {
+                    Print($"[BAR_SAMPLE] Bar {CurrentBar}: Already recorded bar {barIndexToRecord}, skipping");
+                }
+                return;
+            }
+            lastRecordedBarSample = barIndexToRecord;
+
+            try
+            {
+                if (CurrentBar <= 5)
+                {
+                    Print($"[BAR_SAMPLE] Bar {CurrentBar}: Starting RecordBarSample()");
+                }
+                
+                EnsureHttpClient();
+                
+                // Verify HttpClient was created
+                if (sharedClient == null)
+                {
+                    Print($"[BAR_SAMPLE_ERROR] Bar {CurrentBar}: HttpClient is null after EnsureHttpClient() call!");
+                    return;
+                }
+                
+                if (CurrentBar <= 5)
+                {
+                    Print($"[BAR_SAMPLE] Bar {CurrentBar}: HttpClient is OK, preparing JSON payload");
+                }
                 
                 // Fire and forget - don't wait for response
                 // Get gradient degree for this bar (use the gradient calculated on this bar, which represents trend ending at previous bar)
@@ -4697,6 +5973,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 
                 // Calculate debugging fields for strategy decision analysis
+                // IMPORTANT: RecordBarSample is called at the START of a new bar (CurrentBar=2407)
+                // At this point, [1] refers to the bar that just closed (bar 2406)
+                // So we should record bar_index as CurrentBar - 1 (the bar that just closed)
+                // and use [1] for its OHLC data
+                // barIndexToRecord is already defined at the start of the function
                 double prevOpen = CurrentBar >= 1 ? Open[1] : double.NaN;
                 double prevClose = CurrentBar >= 1 ? Close[1] : double.NaN;
                 bool prevGood = !double.IsNaN(prevOpen) && !double.IsNaN(prevClose) && prevClose > prevOpen;
@@ -4705,25 +5986,50 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (prevGood) candleType = "good";
                 else if (prevBad) candleType = "bad";
                 
-                // Calculate trend and allow flags (same logic as in OnBarUpdate)
-                bool trendUp = EnableBarsOnTheFlowTrendDetection ? IsTrendUp() : false;
-                bool trendDown = EnableBarsOnTheFlowTrendDetection && EnableShorts ? IsTrendDown() : false;
+                // Use the stored values from OnBarUpdate (set after ProcessTradingDecisions)
+                // These reflect the actual decision state after ProcessTradingDecisions ran
+                bool trendUp = lastTrendUp;
+                bool trendDown = lastTrendDown;
+                bool allowShortThisBar = lastAllowShortThisBar;
+                bool allowLongThisBar = lastAllowLongThisBar;
+                bool pendingLongFromBad = lastPendingLongFromBad;
+                bool pendingShortFromGood = lastPendingShortFromGood;
                 
-                // If trend detection is disabled but EMA crossover filter is enabled, use EMA crossover as signal generator
-                if (!EnableBarsOnTheFlowTrendDetection && UseEmaCrossoverFilter)
+                // Capture entry reason if an entry was placed on the bar that just closed
+                string entryReasonForBar = "";
+                if (lastEntryBarIndex == barIndexToRecord && !string.IsNullOrEmpty(currentTradeEntryReason))
                 {
-                    bool emaLongSignal = EmaCrossoverFilterPasses(true);
-                    bool emaShortSignal = EnableShorts && EmaCrossoverFilterPasses(false);
-                    if (emaLongSignal) trendUp = true;
-                    if (emaShortSignal) trendDown = true;
+                    entryReasonForBar = currentTradeEntryReason;
                 }
                 
-                bool allowShortThisBar = !(AvoidShortsOnGoodCandle && prevGood);
-                bool allowLongThisBar = !(AvoidLongsOnBadCandle && prevBad);
+                // Capture exit reason if an exit happened on the bar that just closed
+                string exitReasonForBar = "";
+                if (lastExitBarIndex == barIndexToRecord && !string.IsNullOrEmpty(currentTradeExitReason))
+                {
+                    exitReasonForBar = currentTradeExitReason;
+                    // Reset exit reason after capturing it (so it doesn't persist to next bar)
+                    if (lastExitBarIndex == barIndexToRecord)
+                    {
+                        currentTradeExitReason = "";
+                        lastExitBarIndex = -1;
+                    }
+                }
                 
-                var content = new StringContent(
-                    $"{{\"timestamp\":\"{Time[1]:yyyy-MM-dd HH:mm:ss}\"," +
-                    $"\"bar_index\":{CurrentBar}," +
+                // Determine the reason to display: entry reason on entry bars, exit reason on exit bars
+                string reasonForBar = "";
+                if (!string.IsNullOrEmpty(entryReasonForBar))
+                {
+                    reasonForBar = entryReasonForBar;
+                }
+                else if (!string.IsNullOrEmpty(exitReasonForBar))
+                {
+                    reasonForBar = exitReasonForBar;
+                }
+                
+                // Build JSON string for bar data
+                // Use barIndexToRecord (CurrentBar - 1) to match the OHLC data from [1]
+                string barJson = $"{{\"timestamp\":\"{Time[1]:yyyy-MM-dd HH:mm:ss}\"," +
+                    $"\"bar_index\":{barIndexToRecord}," +
                     $"\"symbol\":\"MNQ\"," +
                     $"\"open\":{Open[1]}," +
                     $"\"high\":{High[1]}," +
@@ -4746,34 +6052,205 @@ namespace NinjaTrader.NinjaScript.Strategies
                     $"\"pending_long_from_bad\":{pendingLongFromBad.ToString().ToLower()}," +
                     $"\"pending_short_from_good\":{pendingShortFromGood.ToString().ToLower()}," +
                     $"\"avoid_longs_on_bad_candle\":{AvoidLongsOnBadCandle.ToString().ToLower()}," +
-                    $"\"avoid_shorts_on_good_candle\":{AvoidShortsOnGoodCandle.ToString().ToLower()}}}",
-                    System.Text.Encoding.UTF8, "application/json");
+                    $"\"avoid_shorts_on_good_candle\":{AvoidShortsOnGoodCandle.ToString().ToLower()}," +
+                    $"\"entry_reason\":\"{reasonForBar.Replace("\"", "\\\"")}\"}}";
                 
-                // Fire and forget with proper error handling to avoid connection leaks
-                sharedClient.PostAsync("http://localhost:51888/api/volatility/record-bar", content)
-                    .ContinueWith(t =>
+                // ===== HISTORICAL MODE: Store in memory, NO HTTP =====
+                // During fast historical playback, HTTP requests queue up faster than they complete.
+                // Instead, we store all bar data in memory and send it in ONE batch when transitioning to real-time.
+                if (State == State.Historical)
+                {
+                    lock (historicalBarDataLock)
                     {
-                        try
+                        historicalBarDataList.Add(barJson);
+                    }
+                    
+                    // Log progress periodically (every 500 bars)
+                    if (CurrentBar % 500 == 0 || CurrentBar <= 10)
+                    {
+                        Print($"[BAR_SAMPLE] Bar {CurrentBar}: Stored in memory (total={historicalBarDataList.Count} bars, no HTTP during historical)");
+                    }
+                    return; // Exit early - no HTTP during historical
+                }
+                
+                // ===== REAL-TIME MODE: Send via HTTP =====
+                var content = new StringContent(barJson, System.Text.Encoding.UTF8, "application/json");
+                
+                string recordBarUrl = DashboardBaseUrl.TrimEnd('/') + "/api/volatility/record-bar";
+                int currentBarForLogging = CurrentBar; // Capture CurrentBar for logging in callback
+                
+                Print($"[BAR_SAMPLE_RT] Bar {CurrentBar}: Sending real-time bar via HTTP to {recordBarUrl}");
+                
+                // Use Task.Run to ensure async execution doesn't block
+                var cts = cancellationTokenSource; // Capture cancellation token
+                bool semaphoreAcquired = false;
+                
+                Task.Run(async () =>
+                {
+                    // Check if strategy is still running or cancelled
+                    if (State == State.Terminated || State == State.SetDefaults || cts == null || cts.IsCancellationRequested)
+                    {
+                        Print($"[BAR_SAMPLE_RT] Bar {currentBarForLogging}: Task cancelled or strategy terminated, skipping");
+                        return; // Strategy stopped, don't send request
+                    }
+                    
+                    // Real-time: Use semaphore to limit concurrent requests
+                    try
+                    {
+                        // Use timeout to prevent indefinite blocking (2 seconds max wait)
+                        using (var semaphoreCts = new CancellationTokenSource(2000))
                         {
-                            if (t.IsFaulted || t.IsCanceled)
-                            {
-                                // Silently ignore errors - recording bar samples is optional
-                            }
-                            else if (t.IsCompleted)
-                            {
-                                // Dispose response to free connection
-                                t.Result?.Dispose();
-                            }
+                            await barSampleSemaphore.WaitAsync(semaphoreCts.Token).ConfigureAwait(false);
                         }
-                        catch
+                        semaphoreAcquired = true;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Print($"[BAR_SAMPLE_RT_ERROR] Bar {currentBarForLogging}: Semaphore wait timeout");
+                        return;
+                    }
+                    try
+                    {
+                        // Retry logic with exponential backoff to ensure no bars are lost
+                        int maxRetries = 3;
+                        int retryDelayMs = 100;
+                        bool success = false;
+                        
+                        for (int attempt = 0; attempt < maxRetries && !success; attempt++)
                         {
-                            // Silently ignore - recording bar samples is optional
-                        }
-                    }, TaskContinuationOptions.ExecuteSynchronously);
+                            // Check if strategy stopped before each retry
+                            if (State == State.Terminated || State == State.SetDefaults)
+                            {
+                                break; // Strategy stopped, exit retry loop
+                            }
+                            
+                            try
+                            {
+                                if (attempt == 0)
+                                {
+                                    Print($"[BAR_SAMPLE_RT] Bar {currentBarForLogging}: POST attempt {attempt + 1}/{maxRetries}");
+                                }
+                                
+                                // Add exponential backoff delay for retries
+                                if (attempt > 0)
+                                {
+                                    await Task.Delay(retryDelayMs * (int)Math.Pow(2, attempt - 1)).ConfigureAwait(false);
+                                }
+                                
+                                // 10 second timeout for real-time requests
+                                using (var timeoutCts = new CancellationTokenSource(10000))
+                                using (var combinedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, timeoutCts.Token))
+                                {
+                                    var response = await sharedClient.PostAsync(recordBarUrl, content, combinedCts.Token).ConfigureAwait(false);
+                                    
+                                    Print($"[BAR_SAMPLE_RT] Bar {currentBarForLogging}: HTTP {response.StatusCode}");
+                                    
+                                    if (response.IsSuccessStatusCode)
+                                    {
+                                        success = true;
+                                        try
+                                        {
+                                            var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                            Print($"[BAR_SAMPLE_RT] Bar {currentBarForLogging}: ✓ Recorded ({responseBody.Substring(0, Math.Min(80, responseBody.Length))})");
             }
             catch
             {
-                // Silently ignore - recording bar samples is optional
+                                            Print($"[BAR_SAMPLE_RT] Bar {currentBarForLogging}: ✓ Recorded");
+                                        }
+                                        response.Dispose();
+                                    }
+                                    else
+                                    {
+                                        // Log non-success status codes
+                                        var errorBody = "";
+                                        try
+                                        {
+                                            errorBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                        }
+                                        catch { }
+                                        
+                                        Print($"[BAR_SAMPLE_RT] Bar {currentBarForLogging}: HTTP {response.StatusCode} - {errorBody.Substring(0, Math.Min(100, errorBody.Length))}");
+                                        
+                                        response.Dispose();
+                                        if (attempt < maxRetries - 1)
+                                        {
+                                            // Will retry
+                                            continue;
+                                        }
+                                        else
+                                        {
+                                            // Only log if strategy is still running
+                                            if (State != State.Terminated && State != State.SetDefaults)
+                                            {
+                                                Print($"[BAR_SAMPLE_ERROR] Bar {currentBarForLogging}: Server returned {response.StatusCode} after {maxRetries} attempts. Error: {errorBody.Substring(0, Math.Min(200, errorBody.Length))}");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch (TaskCanceledException)
+                            {
+                                // Check if cancelled or just timeout
+                                if (cts != null && cts.IsCancellationRequested)
+                                {
+                                    break; // Strategy was cancelled, exit retry loop
+                                }
+                                
+                                // Timeout - retry if we have attempts left
+                                if (attempt < maxRetries - 1)
+                                {
+                                    continue; // Will retry with exponential backoff
+                                }
+                                else
+                                {
+                                    // Only log if strategy is still running and not cancelled
+                                    if (State != State.Terminated && State != State.SetDefaults && (cts == null || !cts.IsCancellationRequested))
+                                    {
+                                        Print($"[BAR_SAMPLE_ERROR] Bar {currentBarForLogging}: Request timeout after {maxRetries} attempts");
+                                    }
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                // Strategy was cancelled, exit retry loop
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                if (attempt < maxRetries - 1)
+                                {
+                                    continue; // Will retry
+                                }
+                                else
+                                {
+                                    // Only log if strategy is still running and not cancelled
+                                    if (State != State.Terminated && State != State.SetDefaults && (cts == null || !cts.IsCancellationRequested))
+                                    {
+                                        Print($"[BAR_SAMPLE_ERROR] Bar {currentBarForLogging}: {ex.GetType().Name}: {ex.Message} after {maxRetries} attempts");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        // Release semaphore if we acquired it
+                        if (semaphoreAcquired)
+                        {
+                            barSampleSemaphore.Release();
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // Log errors so we can diagnose connection issues
+                Print($"[BAR_SAMPLE_ERROR] Bar {CurrentBar}: Exception in RecordBarSample: {ex.GetType().Name}: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    Print($"[BAR_SAMPLE_ERROR] Inner exception: {ex.InnerException.Message}");
+                }
+                Print($"[BAR_SAMPLE_ERROR] Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -4787,7 +6264,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     // Quick check - accessing a property should throw if disposed
                     var _ = sharedClient.Timeout;
-                    return;
+                return;
                 }
                 catch (ObjectDisposedException)
                 {
@@ -4804,10 +6281,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (sharedClient == null)
                 {
                     try
-                    {
-                        sharedClient = new HttpClient();
-                        sharedClient.Timeout = TimeSpan.FromSeconds(10); // Reduced timeout to avoid hanging connections
+                {
+                    sharedClient = new HttpClient();
+                        sharedClient.Timeout = TimeSpan.FromMinutes(10); // Increased timeout to handle CSV imports (can take several minutes) and queued requests
                         sharedClient.DefaultRequestHeaders.ConnectionClose = true; // Close connections to avoid pool exhaustion
+                        Print($"[EnsureHttpClient] ✓ HttpClient created successfully. BaseUrl: {DashboardBaseUrl}");
                         // Limit connection pool size (set once globally)
                         try
                         {
@@ -4820,7 +6298,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     catch (Exception ex)
                     {
-                        Print($"[EnsureHttpClient] Error creating HttpClient: {ex.Message}");
+                        Print($"[EnsureHttpClient] ✗ Error creating HttpClient: {ex.GetType().Name}: {ex.Message}");
+                        if (ex.InnerException != null)
+                        {
+                            Print($"[EnsureHttpClient] Inner exception: {ex.InnerException.Message}");
+                        }
                         sharedClient = null;
                     }
                 }
@@ -5115,27 +6597,41 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             // Simple linear regression slope of EMA over the window using completed bars
             // x increases with time (oldest bar has smallest x, most recent completed has largest x)
+            // IMPORTANT: This is called at the START of a new bar (first tick), so [1] refers to the bar that just closed
+            // We want the gradient to reflect the EMA movement INCLUDING the bar that just closed ([1])
+            // So we use [1] as the most recent point, [2] as the second most recent, etc.
             double sumX = 0.0;
             double sumY = 0.0;
             double sumXY = 0.0;
             double sumXX = 0.0;
+            int validPoints = 0;
             for (int i = 0; i < window; i++)
             {
                 double x = i;
                 // y uses only completed bars: i=0 -> oldest (barsAgo = window), i=window-1 -> most recent completed (barsAgo = 1)
+                // This ensures we use the bar that just closed ([1]) as the most recent point
                 int barsAgo = window - i;
+                if (barsAgo > CurrentBar)
+                    continue; // Skip if out of range
                 double y = fastEma[barsAgo];
+                if (double.IsNaN(y))
+                    continue; // Skip NaN values
                 sumX += x;
                 sumY += y;
                 sumXY += x * y;
                 sumXX += x * x;
+                validPoints++;
             }
+            
+            // Need at least 2 points for regression
+            if (validPoints < 2)
+                return double.NaN;
 
-            double denom = (window * sumXX) - (sumX * sumX);
+            double denom = (validPoints * sumXX) - (sumX * sumX);
             if (Math.Abs(denom) < 1e-8)
                 return double.NaN;
 
-            double slope = ((window * sumXY) - (sumX * sumY)) / denom;
+            double slope = ((validPoints * sumXY) - (sumX * sumY)) / denom;
 
             // Convert slope (price units per bar) to degrees for interpretability
             double angleRad = Math.Atan(slope);

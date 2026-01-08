@@ -260,6 +260,18 @@ def init_db():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_entry_time ON trades(entry_time DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_direction ON trades(direction)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_trades_exit_reason ON trades(exit_reason)")
+    
+    # Create unique index to prevent exact duplicates (same entry_time, entry_price, direction)
+    try:
+        cur.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_unique_entry 
+            ON trades(entry_time, entry_price, direction)
+        """)
+        print('[DB] Created unique index on dashboard.db trades(entry_time, entry_price, direction)')
+    except sqlite3.OperationalError as e:
+        if 'duplicate' not in str(e).lower() and 'UNIQUE constraint' not in str(e):
+            print(f'[DB] Warning creating unique index on dashboard.db: {e}')
+    
     # Strategy snapshots for session persistence
     cur.execute("""
     CREATE TABLE IF NOT EXISTS strategy_snapshots (
@@ -474,6 +486,20 @@ def ensure_db_columns():
         def has_column(table: str, column: str) -> bool:
             cur.execute(f"PRAGMA table_info({table})")
             return any(row[1] == column for row in cur.fetchall())
+        
+        # Add UNIQUE constraint on (symbol, bar_index) to prevent duplicates
+        # Check if unique index already exists
+        cur.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_bar_samples_unique'")
+        if not cur.fetchone():
+            try:
+                # Try to create unique index (will fail if duplicates exist, which is fine)
+                cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_bar_samples_unique ON bar_samples(symbol, bar_index)")
+                print('[DB] Added UNIQUE constraint on (symbol, bar_index) to prevent duplicates')
+            except sqlite3.OperationalError as e:
+                if 'UNIQUE constraint failed' in str(e) or 'duplicate' in str(e).lower():
+                    print('[DB] Warning: Cannot add UNIQUE constraint - duplicates exist. Run cleanup first.')
+                else:
+                    raise
 
         # Add missing 'volume' columns safely
         try:
@@ -1335,6 +1361,467 @@ def api_volatility_recommended_stop(hour: int = None, volume: int = 0, symbol: s
         print(f'[API] volatility recommended-stop error: {ex}')
         return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
 
+@app.post('/api/volatility/batch-record-bars')
+async def api_volatility_batch_record_bars(request: Request):
+    """Batch insert multiple bar samples at once.
+    
+    Used when transitioning from historical to real-time mode.
+    Receives all accumulated historical bars in one request.
+    
+    POST body: JSON array of bar objects
+    """
+    try:
+        bars = await request.json()
+    except ClientDisconnect:
+        return JSONResponse({"status": "ok", "message": "client_disconnected"}, status_code=200)
+    except Exception as e:
+        print(f'[BATCH_API] Error parsing JSON: {e}')
+        return JSONResponse({"status": "error", "message": f"Invalid JSON: {str(e)}"}, status_code=400)
+    
+    if not isinstance(bars, list):
+        return JSONResponse({"status": "error", "message": "Expected JSON array"}, status_code=400)
+    
+    print(f'[BATCH_API] Received batch of {len(bars)} bars')
+    
+    try:
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        # Set WAL mode and other pragmas
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA synchronous=NORMAL')  # Faster writes
+        cursor = conn.cursor()
+        
+        inserted = 0
+        skipped = 0
+        errors = 0
+        
+        # Process in chunks of 500 for better performance
+        chunk_size = 500
+        total_chunks = (len(bars) + chunk_size - 1) // chunk_size
+        
+        for chunk_idx in range(total_chunks):
+            chunk_start = chunk_idx * chunk_size
+            chunk_end = min(chunk_start + chunk_size, len(bars))
+            chunk = bars[chunk_start:chunk_end]
+            
+            if chunk_idx % 2 == 0:  # Log every other chunk
+                print(f'[BATCH_API] Processing chunk {chunk_idx + 1}/{total_chunks} (bars {chunk_start}-{chunk_end})')
+            
+            rows_to_insert = []
+            
+            for data in chunk:
+                try:
+                    timestamp = data.get('timestamp', '')
+                    bar_index = data.get('bar_index', 0)
+                    symbol = data.get('symbol', 'MNQ')
+                    open_p = float(data.get('open', 0))
+                    high_p = float(data.get('high', 0))
+                    low_p = float(data.get('low', 0))
+                    close_p = float(data.get('close', 0))
+                    volume = int(data.get('volume', 0))
+                    direction = data.get('direction', 'FLAT')
+                    in_trade = data.get('in_trade', False)
+                    trade_result = data.get('trade_result_ticks')
+                    
+                    # Parse timestamp
+                    try:
+                        dt = datetime.strptime(timestamp.split('.')[0], '%Y-%m-%d %H:%M:%S')
+                    except:
+                        dt = datetime.now()
+                    
+                    hour_of_day = dt.hour
+                    quarter_hour = hour_of_day * 4 + (dt.minute // 15)
+                    day_of_week = dt.weekday()
+                    
+                    # Calculate metrics
+                    bar_range = high_p - low_p
+                    body_size = abs(close_p - open_p)
+                    
+                    # Calculate wicks (required NOT NULL columns)
+                    if close_p > open_p:  # Bullish candle
+                        upper_wick = high_p - close_p
+                        lower_wick = open_p - low_p
+                    else:  # Bearish or doji
+                        upper_wick = high_p - open_p
+                        lower_wick = close_p - low_p
+                    
+                    range_per_1k_volume = (bar_range / (volume / 1000)) if volume > 0 else 0
+                    
+                    # Get EMA values if provided
+                    ema_fast_period = data.get('ema_fast_period', 5)
+                    ema_slow_period = data.get('ema_slow_period', 13)
+                    ema_fast_value = data.get('ema_fast_value')
+                    ema_slow_value = data.get('ema_slow_value')
+                    fast_ema_grad_deg = data.get('fast_ema_grad_deg')
+                    stop_loss_points = data.get('stop_loss_points', 0)
+                    
+                    # Handle null strings for EMA values
+                    if ema_fast_value == 'null' or ema_fast_value is None:
+                        ema_fast_value = None
+                    else:
+                        ema_fast_value = float(ema_fast_value) if ema_fast_value else None
+                        
+                    if ema_slow_value == 'null' or ema_slow_value is None:
+                        ema_slow_value = None
+                    else:
+                        ema_slow_value = float(ema_slow_value) if ema_slow_value else None
+                        
+                    if fast_ema_grad_deg == 'null' or fast_ema_grad_deg is None:
+                        fast_ema_grad_deg = None
+                    else:
+                        fast_ema_grad_deg = float(fast_ema_grad_deg) if fast_ema_grad_deg else None
+                    
+                    # Debugging fields
+                    candle_type = data.get('candle_type', 'flat')
+                    trend_up = 1 if data.get('trend_up', False) else 0
+                    trend_down = 1 if data.get('trend_down', False) else 0
+                    allow_long = 1 if data.get('allow_long_this_bar', False) else 0
+                    allow_short = 1 if data.get('allow_short_this_bar', False) else 0
+                    pending_long = 1 if data.get('pending_long_from_bad', False) else 0
+                    pending_short = 1 if data.get('pending_short_from_good', False) else 0
+                    avoid_longs = 1 if data.get('avoid_longs_on_bad_candle', False) else 0
+                    avoid_shorts = 1 if data.get('avoid_shorts_on_good_candle', False) else 0
+                    entry_reason = data.get('entry_reason', '')
+                    
+                    rows_to_insert.append((timestamp, bar_index, symbol, open_p, high_p, low_p, close_p, volume,
+                          direction, 1 if in_trade else 0, trade_result, hour_of_day, day_of_week, bar_range, body_size,
+                          upper_wick, lower_wick, range_per_1k_volume,
+                          ema_fast_period, ema_slow_period, ema_fast_value, ema_slow_value, fast_ema_grad_deg,
+                          stop_loss_points, quarter_hour, candle_type, trend_up, trend_down,
+                          allow_long, allow_short, pending_long, pending_short, avoid_longs, avoid_shorts, entry_reason))
+                        
+                except Exception as row_ex:
+                    errors += 1
+                    if errors <= 5:  # Only log first 5 errors
+                        print(f'[BATCH_API] Error on bar {data.get("bar_index", "?")}: {row_ex}')
+            
+            # Insert chunk - try first row to see error, then use executemany
+            if rows_to_insert:
+                try:
+                    # Get count before insert
+                    cursor.execute('SELECT COUNT(*) FROM bar_samples')
+                    count_before = cursor.fetchone()[0]
+                    
+                    # Test first row to see if there's an error
+                    if chunk_idx == 0 and len(rows_to_insert) > 0:
+                        test_row = rows_to_insert[0]
+                        try:
+                            cursor.execute('''
+                                INSERT INTO bar_samples 
+                                (timestamp, bar_index, symbol, open_price, high_price, low_price, close_price, volume, 
+                                 direction, in_trade, trade_result_ticks, hour_of_day, day_of_week, bar_range, body_size,
+                                 upper_wick, lower_wick, range_per_1k_volume,
+                                 ema_fast_period, ema_slow_period, ema_fast_value, ema_slow_value, fast_ema_grad_deg,
+                                 stop_loss_points, quarter_hour, candle_type, trend_up, trend_down,
+                                 allow_long_this_bar, allow_short_this_bar, pending_long_from_bad, pending_short_from_good,
+                                 avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ''', test_row)
+                            print(f'[BATCH_API] Test insert succeeded - rowcount={cursor.rowcount}')
+                            conn.rollback()  # Rollback test
+                        except Exception as test_ex:
+                            print(f'[BATCH_API] TEST INSERT FAILED: {test_ex}')
+                            print(f'[BATCH_API] Test row data: bar_index={test_row[1]}, symbol={test_row[2]}, timestamp={test_row[0]}')
+                            import traceback
+                            traceback.print_exc()
+                            conn.rollback()
+                    
+                    # Use executemany for performance
+                    cursor.executemany('''
+                        INSERT OR IGNORE INTO bar_samples 
+                        (timestamp, bar_index, symbol, open_price, high_price, low_price, close_price, volume, 
+                         direction, in_trade, trade_result_ticks, hour_of_day, day_of_week, bar_range, body_size,
+                         upper_wick, lower_wick, range_per_1k_volume,
+                         ema_fast_period, ema_slow_period, ema_fast_value, ema_slow_value, fast_ema_grad_deg,
+                         stop_loss_points, quarter_hour, candle_type, trend_up, trend_down,
+                         allow_long_this_bar, allow_short_this_bar, pending_long_from_bad, pending_short_from_good,
+                         avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', rows_to_insert)
+                    
+                    conn.commit()  # Commit each chunk - CRITICAL!
+                    
+                    # Verify count after insert (accurate way to know what was inserted)
+                    cursor.execute('SELECT COUNT(*) FROM bar_samples')
+                    count_after = cursor.fetchone()[0]
+                    actual_inserted_this_chunk = count_after - count_before
+                    actual_skipped_this_chunk = len(rows_to_insert) - actual_inserted_this_chunk
+                    
+                    inserted += actual_inserted_this_chunk
+                    skipped += actual_skipped_this_chunk
+                    
+                    if chunk_idx % 2 == 0 or actual_inserted_this_chunk == 0:  # Log every other chunk OR if nothing inserted
+                        print(f'[BATCH_API] Chunk {chunk_idx + 1}: {actual_inserted_this_chunk} inserted (verified), {actual_skipped_this_chunk} skipped, count_before={count_before}, count_after={count_after}')
+                except Exception as chunk_ex:
+                    print(f'[BATCH_API] ERROR inserting chunk {chunk_idx + 1}: {chunk_ex}')
+                    import traceback
+                    traceback.print_exc()
+                    conn.rollback()  # Rollback this chunk
+                    errors += len(rows_to_insert)
+        
+        # Final commit to ensure everything is saved
+        conn.commit()
+        
+        # Checkpoint WAL to ensure data is visible immediately to other connections
+        cursor.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        checkpoint_result = cursor.fetchone()
+        print(f'[BATCH_API] WAL checkpoint result: {checkpoint_result}')
+        
+        # Verify data was actually inserted (on same connection)
+        cursor.execute('SELECT COUNT(*) FROM bar_samples')
+        actual_count = cursor.fetchone()[0]
+        print(f'[BATCH_API] Verification: bar_samples table now has {actual_count} rows (on this connection)')
+        
+        # Also verify by querying a fresh connection to ensure WAL checkpoint worked
+        import sqlite3 as sqlite3_check
+        check_conn = sqlite3_check.connect(VOLATILITY_DB_PATH)
+        check_cursor = check_conn.cursor()
+        check_cursor.execute('SELECT COUNT(*) FROM bar_samples')
+        check_count = check_cursor.fetchone()[0]
+        check_conn.close()
+        print(f'[BATCH_API] Verification (fresh connection): bar_samples table has {check_count} rows')
+        
+        if actual_count != check_count:
+            print(f'[BATCH_API] WARNING: Count mismatch! Same connection={actual_count}, fresh connection={check_count}')
+        
+        conn.close()
+        
+        print(f'[BATCH_API] Batch complete: {inserted} inserted, {skipped} skipped (duplicates), {errors} errors')
+        
+        return JSONResponse({
+            "status": "ok",
+            "inserted": inserted,
+            "skipped": skipped,
+            "errors": errors,
+            "total": len(bars)
+        })
+        
+    except Exception as ex:
+        print(f'[BATCH_API] Database error: {ex}')
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"status": "error", "message": str(ex)}, status_code=500)
+
+@app.post('/api/volatility/record-trade')
+async def api_volatility_record_trade(request: Request):
+    """Record a completed trade to volatility.db trades table.
+    
+    Only records trades that actually executed (filled orders).
+    Called from NinjaTrader OnPositionUpdate when position closes.
+    
+    POST body: JSON with trade data (EntryTime, EntryBar, Direction, EntryPrice, etc.)
+    """
+    print(f'[API] volatility record-trade: Received request')
+    try:
+        data = await request.json()
+        print(f'[API] volatility record-trade: Parsed JSON - EntryBar={data.get("EntryBar")}, ExitBar={data.get("ExitBar")}, Direction={data.get("Direction")}')
+    except Exception as e:
+        print(f'[API] volatility record-trade: Error parsing JSON: {e}')
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"status": "error", "message": f"Invalid JSON: {str(e)}"}, status_code=400)
+    
+    try:
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        conn.execute('PRAGMA journal_mode=WAL')
+        cursor = conn.cursor()
+        
+        # Ensure trades table exists in volatility.db
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entry_time REAL NOT NULL,
+                entry_bar INTEGER,
+                direction TEXT,
+                entry_price REAL,
+                exit_time REAL,
+                exit_bar INTEGER,
+                exit_price REAL,
+                bars_held INTEGER,
+                realized_points REAL,
+                mfe REAL,
+                mae REAL,
+                exit_reason TEXT,
+                entry_reason TEXT,
+                contracts INTEGER,
+                ema_fast_period INTEGER,
+                ema_slow_period INTEGER,
+                ema_fast_value REAL,
+                ema_slow_value REAL,
+                candle_type TEXT,
+                open_final REAL,
+                high_final REAL,
+                low_final REAL,
+                close_final REAL,
+                fast_ema REAL,
+                fast_ema_grad_deg REAL,
+                bar_pattern TEXT
+            )
+        """)
+        
+        # Create indexes if they don't exist
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_volatility_trades_entry_time ON trades(entry_time DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_volatility_trades_direction ON trades(direction)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_volatility_trades_exit_reason ON trades(exit_reason)")
+        
+        # Create unique index to prevent exact duplicates (same entry_time, entry_price, direction)
+        # This prevents the same trade from being recorded multiple times
+        try:
+            cursor.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_volatility_trades_unique_entry 
+                ON trades(entry_time, entry_price, direction)
+            """)
+            print('[API] volatility record-trade: Created unique index on (entry_time, entry_price, direction)')
+        except sqlite3.OperationalError as e:
+            if 'duplicate' not in str(e).lower() and 'UNIQUE constraint' not in str(e):
+                print(f'[API] volatility record-trade: Warning creating unique index: {e}')
+        
+        # Check which columns exist
+        cursor.execute("PRAGMA table_info(trades)")
+        columns = [row[1] for row in cursor.fetchall()]
+        has_contracts = 'contracts' in columns
+        has_ema_fast = 'ema_fast_period' in columns
+        has_ema_slow = 'ema_slow_period' in columns
+        has_ema_fast_value = 'ema_fast_value' in columns
+        has_ema_slow_value = 'ema_slow_value' in columns
+        has_candle_type = 'candle_type' in columns
+        has_open_final = 'open_final' in columns
+        has_high_final = 'high_final' in columns
+        has_low_final = 'low_final' in columns
+        has_close_final = 'close_final' in columns
+        has_fast_ema = 'fast_ema' in columns
+        has_fast_ema_grad_deg = 'fast_ema_grad_deg' in columns
+        has_bar_pattern = 'bar_pattern' in columns
+        has_entry_reason = 'entry_reason' in columns
+        
+        # Add missing columns
+        if not has_contracts:
+            cursor.execute("ALTER TABLE trades ADD COLUMN contracts INTEGER")
+        if not has_ema_fast:
+            cursor.execute("ALTER TABLE trades ADD COLUMN ema_fast_period INTEGER")
+        if not has_ema_slow:
+            cursor.execute("ALTER TABLE trades ADD COLUMN ema_slow_period INTEGER")
+        if not has_ema_fast_value:
+            cursor.execute("ALTER TABLE trades ADD COLUMN ema_fast_value REAL")
+        if not has_ema_slow_value:
+            cursor.execute("ALTER TABLE trades ADD COLUMN ema_slow_value REAL")
+        if not has_candle_type:
+            cursor.execute("ALTER TABLE trades ADD COLUMN candle_type TEXT")
+        if not has_open_final:
+            cursor.execute("ALTER TABLE trades ADD COLUMN open_final REAL")
+        if not has_high_final:
+            cursor.execute("ALTER TABLE trades ADD COLUMN high_final REAL")
+        if not has_low_final:
+            cursor.execute("ALTER TABLE trades ADD COLUMN low_final REAL")
+        if not has_close_final:
+            cursor.execute("ALTER TABLE trades ADD COLUMN close_final REAL")
+        if not has_fast_ema:
+            cursor.execute("ALTER TABLE trades ADD COLUMN fast_ema REAL")
+        if not has_fast_ema_grad_deg:
+            cursor.execute("ALTER TABLE trades ADD COLUMN fast_ema_grad_deg REAL")
+        if not has_bar_pattern:
+            cursor.execute("ALTER TABLE trades ADD COLUMN bar_pattern TEXT")
+        if not has_entry_reason:
+            cursor.execute("ALTER TABLE trades ADD COLUMN entry_reason TEXT")
+        
+        conn.commit()
+        
+        # Get values from request
+        ema_fast_val = data.get('EmaFastValue')
+        ema_slow_val = data.get('EmaSlowValue')
+        ema_fast_value = float(ema_fast_val) if ema_fast_val is not None and ema_fast_val != 'null' else None
+        ema_slow_value = float(ema_slow_val) if ema_slow_val is not None and ema_slow_val != 'null' else None
+        
+        open_final = data.get('OpenFinal')
+        high_final = data.get('HighFinal')
+        low_final = data.get('LowFinal')
+        close_final = data.get('CloseFinal')
+        fast_ema = data.get('FastEma')
+        fast_ema_grad_deg = data.get('FastEmaGradDeg')
+        candle_type = data.get('CandleType', '')
+        bar_pattern = data.get('BarPattern', '')
+        entry_reason = data.get('EntryReason', '')
+        
+        open_final_val = float(open_final) if open_final is not None and open_final != 'null' else None
+        high_final_val = float(high_final) if high_final is not None and high_final != 'null' else None
+        low_final_val = float(low_final) if low_final is not None and low_final != 'null' else None
+        close_final_val = float(close_final) if close_final is not None and close_final != 'null' else None
+        fast_ema_val = float(fast_ema) if fast_ema is not None and fast_ema != 'null' else None
+        fast_ema_grad_deg_val = float(fast_ema_grad_deg) if fast_ema_grad_deg is not None and fast_ema_grad_deg != 'null' else None
+        
+        # Check for duplicate before inserting (same entry_time, entry_price, direction)
+        entry_time_val = float(data.get('EntryTime', time.time()))
+        entry_price_val = float(data.get('EntryPrice', 0))
+        direction_val = data.get('Direction', 'LONG')
+        
+        cursor.execute("""
+            SELECT id FROM trades 
+            WHERE entry_time = ? AND entry_price = ? AND direction = ?
+        """, (entry_time_val, entry_price_val, direction_val))
+        
+        existing = cursor.fetchone()
+        if existing:
+            print(f'[API] volatility record-trade: DUPLICATE DETECTED - Skipping trade EntryBar={data.get("EntryBar")}, EntryTime={entry_time_val}, EntryPrice={entry_price_val}, Direction={direction_val} (existing id={existing[0]})')
+            conn.close()
+            return JSONResponse({"status": "ok", "message": "Trade already exists (duplicate skipped)", "duplicate": True})
+        
+        # Insert trade (no duplicate found)
+        cursor.execute("""
+            INSERT INTO trades (
+                entry_time, entry_bar, direction, entry_price,
+                exit_time, exit_bar, exit_price, bars_held,
+                realized_points, mfe, mae, exit_reason, entry_reason, contracts,
+                ema_fast_period, ema_slow_period, ema_fast_value, ema_slow_value,
+                candle_type, open_final, high_final, low_final, close_final,
+                fast_ema, fast_ema_grad_deg, bar_pattern
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            float(data.get('EntryTime', time.time())),
+            int(data.get('EntryBar', 0)),
+            data.get('Direction', 'LONG'),
+            float(data.get('EntryPrice', 0)),
+            float(data.get('ExitTime', time.time())),
+            int(data.get('ExitBar', 0)),
+            float(data.get('ExitPrice', 0)),
+            int(data.get('BarsHeld', 0)),
+            float(data.get('RealizedPoints', 0)),
+            float(data.get('MFE', 0)),
+            float(data.get('MAE', 0)),
+            data.get('ExitReason', ''),
+            entry_reason,
+            int(data.get('Contracts', 0)),
+            int(data.get('EmaFastPeriod', 0)),
+            int(data.get('EmaSlowPeriod', 0)),
+            ema_fast_value,
+            ema_slow_value,
+            candle_type,
+            open_final_val,
+            high_final_val,
+            low_final_val,
+            close_final_val,
+            fast_ema_val,
+            fast_ema_grad_deg_val,
+            bar_pattern
+        ))
+        
+        conn.commit()
+        cursor.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+        
+        # Verify the trade was inserted
+        cursor.execute('SELECT COUNT(*) FROM trades WHERE entry_bar = ? AND exit_bar = ?', 
+                      (int(data.get('EntryBar', 0)), int(data.get('ExitBar', 0))))
+        count = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        print(f'[API] volatility record-trade: Trade recorded - EntryBar={data.get("EntryBar")}, ExitBar={data.get("ExitBar")}, Direction={data.get("Direction")}, Points={data.get("RealizedPoints")}, Verified count={count}')
+        
+        return JSONResponse({"status": "ok", "message": "Trade recorded", "verified": count > 0})
+    except Exception as ex:
+        print(f'[API] volatility record-trade: Database error: {ex}')
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"status": "error", "message": str(ex)}, status_code=500)
+
 @app.post('/api/volatility/record-bar')
 async def api_volatility_record_bar(request: Request):
     """Record a bar sample for volatility tracking.
@@ -1351,8 +1838,17 @@ async def api_volatility_record_bar(request: Request):
     """
     try:
         data = await request.json()
-        
+    except ClientDisconnect:
+        # Client disconnected before request completed - this is normal when strategy is cancelled
+        return JSONResponse({"status": "ok", "message": "client_disconnected"}, status_code=200)
+    except Exception as e:
+        print(f'[API] volatility record-bar: Error parsing JSON: {e}')
+        return JSONResponse({"status": "error", "message": f"Invalid JSON: {str(e)}"}, status_code=400)
+    
+    try:
         conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        # Enable WAL mode for better concurrent access (if not already enabled)
+        conn.execute('PRAGMA journal_mode=WAL')
         cursor = conn.cursor()
         
         timestamp = data['timestamp']
@@ -1409,6 +1905,7 @@ async def api_volatility_record_bar(request: Request):
         has_pending_short = 'pending_short_from_good' in columns
         has_avoid_longs = 'avoid_longs_on_bad_candle' in columns
         has_avoid_shorts = 'avoid_shorts_on_good_candle' in columns
+        has_entry_reason = 'entry_reason' in columns
         
         if not has_ema_fast:
             cursor.execute("ALTER TABLE bar_samples ADD COLUMN ema_fast_period INTEGER")
@@ -1440,16 +1937,40 @@ async def api_volatility_record_bar(request: Request):
             cursor.execute("ALTER TABLE bar_samples ADD COLUMN avoid_longs_on_bad_candle INTEGER")
         if not has_avoid_shorts:
             cursor.execute("ALTER TABLE bar_samples ADD COLUMN avoid_shorts_on_good_candle INTEGER")
+        if not has_entry_reason:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN entry_reason TEXT")
         
         # Get EMA values and gradient degree, handle null/None
+        # C# sends string "null" when EMA is not ready, Python json.loads() parses it as string "null"
         ema_fast_val = data.get('ema_fast_value')
         ema_slow_val = data.get('ema_slow_value')
         grad_deg_val = data.get('fast_ema_grad_deg')
         stop_loss_val = data.get('stop_loss_points')
-        ema_fast_value = float(ema_fast_val) if ema_fast_val is not None and ema_fast_val != 'null' else None
-        ema_slow_value = float(ema_slow_val) if ema_slow_val is not None and ema_slow_val != 'null' else None
-        fast_ema_grad_deg = float(grad_deg_val) if grad_deg_val is not None and grad_deg_val != 'null' else None
-        stop_loss_points = float(stop_loss_val) if stop_loss_val is not None and stop_loss_val != 'null' else None
+        
+        # Handle string "null", actual None, empty string, or 0.0 (which might indicate not ready)
+        def parse_ema_value(val):
+            if val is None:
+                return None
+            if isinstance(val, str):
+                if val.lower() == 'null' or val.strip() == '':
+                    return None
+                try:
+                    fval = float(val)
+                    # If value is exactly 0.0, it might be a sentinel for "not ready" - check if it's actually valid
+                    # For now, accept 0.0 as valid (could be real EMA value)
+                    return fval
+                except (ValueError, TypeError):
+                    return None
+            try:
+                fval = float(val)
+                return fval
+            except (ValueError, TypeError):
+                return None
+        
+        ema_fast_value = parse_ema_value(ema_fast_val)
+        ema_slow_value = parse_ema_value(ema_slow_val)
+        fast_ema_grad_deg = parse_ema_value(grad_deg_val)
+        stop_loss_points = parse_ema_value(stop_loss_val)
         
         # Get debugging fields
         candle_type = data.get('candle_type', '')
@@ -1461,23 +1982,24 @@ async def api_volatility_record_bar(request: Request):
         pending_short_from_good = 1 if data.get('pending_short_from_good', False) in (True, 'true', 1, '1') else 0
         avoid_longs_on_bad_candle = 1 if data.get('avoid_longs_on_bad_candle', False) in (True, 'true', 1, '1') else 0
         avoid_shorts_on_good_candle = 1 if data.get('avoid_shorts_on_good_candle', False) in (True, 'true', 1, '1') else 0
+        entry_reason = data.get('entry_reason', '') or ''
         
         has_all_debug_cols = (has_candle_type and has_trend_up and has_trend_down and has_allow_long and 
                               has_allow_short and has_pending_long and has_pending_short and 
-                              has_avoid_longs and has_avoid_shorts)
+                              has_avoid_longs and has_avoid_shorts and has_entry_reason)
         
         try:
             if has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg and has_stop_loss and has_all_debug_cols:
                 cursor.execute('''
-                    INSERT INTO bar_samples (
+                    INSERT OR IGNORE INTO bar_samples (
                         timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                         open_price, high_price, low_price, close_price, volume,
                         bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
                         ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
                         range_per_1k_volume, direction, in_trade, trade_result_ticks,
                         candle_type, trend_up, trend_down, allow_long_this_bar, allow_short_this_bar,
-                        pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                     open_p, high_p, low_p, close_p, volume,
@@ -1486,11 +2008,11 @@ async def api_volatility_record_bar(request: Request):
                     ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
                     range_per_1k_volume, direction, 1 if in_trade else 0, trade_result,
                     candle_type, trend_up, trend_down, allow_long_this_bar, allow_short_this_bar,
-                    pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle
+                    pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason
                 ))
             elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg and has_stop_loss:
                 cursor.execute('''
-                    INSERT INTO bar_samples (
+                    INSERT OR IGNORE INTO bar_samples (
                         timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                         open_price, high_price, low_price, close_price, volume,
                         bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
@@ -1507,7 +2029,7 @@ async def api_volatility_record_bar(request: Request):
                 ))
             elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg:
                 cursor.execute('''
-                    INSERT INTO bar_samples (
+                    INSERT OR IGNORE INTO bar_samples (
                         timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                         open_price, high_price, low_price, close_price, volume,
                         bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
@@ -1525,7 +2047,7 @@ async def api_volatility_record_bar(request: Request):
             elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value:
                 # Fallback if gradient column doesn't exist yet
                 cursor.execute('''
-                    INSERT INTO bar_samples (
+                    INSERT OR IGNORE INTO bar_samples (
                         timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                         open_price, high_price, low_price, close_price, volume,
                         bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
@@ -1542,7 +2064,7 @@ async def api_volatility_record_bar(request: Request):
                 ))
             elif has_ema_fast and has_ema_slow:
                 cursor.execute('''
-                    INSERT INTO bar_samples (
+                    INSERT OR IGNORE INTO bar_samples (
                             timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                         open_price, high_price, low_price, close_price, volume,
                         bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
@@ -1557,7 +2079,7 @@ async def api_volatility_record_bar(request: Request):
                 ))
             else:
                 cursor.execute('''
-                    INSERT INTO bar_samples (
+                    INSERT OR IGNORE INTO bar_samples (
                             timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                         open_price, high_price, low_price, close_price, volume,
                         bar_range, body_size, upper_wick, lower_wick,
@@ -1580,7 +2102,7 @@ async def api_volatility_record_bar(request: Request):
                     # Retry the insert
                     if has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value:
                         cursor.execute('''
-                            INSERT INTO bar_samples (
+                            INSERT OR IGNORE INTO bar_samples (
                                 timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                                 open_price, high_price, low_price, close_price, volume,
                                 bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
@@ -1597,7 +2119,7 @@ async def api_volatility_record_bar(request: Request):
                         ))
                     elif has_ema_fast and has_ema_slow:
                         cursor.execute('''
-                            INSERT INTO bar_samples (
+                            INSERT OR IGNORE INTO bar_samples (
                                 timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                                 open_price, high_price, low_price, close_price, volume,
                                 bar_range, body_size, upper_wick, lower_wick, ema_fast_period, ema_slow_period,
@@ -1612,7 +2134,7 @@ async def api_volatility_record_bar(request: Request):
                         ))
                     else:
                         cursor.execute('''
-                            INSERT INTO bar_samples (
+                            INSERT OR IGNORE INTO bar_samples (
                                 timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                                 open_price, high_price, low_price, close_price, volume,
                                 bar_range, body_size, upper_wick, lower_wick,
@@ -1624,7 +2146,7 @@ async def api_volatility_record_bar(request: Request):
                             bar_range, body_size, upper_wick, lower_wick,
                             range_per_1k_volume, direction, 1 if in_trade else 0, trade_result
                         ))
-                    print('[API] ✓ Added quarter_hour column and retried insert')
+                    print('[API] [OK] Added quarter_hour column and retried insert')
                 except Exception as add_ex:
                     conn.close()
                     raise add_ex
@@ -1632,7 +2154,20 @@ async def api_volatility_record_bar(request: Request):
                 raise
         
         conn.commit()
+        
+        # Checkpoint WAL periodically to ensure data is visible (every 10 bars or every 100th bar)
+        if bar_index <= 10 or bar_index % 100 == 0:
+            try:
+                cursor.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+                cursor.fetchone()  # Execute the checkpoint
+            except:
+                pass  # Ignore checkpoint errors
+        
         conn.close()
+        
+        # Log successful save (first 20 bars or every 100th bar to avoid spam)
+        if bar_index <= 20 or bar_index % 100 == 0:
+            print(f'[API] volatility record-bar: Saved bar {bar_index} to database')
         
         return JSONResponse({'status': 'ok', 'bar_index': bar_index, 'hour': hour_of_day, 'quarter_hour': quarter_hour})
         
@@ -1930,13 +2465,20 @@ async def receive_state(request: Request):
     """Receive strategy state updates and cache them for real-time monitoring."""
     try:
         payload = await request.json()
+    except ClientDisconnect:
+        # Client disconnected before request completed - this is normal when strategy is cancelled
+        return JSONResponse({"status": "ok", "message": "client_disconnected"}, status_code=200)
     except Exception:
-        text = await request.body()
         try:
-            payload = json.loads(text)
-        except Exception:
-            print("[STATE] Failed to parse JSON from request body")
-            return JSONResponse({"error": "invalid_json"}, status_code=400)
+            text = await request.body()
+            try:
+                payload = json.loads(text)
+            except Exception:
+                print("[STATE] Failed to parse JSON from request body")
+                return JSONResponse({"error": "invalid_json"}, status_code=400)
+        except ClientDisconnect:
+            # Client disconnected while reading body
+            return JSONResponse({"status": "ok", "message": "client_disconnected"}, status_code=200)
     
     try:
         # Enrich with server timestamp
@@ -2081,7 +2623,7 @@ def _save_state_to_db(payload: dict, strategy_name: str):
         ))
         conn.commit()
         # Don't close global connection - keep it open for reuse
-        print(f"[BG_SAVE] ✓ Saved bar {bar_idx} to BarsOnTheFlowStateAndBar")
+        print(f"[BG_SAVE] [OK] Saved bar {bar_idx} to BarsOnTheFlowStateAndBar")
     except sqlite3.IntegrityError as integrity_ex:
         # UNIQUE constraint violation - bar already exists (this is normal with INSERT OR REPLACE)
         print(f"[BG_SAVE] Bar {bar_idx} already exists (replaced): {integrity_ex}")
@@ -3287,6 +3829,21 @@ async def trade_completed(request: Request):
                 # Get entry reason
                 entry_reason = data.get('EntryReason', '')
                 
+                # Check for duplicate before inserting (same entry_time, entry_price, direction)
+                entry_time_val = float(data.get('EntryTime', time.time()))
+                entry_price_val = float(data.get('EntryPrice', 0))
+                direction_val = data.get('Direction', 'LONG')
+                
+                cur.execute("""
+                    SELECT id FROM trades 
+                    WHERE entry_time = ? AND entry_price = ? AND direction = ?
+                """, (entry_time_val, entry_price_val, direction_val))
+                
+                existing = cur.fetchone()
+                if existing:
+                    print(f'[trade_completed] DUPLICATE DETECTED - Skipping trade EntryBar={data.get("EntryBar")}, EntryTime={entry_time_val}, EntryPrice={entry_price_val}, Direction={direction_val} (existing id={existing[0]})')
+                    return JSONResponse({"status": "ok", "message": "Trade already exists (duplicate skipped)", "duplicate": True})
+                
                 # Check if all new columns exist
                 has_all_new_cols = (has_candle_type and has_open_final and has_high_final and 
                                    has_low_final and has_close_final and has_fast_ema and 
@@ -3400,18 +3957,30 @@ async def trade_completed(request: Request):
                         data.get('ExitReason', '')
                     ))
             except Exception as db_ex:
+                import traceback
+                error_trace = traceback.format_exc()
                 print(f"[TRADE_COMPLETED] DB insert failed: {db_ex}")
+                print(f"[TRADE_COMPLETED] DB insert traceback: {error_trace}")
         
         # Analyze performance for auto-optimization
-        analyze_trade_performance(data)
+        try:
+            analyze_trade_performance(data)
+        except Exception as perf_ex:
+            print(f"[TRADE_COMPLETED] Performance analysis error (non-critical): {perf_ex}")
         
         # Trigger auto-apply evaluation if enabled
-        if AUTO_APPLY_ENABLED:
-            evaluate_auto_apply(time.time())
+        try:
+            if AUTO_APPLY_ENABLED:
+                evaluate_auto_apply(time.time())
+        except Exception as auto_ex:
+            print(f"[TRADE_COMPLETED] Auto-apply evaluation error (non-critical): {auto_ex}")
         
         return JSONResponse({'status': 'ok', 'analyzed': True, 'saved_to_db': USE_SQLITE})
     except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
         print(f"[TRADE_COMPLETED] Error: {ex}")
+        print(f"[TRADE_COMPLETED] Traceback: {error_trace}")
         return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
 
 @app.get('/api/trades/stop-loss-analysis')
@@ -3699,7 +4268,8 @@ async def clear_bar_samples():
         conn.commit()
         conn.close()
         
-        print(f"[BAR_SAMPLES_CLEAR] Cleared {count_before} rows from bar_samples and reset AUTOINCREMENT counter")
+        import time
+        print(f"[BAR_SAMPLES_CLEAR] *** CLEARED {count_before} rows from bar_samples at {time.strftime('%H:%M:%S')} ***")
         
         return JSONResponse({
             'status': 'ok',
@@ -3711,6 +4281,98 @@ async def clear_bar_samples():
         error_trace = traceback.format_exc()
         print(f"[BAR_SAMPLES_CLEAR] Error: {ex}")
         print(f"[BAR_SAMPLES_CLEAR] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/volatility/clear-trades')
+async def clear_volatility_trades():
+    """Clear all trades from volatility.db trades table (for fresh runs)."""
+    try:
+        if not os.path.exists(VOLATILITY_DB_PATH):
+            return JSONResponse({'error': 'Database not found'}, status_code=404)
+        
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Check if trades table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trades'")
+        if not cursor.fetchone():
+            conn.close()
+            return JSONResponse({
+                'status': 'ok',
+                'message': 'Trades table does not exist (nothing to clear)',
+                'trades_deleted': 0
+            })
+        
+        # Get count before deletion
+        cursor.execute("SELECT COUNT(*) FROM trades")
+        count_before = cursor.fetchone()[0]
+        
+        # Delete all trades
+        cursor.execute("DELETE FROM trades")
+        
+        # Reset AUTOINCREMENT counter so IDs start from 1 again
+        cursor.execute("DELETE FROM sqlite_sequence WHERE name='trades'")
+        
+        conn.commit()
+        conn.close()
+        
+        import time
+        print(f"[VOLATILITY_TRADES_CLEAR] *** CLEARED {count_before} trades from volatility.db at {time.strftime('%H:%M:%S')} ***")
+        
+        return JSONResponse({
+            'status': 'ok',
+            'message': f'Cleared {count_before} trades',
+            'trades_deleted': count_before
+        })
+    except Exception as ex:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[VOLATILITY_TRADES_CLEAR] Error: {ex}")
+        print(f"[VOLATILITY_TRADES_CLEAR] Traceback: {error_trace}")
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+@app.post('/api/databases/import-csv')
+async def import_csv_to_database(request: Request):
+    """Import bar samples from CSV file to database (fire-and-forget).
+    
+    POST body:
+        csv_path: Path to the CSV file to import
+    """
+    try:
+        data = await request.json()
+        csv_path = data.get('csv_path', '')
+        
+        if not csv_path:
+            return JSONResponse({'error': 'csv_path is required'}, status_code=400)
+        
+        if not os.path.exists(csv_path):
+            return JSONResponse({'error': f'CSV file not found: {csv_path}'}, status_code=404)
+        
+        # Fire-and-forget: Start import in background, return immediately
+        import subprocess
+        import sys
+        
+        script_path = os.path.join(os.path.dirname(__file__), 'import_csv_to_database.py')
+        
+        # Start import process in background (don't wait)
+        subprocess.Popen(
+            [sys.executable, script_path, csv_path],
+            cwd=os.path.dirname(__file__),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # Return immediately - import happens in background
+        return JSONResponse({
+            'status': 'ok',
+            'message': 'CSV import started in background (fire-and-forget)',
+            'csv_path': csv_path
+        })
+            
+    except Exception as ex:
+        print(f'[API] import-csv error: {ex}')
+        import traceback
+        traceback.print_exc()
         return JSONResponse({'error': str(ex)}, status_code=500)
 
 @app.post('/entry_blocked')
