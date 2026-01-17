@@ -44,6 +44,24 @@ async def serve_historical_profitability_analyzer():
     except FileNotFoundError:
         return HTMLResponse('<h1>Historical Profitability Analyzer not found</h1>', status_code=404)
 
+@app.get('/bar_analysis.html')
+async def bar_analysis_html():
+    """Serve the bar analysis HTML page"""
+    html_path = os.path.join(os.path.dirname(__file__), 'bar_analysis.html')
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return HTMLResponse(f.read())
+    return HTMLResponse('<h1>Bar Analysis page not found</h1>', status_code=404)
+
+@app.get('/troubleshoot.html')
+async def troubleshoot_html():
+    """Serve the troubleshooting HTML page"""
+    html_path = os.path.join(os.path.dirname(__file__), 'troubleshoot.html')
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return HTMLResponse(f.read())
+    return HTMLResponse('<h1>Troubleshooting page not found</h1>', status_code=404)
+
 @app.get('/trend_parameter_analyzer.html')
 async def serve_trend_parameter_analyzer():
     try:
@@ -1227,6 +1245,173 @@ def api_strategy_params():
     except Exception as ex:
         print(f'[API] strategy-params error: {ex}')
         return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
+
+@app.get('/api/bar-analysis')
+def api_bar_analysis(bar_index: int):
+    """Get detailed analysis for a specific bar index including trade exits, entry conditions, etc."""
+    try:
+        dashboard_db_path = DB_PATH
+        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
+        
+        if not os.path.exists(dashboard_db_path) or not os.path.exists(volatility_db_path):
+            return JSONResponse({'error': 'Database not found'}, status_code=404)
+        
+        conn_dashboard = sqlite3.connect(dashboard_db_path)
+        conn_volatility = sqlite3.connect(volatility_db_path)
+        conn_dashboard.row_factory = sqlite3.Row
+        conn_volatility.row_factory = sqlite3.Row
+        
+        cur_dashboard = conn_dashboard.cursor()
+        cur_volatility = conn_volatility.cursor()
+        
+        result = {
+            'bar_index': bar_index,
+            'bar_data': None,
+            'trades_exited': [],
+            'trades_entered': [],
+            'surrounding_bars': [],
+            'entry_bar_data': None
+        }
+        
+        # Get bar data
+        cur_volatility.execute("""
+            SELECT bar_index, timestamp, open_price, high_price, low_price, close_price,
+                   ema_fast_value, ema_slow_value, fast_ema_grad_deg,
+                   candle_type, trend_up, trend_down, 
+                   allow_long_this_bar, allow_short_this_bar,
+                   in_trade, direction, stop_loss_points, entry_reason,
+                   volume, bar_range, body_size
+            FROM bar_samples
+            WHERE bar_index = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (bar_index,))
+        
+        bar_row = cur_volatility.fetchone()
+        if bar_row:
+            result['bar_data'] = dict(bar_row)
+        
+        # Get trades that exited on this bar
+        cur_dashboard.execute("""
+            SELECT entry_bar, exit_bar, direction, entry_price, exit_price, 
+                   entry_time, exit_time, exit_reason, entry_reason, 
+                   realized_points, bars_held, mfe, mae, contracts
+            FROM trades
+            WHERE exit_bar = ?
+            ORDER BY exit_time DESC
+        """, (bar_index,))
+        
+        for row in cur_dashboard.fetchall():
+            result['trades_exited'].append(dict(row))
+        
+        # Get trades that entered on this bar
+        cur_dashboard.execute("""
+            SELECT entry_bar, exit_bar, direction, entry_price, exit_price, 
+                   entry_time, exit_time, exit_reason, entry_reason, 
+                   realized_points, bars_held, mfe, mae, contracts
+            FROM trades
+            WHERE entry_bar = ?
+            ORDER BY entry_time DESC
+        """, (bar_index,))
+        
+        for row in cur_dashboard.fetchall():
+            result['trades_entered'].append(dict(row))
+        
+        # Get surrounding bars (5 before, 5 after)
+        cur_volatility.execute("""
+            SELECT bar_index, timestamp, open_price, close_price, candle_type, 
+                   ema_fast_value, fast_ema_grad_deg, in_trade, direction
+            FROM bar_samples
+            WHERE bar_index BETWEEN ? AND ?
+            ORDER BY bar_index
+        """, (bar_index - 5, bar_index + 5))
+        
+        for row in cur_volatility.fetchall():
+            result['surrounding_bars'].append(dict(row))
+        
+        # If there's a trade that exited, get entry bar data
+        if result['trades_exited'] and result['trades_exited'][0].get('entry_bar'):
+            entry_bar = result['trades_exited'][0]['entry_bar']
+            cur_volatility.execute("""
+                SELECT bar_index, open_price, close_price, candle_type, in_trade, direction,
+                       ema_fast_value, fast_ema_grad_deg
+                FROM bar_samples
+                WHERE bar_index = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """, (entry_bar,))
+            
+            entry_row = cur_volatility.fetchone()
+            if entry_row:
+                result['entry_bar_data'] = dict(entry_row)
+        
+        # Try to get log entries for this bar
+        result['log_entries'] = get_log_entries_for_bar(bar_index)
+        
+        conn_dashboard.close()
+        conn_volatility.close()
+        
+        return JSONResponse(result)
+    except Exception as ex:
+        print(f'[API] bar-analysis error: {ex}')
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+def get_log_entries_for_bar(bar_index: int, max_entries: int = 50) -> List[Dict[str, Any]]:
+    """Extract log entries for a specific bar from the output window log file."""
+    log_entries = []
+    try:
+        # Find the most recent log file
+        log_files = []
+        if os.path.exists(LOG_DIR):
+            for file in os.listdir(LOG_DIR):
+                if file.startswith('BarsOnTheFlow_OutputWindow_') and file.endswith('.csv'):
+                    log_files.append(os.path.join(LOG_DIR, file))
+        
+        if not log_files:
+            return log_entries
+        
+        # Use the most recent log file (by modification time)
+        latest_log = max(log_files, key=os.path.getmtime)
+        
+        # Search for entries related to this bar
+        import csv
+        with open(latest_log, 'r', encoding='utf-8', errors='ignore') as f:
+            # CSV format: timestamp,bar_index,level,message (with quotes)
+            csv_reader = csv.reader(f)
+            bar_entries = []
+            for row in csv_reader:
+                if len(row) >= 4:
+                    try:
+                        bar_idx = int(row[1]) if row[1].isdigit() else 0
+                        if bar_idx == bar_index:
+                            bar_entries.append({
+                                'timestamp': row[0],
+                                'bar_index': row[1],
+                                'level': row[2],
+                                'message': row[3]  # CSV reader already handles quotes
+                            })
+                    except (ValueError, IndexError):
+                        continue
+            
+            # Return the most relevant entries (entry/exit decisions, filters)
+            relevant_keywords = ['ENTRY', 'EXIT', 'FILTER', 'BLOCK', 'trendUp', 'trendDown', 'skip', 'allow', 'EmaCrossoverFilterPasses', 'TREND_SIGNAL', 'conditionsMet', 'emaLongSignal']
+            filtered_entries = []
+            for entry in bar_entries:
+                message = entry.get('message', '').upper()
+                if any(keyword.upper() in message for keyword in relevant_keywords):
+                    filtered_entries.append(entry)
+            
+            # If we have filtered entries, use them; otherwise use all entries
+            log_entries = filtered_entries[:max_entries] if filtered_entries else bar_entries[:max_entries]
+            
+    except Exception as ex:
+        print(f'[API] Error reading log entries for bar {bar_index}: {ex}')
+        import traceback
+        traceback.print_exc()
+    
+    return log_entries
 
 @app.get('/api/strategy-state')
 def api_strategy_state():
@@ -2542,32 +2727,17 @@ def _save_state_to_db(payload: dict, strategy_name: str):
         conn = get_bars_db_connection()
         cur = conn.cursor()
         
-        cur.execute("""
-            INSERT OR REPLACE INTO BarsOnTheFlowStateAndBar (
-                timestamp, receivedTs, strategyName, enableDashboardDiagnostics,
-                barIndex, barTime, currentBar,
-                open, high, low, close, volume, candleType,
-                positionMarketPosition, positionQuantity, positionAveragePrice,
-                intendedPosition, lastEntryBarIndex, lastEntryDirection,
-                stopLossPoints, calculatedStopTicks, calculatedStopPoints,
-                useTrailingStop, useDynamicStopLoss, lookback, multiplier,
-                useBreakEven, breakEvenTrigger, breakEvenOffset, breakEvenActivated,
-                contracts, enableShorts, avoidLongsOnBadCandle, avoidShortsOnGoodCandle,
-                exitOnTrendBreak, reverseOnTrendBreak, fastEmaPeriod,
-                gradientThresholdSkipLongs, gradientThresholdSkipShorts, gradientFilterEnabled,
-                fastGradDeg, slowGradDeg,
-                trendLookbackBars, minMatchingBars, usePnLTiebreaker,
-                pendingLongFromBad, pendingShortFromGood,
-                unrealizedPnL, realizedPnL, totalTradesCount,
-                winningTradesCount, losingTradesCount, winRate,
-                stateJson
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            )
-        """, (
+        # Safely convert payload to JSON, handling any serialization errors
+        try:
+            state_json = json.dumps(payload)
+        except (TypeError, ValueError) as json_err:
+            print(f"[BG_SAVE] Warning: Could not serialize payload to JSON: {json_err}")
+            state_json = json.dumps({"error": "Failed to serialize state", "barIndex": bar_idx})
+        
+        # Prepare parameters, ensuring all values are properly typed
+        params = (
             payload.get('timestamp'),
-            payload['receivedTs'],
+            payload.get('receivedTs'),  # Changed from payload['receivedTs'] to .get() for safety
             strategy_name,
             1 if payload.get('enableDashboardDiagnostics') else 0,
             payload.get('barIndex'),
@@ -2619,8 +2789,37 @@ def _save_state_to_db(payload: dict, strategy_name: str):
             payload.get('winningTradesCount'),
             payload.get('losingTradesCount'),
             payload.get('winRate'),
-            json.dumps(payload)
-        ))
+            state_json
+        )
+        
+        # Verify parameter count matches (54 parameters)
+        if len(params) != 54:
+            raise ValueError(f"Parameter count mismatch: expected 54, got {len(params)}")
+        
+        cur.execute("""
+            INSERT OR REPLACE INTO BarsOnTheFlowStateAndBar (
+                timestamp, receivedTs, strategyName, enableDashboardDiagnostics,
+                barIndex, barTime, currentBar,
+                open, high, low, close, volume, candleType,
+                positionMarketPosition, positionQuantity, positionAveragePrice,
+                intendedPosition, lastEntryBarIndex, lastEntryDirection,
+                stopLossPoints, calculatedStopTicks, calculatedStopPoints,
+                useTrailingStop, useDynamicStopLoss, lookback, multiplier,
+                useBreakEven, breakEvenTrigger, breakEvenOffset, breakEvenActivated,
+                contracts, enableShorts, avoidLongsOnBadCandle, avoidShortsOnGoodCandle,
+                exitOnTrendBreak, reverseOnTrendBreak, fastEmaPeriod,
+                gradientThresholdSkipLongs, gradientThresholdSkipShorts, gradientFilterEnabled,
+                fastGradDeg, slowGradDeg,
+                trendLookbackBars, minMatchingBars, usePnLTiebreaker,
+                pendingLongFromBad, pendingShortFromGood,
+                unrealizedPnL, realizedPnL, totalTradesCount,
+                winningTradesCount, losingTradesCount, winRate,
+                stateJson
+            ) VALUES (
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+        """, params)
         conn.commit()
         # Don't close global connection - keep it open for reuse
         print(f"[BG_SAVE] [OK] Saved bar {bar_idx} to BarsOnTheFlowStateAndBar")

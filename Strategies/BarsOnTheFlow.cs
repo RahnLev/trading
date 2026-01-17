@@ -91,7 +91,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool ExitIfEntryBarOpposite { get; set; } = true; // exit if the entry bar closes opposite to trade direction
 
         [NinjaScriptProperty]
-        [Display(Name = "ReverseOnTrendBreak", Order = 7, GroupName = "Trading/Entry")]
+        [Display(Name = "UseDeferredEntry", Order = 7, GroupName = "Trading/Entry", Description = "When enabled, defers entry to the next bar for validation using the decision bar's completed data. When disabled, entries execute immediately. Deferred entry prevents entries based on stale data but may delay execution by one bar.")]
+        public bool UseDeferredEntry { get; set; } = true; // use deferred entry validation to ensure correct bar data
+
+        [NinjaScriptProperty]
+        [Display(Name = "ReverseOnTrendBreak", Order = 8, GroupName = "Trading/Entry")]
         public bool ReverseOnTrendBreak { get; set; } = false; // reverse position instead of just exiting on trend break
 
         [NinjaScriptProperty]
@@ -153,6 +157,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "Require Body Below/Above Fast EMA", Order = 8, GroupName = "EMA Crossover Filter", Description = "When enabled, requires the entire candle body (Open to Close) to be below Fast EMA for shorts or above Fast EMA for longs. When disabled, only the Close price needs to meet the condition. This filters out weak signals where the close meets the condition but the body extends past the EMA.")]
         public bool EmaCrossoverRequireBodyBelow { get; set; } = false; // require whole body below/above Fast EMA
+
+        [NinjaScriptProperty]
+        [Display(Name = "Allow Long When Body Above Fast But Fast Below Slow", Order = 9, GroupName = "EMA Crossover Filter", Description = "When enabled, allows LONG entry if body is completely above FastEMA (with gap) even if FastEMA < SlowEMA (no crossover yet). When disabled, requires FastEMA >= SlowEMA for long entries. This allows earlier entries when price is strong but EMAs haven't crossed yet.")]
+        public bool AllowLongWhenBodyAboveFastButFastBelowSlow { get; set; } = false; // allow long entry when body above FastEMA even if FastEMA < SlowEMA
+
+        [NinjaScriptProperty]
+        [Display(Name = "Allow Short When Body Below Fast But Fast Above Slow", Order = 10, GroupName = "EMA Crossover Filter", Description = "When enabled, allows SHORT entry if body is completely below FastEMA (with gap) even if FastEMA > SlowEMA (no crossover yet). When disabled, requires FastEMA <= SlowEMA for short entries. This allows earlier entries when price is weak but EMAs haven't crossed yet.")]
+        public bool AllowShortWhenBodyBelowFastButFastAboveSlow { get; set; } = false; // allow short entry when body below FastEMA even if FastEMA > SlowEMA
 
         [NinjaScriptProperty]
         [Display(Name = "GradientFilterEnabled", Order = 1, GroupName = "Fast EMA/Gradient")]
@@ -283,17 +295,32 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double EmaStopProfitProtectionPoints { get; set; } = 0; // Profit threshold to enable early exit on close crossing EMA
 
         [NinjaScriptProperty]
-        [Display(Name = "UseGradientStopLoss", Order = 13, GroupName = "Stop Loss", Description = "When enabled, exit position if gradient crosses into unfavorable territory. For longs: exit when gradient drops below ExitLongBelowGradient. For shorts: exit when gradient rises above ExitShortAboveGradient.")]
+        [Range(0, 100)]
+        [Display(Name = "EMA Stop Min Distance From Entry", Order = 13, GroupName = "Stop Loss", Description = "Minimum distance (in points) the EMA trailing stop must maintain from entry price. Prevents premature exits when EMA is very close to entry. 0 = no minimum (stop can be at entry). Only applies when UseEmaTrailingStop is enabled.")]
+        public double EmaStopMinDistanceFromEntry { get; set; } = 0; // Minimum distance from entry for EMA stop
+
+        [NinjaScriptProperty]
+        [Range(0, 20)]
+        [Display(Name = "EMA Stop Activation Delay Bars", Order = 14, GroupName = "Stop Loss", Description = "Number of bars to wait after entry before EMA trailing stop becomes active. Prevents immediate exits right after entry. 0 = active immediately. Only applies when UseEmaTrailingStop is enabled.")]
+        public int EmaStopActivationDelayBars { get; set; } = 0; // Bars to wait before EMA stop activates
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "EMA Stop Min Profit Before Activation", Order = 15, GroupName = "Stop Loss", Description = "Minimum profit (in points) required before EMA trailing stop becomes active. Prevents exits while trade is near breakeven. 0 = no minimum profit required. Only applies when UseEmaTrailingStop is enabled.")]
+        public double EmaStopMinProfitBeforeActivation { get; set; } = 0; // Minimum profit before EMA stop activates
+
+        [NinjaScriptProperty]
+        [Display(Name = "UseGradientStopLoss", Order = 16, GroupName = "Stop Loss", Description = "When enabled, exit position if gradient crosses into unfavorable territory. For longs: exit when gradient drops below ExitLongBelowGradient. For shorts: exit when gradient rises above ExitShortAboveGradient.")]
         public bool UseGradientStopLoss { get; set; } = false; // exit based on gradient crossing threshold
 
         [NinjaScriptProperty]
         [Range(-90, 90)]
-        [Display(Name = "ExitLongBelowGradient", Order = 14, GroupName = "Stop Loss", Description = "Exit LONG position when gradient drops below this value (degrees). E.g., 0 = exit when gradient becomes negative, -10 = exit when gradient < -10°.")]
+        [Display(Name = "ExitLongBelowGradient", Order = 17, GroupName = "Stop Loss", Description = "Exit LONG position when gradient drops below this value (degrees). E.g., 0 = exit when gradient becomes negative, -10 = exit when gradient < -10°.")]
         public double ExitLongBelowGradient { get; set; } = 0; // exit long when gradient < this value
 
         [NinjaScriptProperty]
         [Range(-90, 90)]
-        [Display(Name = "ExitShortAboveGradient", Order = 15, GroupName = "Stop Loss", Description = "Exit SHORT position when gradient rises above this value (degrees). E.g., 0 = exit when gradient becomes positive, 10 = exit when gradient > 10°.")]
+        [Display(Name = "ExitShortAboveGradient", Order = 18, GroupName = "Stop Loss", Description = "Exit SHORT position when gradient rises above this value (degrees). E.g., 0 = exit when gradient becomes positive, 10 = exit when gradient > 10°.")]
         public double ExitShortAboveGradient { get; set; } = 0; // exit short when gradient > this value
 
         [NinjaScriptProperty]
@@ -402,6 +429,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         private double lastFastEmaGradDeg = double.NaN;
         private Dictionary<int, double> gradientByBar = new Dictionary<int, double>(); // Store gradient per bar for accurate logging
+        private static readonly System.Threading.SemaphoreSlim dashboardPostSemaphore = new System.Threading.SemaphoreSlim(4, 4);
 
         // Bar navigation panel
         private System.Windows.Controls.Grid barNavPanel;
@@ -629,6 +657,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!IsFirstTickOfBar)
             {
                 ProcessMidBarOperations();
+                
+                // Update retrace/progress on live prices so exits can fire intrabar
+                UpdateTrendLifecycle(Position.MarketPosition, updateOverlay: false);
                 return; // Exit early for mid-bar ticks - bar close logic below
             }
 
@@ -805,11 +836,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (deferredLongEntry && Position.Quantity == 0)
             {
                 double closeOfDecisionBar = Close[1];
+                double openOfDecisionBar = Open[1];
                 double fastEmaOfDecisionBar = emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1] : double.NaN;
                 
-                Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred LONG - Close[1]={closeOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
+                Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred LONG - Close[1]={closeOfDecisionBar:F4}, Open[1]={openOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
                 
                 bool closeBelowFastEma = !double.IsNaN(fastEmaOfDecisionBar) && closeOfDecisionBar < fastEmaOfDecisionBar;
+                bool decisionBarWasBad = closeOfDecisionBar < openOfDecisionBar;
+                bool blockedByBadCandle = AvoidLongsOnBadCandle && decisionBarWasBad;
                 
                 if (closeBelowFastEma)
                 {
@@ -817,6 +851,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     deferredLongEntry = false;
                     deferredEntryReason = "";
                     intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else if (blockedByBadCandle)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: LONG entry BLOCKED - Decision bar closed BAD (O:{openOfDecisionBar:F4}, C:{closeOfDecisionBar:F4}) and AvoidLongsOnBadCandle=True");
+                    deferredLongEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                    pendingLongFromBad = true;
                 }
                 else
                 {
@@ -841,11 +883,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (deferredShortEntry && Position.Quantity == 0)
             {
                 double closeOfDecisionBar = Close[1];
+                double openOfDecisionBar = Open[1];
                 double fastEmaOfDecisionBar = emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1] : double.NaN;
                 
-                Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred SHORT - Close[1]={closeOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
+                Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred SHORT - Close[1]={closeOfDecisionBar:F4}, Open[1]={openOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
                 
                 bool closeAboveFastEma = !double.IsNaN(fastEmaOfDecisionBar) && closeOfDecisionBar > fastEmaOfDecisionBar;
+                bool decisionBarWasGood = closeOfDecisionBar > openOfDecisionBar;
+                bool blockedByGoodCandle = AvoidShortsOnGoodCandle && decisionBarWasGood;
                 
                 if (closeAboveFastEma)
                 {
@@ -853,6 +898,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     deferredShortEntry = false;
                     deferredEntryReason = "";
                     intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else if (blockedByGoodCandle)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: SHORT entry BLOCKED - Decision bar closed GOOD (O:{openOfDecisionBar:F4}, C:{closeOfDecisionBar:F4}) and AvoidShortsOnGoodCandle=True");
+                    deferredShortEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                    pendingShortFromGood = true;
                 }
                 else
                 {
@@ -975,45 +1028,51 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ====================================================================
             if (UseEmaTrailingStop && currentPos != MarketPosition.Flat && fastEma != null && CurrentBar >= FastEmaPeriod && !double.IsNaN(entryFastEmaValue))
             {
+                // Check if EMA stop should be active based on delay and profit requirements
+                int barsSinceEntry = lastEntryBarIndex > 0 ? (CurrentBar - lastEntryBarIndex) : int.MaxValue;
+                double activationProfitCheck = currentPos == MarketPosition.Long ? (Close[0] - Position.AveragePrice) : (Position.AveragePrice - Close[0]);
+                
+                bool delayPassed = barsSinceEntry >= EmaStopActivationDelayBars;
+                bool profitRequirementMet = EmaStopMinProfitBeforeActivation == 0 || activationProfitCheck >= EmaStopMinProfitBeforeActivation;
+                bool shouldActivateStop = delayPassed && profitRequirementMet;
+                
+                if (!shouldActivateStop)
+                {
+                    // Skip EMA trailing stop management if not activated yet
+                    // Return early without setting stop loss
+                    return false;
+                }
+                
                 double currentFastEma = fastEma[0]; // Current Fast EMA value
                 double newStopLossPrice = double.NaN;
                 string orderName;
                 
-                // Calculate break-even floor/ceiling if activated
-                double breakEvenFloor = double.NaN; // For longs: minimum stop loss level
-                double breakEvenCeiling = double.NaN; // For shorts: maximum stop loss level
-                if (breakEvenActivated && UseBreakEven)
-                {
-                    double entryPrice = Position.AveragePrice;
-                    if (currentPos == MarketPosition.Long)
-                    {
-                        breakEvenFloor = entryPrice + BreakEvenOffset; // Break-even is the floor for longs
-                    }
-                    else if (currentPos == MarketPosition.Short)
-                    {
-                        breakEvenCeiling = entryPrice - BreakEvenOffset; // Break-even is the ceiling for shorts
-                    }
-                }
+                // EMA Trailing Stop OVERRIDES break-even (as per description)
+                // When UseEmaTrailingStop is enabled, we ignore break-even completely
+                // and use only the EMA value for the stop loss
                 
                 if (currentPos == MarketPosition.Long)
                 {
                     orderName = "BarsOnTheFlowLong";
+                    double entryPrice = Position.AveragePrice;
                     // For longs: stop loss = Fast EMA, but only moves UP (never down)
-                    // Only update if Fast EMA is higher than current stop loss
-                    if (double.IsNaN(currentEmaStopLoss) || currentFastEma > currentEmaStopLoss)
+                    double emaBasedStop = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
+                    
+                    // Calculate proposed stop based on EMA and minimum distance
+                    double proposedStop = emaBasedStop;
+                    if (EmaStopMinDistanceFromEntry > 0)
                     {
-                        newStopLossPrice = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
-                        
-                        // Apply break-even floor: stop loss cannot go below break-even level
-                        if (!double.IsNaN(breakEvenFloor) && newStopLossPrice < breakEvenFloor)
-                        {
-                            newStopLossPrice = breakEvenFloor;
-                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4} is below break-even floor ({breakEvenFloor:F4}), using break-even as stop loss");
-                        }
-                        else
-                        {
-                            currentEmaStopLoss = newStopLossPrice; // Only update EMA stop if we're using it
-                        }
+                        double minStopPrice = entryPrice + EmaStopMinDistanceFromEntry;
+                        // Stop should be at least minStopPrice, but can be higher if EMA is higher
+                        proposedStop = Instrument.MasterInstrument.RoundToTickSize(Math.Max(emaBasedStop, minStopPrice));
+                    }
+                    
+                    // Only update if the proposed stop is higher than current (or if current is NaN)
+                    // This allows the stop to trail the EMA upward, but ensures it never goes below entry + minDistance
+                    if (double.IsNaN(currentEmaStopLoss) || proposedStop > currentEmaStopLoss)
+                    {
+                        newStopLossPrice = proposedStop;
+                        currentEmaStopLoss = newStopLossPrice;
                         
                         // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
                         // Otherwise, set the stop loss normally
@@ -1022,29 +1081,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                             SetStopLoss(orderName, CalculationMode.Price, newStopLossPrice, false);
                         }
                         
-                        currentTradeStopLossPoints = Math.Abs(Position.AveragePrice - newStopLossPrice);
-                        Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, BreakEvenFloor={breakEvenFloor:F4}, TriggerMode={EmaStopTriggerMode}");
+                        currentTradeStopLossPoints = Math.Abs(entryPrice - newStopLossPrice);
+                        if (EmaStopMinDistanceFromEntry > 0 && newStopLossPrice > emaBasedStop)
+                        {
+                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, EMA-based stop={emaBasedStop:F4}, Min distance={EmaStopMinDistanceFromEntry:F4}, Final stop loss={newStopLossPrice:F4} (enforced minimum distance from entry {entryPrice:F4}), TriggerMode={EmaStopTriggerMode}");
+                        }
+                        else
+                        {
+                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, TriggerMode={EmaStopTriggerMode} (EMA trailing stop overrides break-even)");
+                        }
                     }
                 }
                 else if (currentPos == MarketPosition.Short)
                 {
                     orderName = "BarsOnTheFlowShort";
+                    double entryPrice = Position.AveragePrice;
                     // For shorts: stop loss = Fast EMA, but only moves DOWN (never up)
-                    // Only update if Fast EMA is lower than current stop loss
-                    if (double.IsNaN(currentEmaStopLoss) || currentFastEma < currentEmaStopLoss)
+                    double emaBasedStop = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
+                    
+                    // Calculate proposed stop based on EMA and minimum distance
+                    double proposedStop = emaBasedStop;
+                    if (EmaStopMinDistanceFromEntry > 0)
                     {
-                        newStopLossPrice = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
-                        
-                        // Apply break-even ceiling: stop loss cannot go above break-even level
-                        if (!double.IsNaN(breakEvenCeiling) && newStopLossPrice > breakEvenCeiling)
-                        {
-                            newStopLossPrice = breakEvenCeiling;
-                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4} is above break-even ceiling ({breakEvenCeiling:F4}), using break-even as stop loss");
-                        }
-                        else
-                        {
-                            currentEmaStopLoss = newStopLossPrice; // Only update EMA stop if we're using it
-                        }
+                        double maxStopPrice = entryPrice - EmaStopMinDistanceFromEntry;
+                        // Stop should be at most maxStopPrice, but can be lower if EMA is lower
+                        proposedStop = Instrument.MasterInstrument.RoundToTickSize(Math.Min(emaBasedStop, maxStopPrice));
+                    }
+                    
+                    // Only update if the proposed stop is lower than current (or if current is NaN)
+                    // This allows the stop to trail the EMA downward, but ensures it never goes above entry - minDistance
+                    if (double.IsNaN(currentEmaStopLoss) || proposedStop < currentEmaStopLoss)
+                    {
+                        newStopLossPrice = proposedStop;
+                        currentEmaStopLoss = newStopLossPrice;
                         
                         // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
                         // Otherwise, set the stop loss normally
@@ -1053,8 +1122,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                             SetStopLoss(orderName, CalculationMode.Price, newStopLossPrice, false);
                         }
                         
-                        currentTradeStopLossPoints = Math.Abs(Position.AveragePrice - newStopLossPrice);
-                        Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, BreakEvenCeiling={breakEvenCeiling:F4}, TriggerMode={EmaStopTriggerMode}");
+                        currentTradeStopLossPoints = Math.Abs(entryPrice - newStopLossPrice);
+                        if (EmaStopMinDistanceFromEntry > 0 && newStopLossPrice < emaBasedStop)
+                        {
+                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, EMA-based stop={emaBasedStop:F4}, Min distance={EmaStopMinDistanceFromEntry:F4}, Final stop loss={newStopLossPrice:F4} (enforced minimum distance from entry {entryPrice:F4}), TriggerMode={EmaStopTriggerMode}");
+                        }
+                        else
+                        {
+                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, TriggerMode={EmaStopTriggerMode} (EMA trailing stop overrides break-even)");
+                        }
                     }
                 }
             }
@@ -1066,6 +1142,27 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ====================================================================
             if (UseEmaTrailingStop && currentPos != MarketPosition.Flat && CurrentBar >= 1 && fastEma != null && CurrentBar >= FastEmaPeriod)
             {
+                // Check if EMA stop should be active based on delay and profit requirements
+                int barsSinceEntry = lastEntryBarIndex > 0 ? (CurrentBar - lastEntryBarIndex) : int.MaxValue;
+                double activationProfitCheck = currentPos == MarketPosition.Long ? (Close[1] - Position.AveragePrice) : (Position.AveragePrice - Close[1]);
+                
+                bool delayPassed = barsSinceEntry >= EmaStopActivationDelayBars;
+                bool profitRequirementMet = EmaStopMinProfitBeforeActivation == 0 || activationProfitCheck >= EmaStopMinProfitBeforeActivation;
+                bool shouldActivateStop = delayPassed && profitRequirementMet;
+                
+                if (!shouldActivateStop)
+                {
+                    if (barsSinceEntry < EmaStopActivationDelayBars)
+                    {
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: EMA trailing stop INACTIVE - Bars since entry ({barsSinceEntry}) < Activation delay ({EmaStopActivationDelayBars})");
+                    }
+                    else if (activationProfitCheck < EmaStopMinProfitBeforeActivation)
+                    {
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: EMA trailing stop INACTIVE - Current profit ({activationProfitCheck:F4}) < Min profit required ({EmaStopMinProfitBeforeActivation:F4})");
+                    }
+                    return false; // Skip EMA stop check if not activated yet
+                }
+                
                 // Use completed bar [1] for the check (matches the bar we're checking)
                 double completedBarHigh = High[1];
                 double completedBarLow = Low[1];
@@ -1076,94 +1173,86 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Determine the effective stop loss level (considering break-even floor/ceiling)
                 double effectiveStopLoss = double.NaN;
                 
-                // Calculate break-even floor/ceiling if activated
-                double breakEvenFloor = double.NaN;
-                double breakEvenCeiling = double.NaN;
-                if (breakEvenActivated && UseBreakEven)
-                {
-                    double entryPrice = Position.AveragePrice;
-                    if (currentPos == MarketPosition.Long)
-                    {
-                        breakEvenFloor = entryPrice + BreakEvenOffset;
-                    }
-                    else if (currentPos == MarketPosition.Short)
-                    {
-                        breakEvenCeiling = entryPrice - BreakEvenOffset;
-                    }
-                }
+                // EMA Trailing Stop OVERRIDES break-even (as per description)
+                // When UseEmaTrailingStop is enabled, we ignore break-even completely
+                // and use only the EMA value for the stop loss
                 
-                // For FullCandle mode: Use completed bar's EMA only (ignore break-even and currentEmaStopLoss)
+                // For FullCandle mode: Use completed bar's EMA only
                 // This ensures we're checking the bar against the EMA value at the time the bar closed
                 if (EmaStopTriggerMode == EmaStopTriggerModeType.FullCandle)
                 {
                     if (!double.IsNaN(completedBarFastEma))
                     {
                         effectiveStopLoss = completedBarFastEma;
-                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: FullCandle mode - Using completed bar's EMA={completedBarFastEma:F4} (ignoring break-even and currentEmaStopLoss={currentEmaStopLoss})");
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: FullCandle mode - Using completed bar's EMA={completedBarFastEma:F4} (EMA trailing stop overrides break-even)");
                     }
                 }
-                // For CloseOnly/BodyOnly modes: Use the higher of EMA or break-even (normal behavior)
+                // For CloseOnly/BodyOnly modes: Use EMA only (break-even is overridden)
                 else
                 {
                     // Use currentEmaStopLoss (which is the trailing stop that only moves in favorable direction)
-                    // But for consistency, we could also use completedBarFastEma here
+                    // Or fall back to completedBarFastEma if currentEmaStopLoss is not set
                     double emaStopToUse = !double.IsNaN(currentEmaStopLoss) ? currentEmaStopLoss : completedBarFastEma;
                     
-                    if (currentPos == MarketPosition.Long)
+                    // Apply minimum distance from entry if specified and we're using the fallback EMA
+                    if (!double.IsNaN(emaStopToUse) && EmaStopMinDistanceFromEntry > 0 && double.IsNaN(currentEmaStopLoss))
                     {
-                        if (!double.IsNaN(emaStopToUse) && !double.IsNaN(breakEvenFloor))
+                        double entryPrice = Position.AveragePrice;
+                        if (currentPos == MarketPosition.Long)
                         {
-                            effectiveStopLoss = Math.Max(emaStopToUse, breakEvenFloor);
+                            double minStopPrice = entryPrice + EmaStopMinDistanceFromEntry;
+                            emaStopToUse = Instrument.MasterInstrument.RoundToTickSize(Math.Max(emaStopToUse, minStopPrice));
                         }
-                        else if (!double.IsNaN(emaStopToUse))
+                        else if (currentPos == MarketPosition.Short)
                         {
-                            effectiveStopLoss = emaStopToUse;
-                        }
-                        else if (!double.IsNaN(breakEvenFloor))
-                        {
-                            effectiveStopLoss = breakEvenFloor;
+                            double maxStopPrice = entryPrice - EmaStopMinDistanceFromEntry;
+                            emaStopToUse = Instrument.MasterInstrument.RoundToTickSize(Math.Min(emaStopToUse, maxStopPrice));
                         }
                     }
-                    else if (currentPos == MarketPosition.Short)
+                    
+                    if (!double.IsNaN(emaStopToUse))
                     {
-                        if (!double.IsNaN(emaStopToUse) && !double.IsNaN(breakEvenCeiling))
-                        {
-                            effectiveStopLoss = Math.Min(emaStopToUse, breakEvenCeiling);
-                        }
-                        else if (!double.IsNaN(emaStopToUse))
-                        {
-                            effectiveStopLoss = emaStopToUse;
-                        }
-                        else if (!double.IsNaN(breakEvenCeiling))
-                        {
-                            effectiveStopLoss = breakEvenCeiling;
-                        }
+                        effectiveStopLoss = emaStopToUse;
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Using EMA stop={emaStopToUse:F4} (EMA trailing stop overrides break-even, breakEvenActivated={breakEvenActivated})");
                     }
                 }
                 
                 if (double.IsNaN(effectiveStopLoss))
                 {
-                    Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: WARNING - No valid stop loss to check (currentEmaStopLoss={currentEmaStopLoss}, breakEvenActivated={breakEvenActivated}, breakEvenFloor={breakEvenFloor}, breakEvenCeiling={breakEvenCeiling})");
-                    // Don't return - continue to check if we can use break-even or EMA directly
-                    // Try to use break-even if activated, or EMA if available
-                    if (currentPos == MarketPosition.Long && !double.IsNaN(breakEvenFloor))
-                    {
-                        effectiveStopLoss = breakEvenFloor;
-                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: Using break-even floor as stop loss: {effectiveStopLoss:F4}");
-                    }
-                    else if (currentPos == MarketPosition.Short && !double.IsNaN(breakEvenCeiling))
-                    {
-                        effectiveStopLoss = breakEvenCeiling;
-                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: Using break-even ceiling as stop loss: {effectiveStopLoss:F4}");
-                    }
-                    else if (!double.IsNaN(currentEmaStopLoss))
+                    Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: WARNING - No valid EMA stop loss to check (currentEmaStopLoss={currentEmaStopLoss}, completedBarFastEma={completedBarFastEma})");
+                    // Try to use EMA if available (EMA trailing stop overrides break-even, so we don't use break-even here)
+                    if (!double.IsNaN(currentEmaStopLoss))
                     {
                         effectiveStopLoss = currentEmaStopLoss;
-                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: Using EMA stop loss: {effectiveStopLoss:F4}");
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Using currentEmaStopLoss: {effectiveStopLoss:F4}");
+                    }
+                    else if (!double.IsNaN(completedBarFastEma))
+                    {
+                        // Apply minimum distance from entry if specified
+                        double entryPrice = Position.AveragePrice;
+                        if (EmaStopMinDistanceFromEntry > 0)
+                        {
+                            if (currentPos == MarketPosition.Long)
+                            {
+                                double minStopPrice = entryPrice + EmaStopMinDistanceFromEntry;
+                                effectiveStopLoss = Instrument.MasterInstrument.RoundToTickSize(Math.Max(completedBarFastEma, minStopPrice));
+                            }
+                            else if (currentPos == MarketPosition.Short)
+                            {
+                                double maxStopPrice = entryPrice - EmaStopMinDistanceFromEntry;
+                                effectiveStopLoss = Instrument.MasterInstrument.RoundToTickSize(Math.Min(completedBarFastEma, maxStopPrice));
+                            }
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Using completedBarFastEma with min distance: {effectiveStopLoss:F4} (EMA={completedBarFastEma:F4}, Entry={entryPrice:F4}, MinDist={EmaStopMinDistanceFromEntry:F4})");
+                        }
+                        else
+                        {
+                            effectiveStopLoss = completedBarFastEma;
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Using completedBarFastEma: {effectiveStopLoss:F4}");
+                        }
                     }
                     else
                     {
-                        Print($"[EMA_STOP_FULL_CANDLE] Bar {CurrentBar}: ERROR - Cannot determine stop loss, skipping check");
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: ERROR - Cannot determine EMA stop loss, skipping check");
                         return false; // No valid stop loss to check
                     }
                 }
@@ -1199,12 +1288,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (EmaStopTriggerMode == EmaStopTriggerModeType.BodyOnly)
                     {
-                        // Body only: both Open and Close (the candle body, excluding wicks) must be below the stop loss
+                        // Body only: the FULL body (both bodyTop and bodyBottom) must be below the stop loss
+                        // This ensures the entire body range is below the stop, not just part of it
                         double completedBarOpen = Open[1];
                         double bodyTop = Math.Max(completedBarOpen, completedBarClose);
                         double bodyBottom = Math.Min(completedBarOpen, completedBarClose);
+                        // For LONG exits: FULL body must be below stop loss (both top and bottom must be below)
                         shouldTrigger = bodyTop < effectiveStopLoss && bodyBottom < effectiveStopLoss;
-                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: LONG - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                        
+                        // Get current bar conditions for comparison
+                        double currentBarClose = Close[0];
+                        double currentBarFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
+                        bool currentBarAboveEma = !double.IsNaN(currentBarFastEma) && currentBarClose > currentBarFastEma;
+                        int gradWindow = Math.Max(2, FastGradLookbackBars);
+                        double currentGradDeg;
+                        ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                        
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: LONG - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, FullBodyBelow={(bodyTop < effectiveStopLoss && bodyBottom < effectiveStopLoss)}, Trigger={shouldTrigger}");
+                        if (shouldTrigger)
+                        {
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: NOTE - Exit triggered based on COMPLETED bar [1] conditions, not current bar [0]");
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Completed bar [1]: BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, FullBodyBelow={(bodyTop < effectiveStopLoss && bodyBottom < effectiveStopLoss)}");
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Current bar [0]: Close={currentBarClose:F4}, FastEMA={currentBarFastEma:F4}, AboveEMA={currentBarAboveEma}, Gradient={currentGradDeg:F2}°");
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: REMINDER - Exit fill will occur on next bar (bar {CurrentBar + 1}) in historical backtesting. Bar {CurrentBar + 1} conditions will not be checked before fill.");
+                            if (currentBarAboveEma && currentGradDeg > 0)
+                            {
+                                Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: WARNING - Current bar looks good (above EMA, positive gradient), but exit triggered by completed bar's full body below stop loss");
+                            }
+                        }
                         
                         // Profit protection: if in profit and close crossed below EMA, exit early
                         if (!shouldTrigger && EmaStopProfitProtectionPoints > 0)
@@ -1268,12 +1379,34 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (EmaStopTriggerMode == EmaStopTriggerModeType.BodyOnly)
                     {
-                        // Body only: both Open and Close (the candle body, excluding wicks) must be above the stop loss
+                        // Body only: the FULL body (both bodyTop and bodyBottom) must be above the stop loss
+                        // This ensures the entire body range is above the stop, not just part of it
                         double completedBarOpen = Open[1];
                         double bodyTop = Math.Max(completedBarOpen, completedBarClose);
                         double bodyBottom = Math.Min(completedBarOpen, completedBarClose);
+                        // For SHORT exits: FULL body must be above stop loss (both top and bottom must be above)
                         shouldTrigger = bodyTop > effectiveStopLoss && bodyBottom > effectiveStopLoss;
-                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: SHORT - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, Trigger={shouldTrigger}");
+                        
+                        // Get current bar conditions for comparison
+                        double currentBarClose = Close[0];
+                        double currentBarFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
+                        bool currentBarBelowEma = !double.IsNaN(currentBarFastEma) && currentBarClose < currentBarFastEma;
+                        int gradWindow = Math.Max(2, FastGradLookbackBars);
+                        double currentGradDeg;
+                        ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                        
+                        Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: SHORT - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, FullBodyAbove={(bodyTop > effectiveStopLoss && bodyBottom > effectiveStopLoss)}, Trigger={shouldTrigger}");
+                        if (shouldTrigger)
+                        {
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: NOTE - Exit triggered based on COMPLETED bar [1] conditions, not current bar [0]");
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Completed bar [1]: BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, FullBodyAbove={(bodyTop > effectiveStopLoss && bodyBottom > effectiveStopLoss)}");
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: Current bar [0]: Close={currentBarClose:F4}, FastEMA={currentBarFastEma:F4}, BelowEMA={currentBarBelowEma}, Gradient={currentGradDeg:F2}°");
+                            Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: REMINDER - Exit fill will occur on next bar (bar {CurrentBar + 1}) in historical backtesting. Bar {CurrentBar + 1} conditions will not be checked before fill.");
+                            if (currentBarBelowEma && currentGradDeg < 0)
+                            {
+                                Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: WARNING - Current bar looks good (below EMA, negative gradient), but exit triggered by completed bar's full body above stop loss");
+                            }
+                        }
                         
                         // Profit protection: if in profit and close crossed above EMA, exit early
                         if (!shouldTrigger && EmaStopProfitProtectionPoints > 0)
@@ -1412,7 +1545,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (prevBad)
                 {
-                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitLongOnGood resolving - prevBad, exiting LONG (O:{prevOpen:F2}, C:{prevClose:F2})");
+                    // Get current bar conditions for logging
+                    double currentClose = Close[0];
+                    double currentFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
+                    int gradWindow = Math.Max(2, FastGradLookbackBars);
+                    double currentGradDeg;
+                    ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    bool barAboveEma = !double.IsNaN(currentFastEma) && currentClose > currentFastEma;
+                    
+                    Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitLongOnGood resolving - prevBad, exiting LONG");
+                    Print($"[EXIT_DEBUG]   Previous bar: O:{prevOpen:F2}, C:{prevClose:F2}, Bad={prevBad}");
+                    Print($"[EXIT_DEBUG]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, AboveEMA={barAboveEma}, Gradient={currentGradDeg:F2}°");
+                    Print($"[EXIT_DEBUG]   NOTE: This is a deferred exit from a previous bar's marginal trend condition");
+                    
                     // Previous bar was bad, confirms reversal - exit now
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
                     currentTradeExitReason = "BarsOnTheFlowExit";
@@ -1575,31 +1720,26 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Resolve pending deferred longs that were blocked by a prior bad bar.
             if (!placedEntry && pendingLongFromBad && currentPos == MarketPosition.Flat)
             {
-                PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Resolving pendingLongFromBad | trendUp={trendUp}, trendDown={trendDown}, prevGood={prevGood}, prevBad={prevBad}, gradient={lastFastEmaGradDeg:F2}", "DEBUG");
+                // If UseDeferredEntry is false, pendingLongFromBad should never be used - clear it
+                if (!UseDeferredEntry)
+                {
+                    Print($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Clearing pendingLongFromBad - UseDeferredEntry=False, entry blocked");
+                    pendingLongFromBad = false;
+                    pendingShortFromGood = false;
+                }
+                else
+                {
+                    PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Resolving pendingLongFromBad | trendUp={trendUp}, trendDown={trendDown}, prevGood={prevGood}, prevBad={prevBad}, gradient={lastFastEmaGradDeg:F2}", "DEBUG");
                 
                 if (trendDown)
                 {
                     // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
-                    int gradWindow = Math.Max(2, FastGradLookbackBars);
-                    double currentGradDeg;
-                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    double gradDegToUse;
+                    GetCurrentGradient(out gradDegToUse);
                     
-                    // CRITICAL: If Fast EMA is above Slow EMA on the bar that just closed, block SHORT entry
-                    bool emaCrossedAbove = false;
-                    if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
-                    {
-                        double fastEmaAtBarClose = emaFast[1];
-                        double slowEmaAtBarClose = emaSlow[1];
-                        emaCrossedAbove = fastEmaAtBarClose > slowEmaAtBarClose;
-                        if (emaCrossedAbove)
-                        {
-                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingLongFromBad->SHORT): Fast EMA ({fastEmaAtBarClose:F4}) > Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING SHORT entry");
-                        }
-                    }
-                    
-                    bool skipDueToGradient = emaCrossedAbove || ShouldSkipShortDueToGradient(gradDegToUse);
-                    bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
+                    // Check gradient and EMA crossover filters using helper method
+                    bool skipDueToGradient, skipDueToEmaCrossover, emaCrossedAbove, closeAboveFastEma;
+                    CheckGradientAndEmaFiltersForShort(gradDegToUse, out skipDueToGradient, out skipDueToEmaCrossover, out emaCrossedAbove, out closeAboveFastEma);
                     PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: TrendDown detected, reversing to SHORT | gradient={gradDegToUse:F2}° (recalculated), skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                     if (!skipDueToGradient && !skipDueToEmaCrossover)
                     {
@@ -1640,28 +1780,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print($"[PENDING_LONG_ENTRY_PATH] Bar {CurrentBar}: Entering via pendingLongFromBad path");
                     
                     // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
-                    int gradWindow = Math.Max(2, FastGradLookbackBars);
-                    double currentGradDeg;
-                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    double gradDegToUse;
+                    GetCurrentGradient(out gradDegToUse);
                     
                     Print($"[GRADIENT_RECALC] Bar {CurrentBar} (pendingLongFromBad): Recalculated gradient: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
                     
-                    // CRITICAL: If Fast EMA is below Slow EMA on the bar that just closed, block LONG entry
-                    bool emaCrossedBelow = false;
-                    if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
-                    {
-                        double fastEmaAtBarClose = emaFast[1];
-                        double slowEmaAtBarClose = emaSlow[1];
-                        emaCrossedBelow = fastEmaAtBarClose < slowEmaAtBarClose;
-                        if (emaCrossedBelow)
-                        {
-                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingLongFromBad): Fast EMA ({fastEmaAtBarClose:F4}) < Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING LONG entry regardless of gradient");
-                        }
-                    }
-                    
-                    bool skipDueToGradient = emaCrossedBelow || ShouldSkipLongDueToGradient(gradDegToUse);
-                    bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
+                    // Check gradient and EMA crossover filters using helper method
+                    bool skipDueToGradient, skipDueToEmaCrossover, emaCrossedBelow, closeBelowFastEma;
+                    CheckGradientAndEmaFiltersForLong(gradDegToUse, out skipDueToGradient, out skipDueToEmaCrossover, out emaCrossedBelow, out closeBelowFastEma);
                     Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: LONG entry (pendingLongFromBad)");
                     Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDegToUse={gradDegToUse:F2}° (recalculated from bar that just closed)");
                     Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: SkipLongsBelowGradient={SkipLongsBelowGradient:F2}°");
@@ -1715,6 +1841,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     PrintAndLog($"[PENDING_LONG_DEBUG] Bar {CurrentBar}: Waiting for prevGood - trendUp={trendUp}, prevGood={prevGood}, prevBad={prevBad}, keeping pending flag", "DEBUG");
                 }
+                } // Close else block for UseDeferredEntry check
             }
 
             // Fresh signals with deferral logic.
@@ -1807,80 +1934,54 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print($"[ENTRY_DEBUG] Bar {CurrentBar}: ENTRY BLOCK REACHED - checking LONG entry conditions");
                     if (AvoidLongsOnBadCandle && prevBad)
                     {
-                        Print($"[Entry Block] Bar {CurrentBar}: Deferring LONG - bar closed BAD (O:{prevOpen:F2}, C:{prevClose:F2})");
-                        pendingLongFromBad = true;
-                        pendingShortFromGood = false;
-                    }
-                    else if (allowLongThisBar)
-                    {
-                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: allowLongThisBar=True - proceeding with LONG entry checks");
-                        // Double-check: don't enter long if bar just closed bad
-                        if (AvoidLongsOnBadCandle && prevBad)
+                        if (UseDeferredEntry)
                         {
-                            Print($"[Entry Block] Bar {CurrentBar}: BLOCKED LONG - bar closed BAD despite allowLongThisBar=true (O:{prevOpen:F2}, C:{prevClose:F2})");
+                            Print($"[Entry Block] Bar {CurrentBar}: Deferring LONG - bar closed BAD (O:{prevOpen:F2}, C:{prevClose:F2}) - will wait for good candle");
                             pendingLongFromBad = true;
                             pendingShortFromGood = false;
                         }
                         else
                         {
-                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: No bad candle block - checking gradient and EMA filters");
-                            
-                            // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
-                            // This is important because the gradient calculated at the start of the bar may not reflect the bar's final movement
-                            int gradWindow = Math.Max(2, FastGradLookbackBars);
-                            double currentGradDeg;
-                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
-                            
-                            Print($"[GRADIENT_RECALC] Bar {CurrentBar}: Recalculated gradient for entry decision: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
-                            
-                            // CRITICAL: Block LONG entry if close is below Fast EMA OR if Fast EMA is below Slow EMA
-                            // This ensures longs only enter when price is above Fast EMA (bullish condition)
-                            bool emaCrossedBelow = false;
-                            bool closeBelowFastEma = false;
-                            if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+                            Print($"[Entry Block] Bar {CurrentBar}: BLOCKING LONG - bar closed BAD (O:{prevOpen:F2}, C:{prevClose:F2}) and UseDeferredEntry=False (no deferral, entry blocked)");
+                            pendingLongFromBad = false;
+                            pendingShortFromGood = false;
+                        }
+                    }
+                    else if (allowLongThisBar)
+                    {
+                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: allowLongThisBar=True - proceeding with LONG entry checks");
+                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: No bad candle block - checking gradient and EMA filters");
+                        
+                        // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
+                        // This is important because the gradient calculated at the start of the bar may not reflect the bar's final movement
+                        double gradDegToUse;
+                        GetCurrentGradient(out gradDegToUse);
+                        
+                        Print($"[GRADIENT_RECALC] Bar {CurrentBar}: Recalculated gradient for entry decision: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
+                        Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: LONG entry check");
+                        Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDegToUse={gradDegToUse:F2}° (recalculated from bar that just closed)");
+                        Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: SkipLongsBelowGradient={SkipLongsBelowGradient:F2}°");
+                        Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: GradientFilterEnabled={GradientFilterEnabled}");
+                        Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: double.IsNaN(gradDegToUse)={double.IsNaN(gradDegToUse)}");
+                        Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDeg < SkipLongsBelowGradient = {gradDegToUse:F2} < {SkipLongsBelowGradient:F2} = {gradDegToUse < SkipLongsBelowGradient}");
+                        
+                        // Check gradient and EMA crossover filters using helper method
+                        bool skipDueToGradient, skipDueToEmaCrossover, emaCrossedBelow, closeBelowFastEma;
+                        CheckGradientAndEmaFiltersForLong(gradDegToUse, out skipDueToGradient, out skipDueToEmaCrossover, out emaCrossedBelow, out closeBelowFastEma);
+                        
+                        PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry check | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
+                        PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: LONG entry check | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
+                        
+                        Print($"[ENTRY_DECISION] Bar {CurrentBar}: skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, willEnter={!skipDueToGradient && !skipDueToEmaCrossover}");
+                        
+                        if (!skipDueToGradient && !skipDueToEmaCrossover)
+                        {
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: All filters passed! skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}");
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Position check - Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
+                            // Don't re-enter if already long - check both actual and intended position
+                            if (Position.Quantity == 0 && intendedPosition != MarketPosition.Long)
                             {
-                                double fastEmaAtBarClose = emaFast[1];
-                                double slowEmaAtBarClose = emaSlow[1];
-                                double closeAtBarClose = Close[1];
-                                
-                                // Block if Fast EMA < Slow EMA (bearish crossover condition)
-                                emaCrossedBelow = fastEmaAtBarClose < slowEmaAtBarClose;
-                                if (emaCrossedBelow)
-                                {
-                                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaAtBarClose:F4}) < Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING LONG entry regardless of gradient");
-                                }
-                                
-                                // Block if close is below Fast EMA (price is bearish, not suitable for long entry)
-                                closeBelowFastEma = closeAtBarClose < fastEmaAtBarClose;
-                                if (closeBelowFastEma)
-                                {
-                                    Print($"[PRICE_BLOCK] Bar {CurrentBar}: Close ({closeAtBarClose:F4}) < Fast EMA ({fastEmaAtBarClose:F4}) - BLOCKING LONG entry (price is below Fast EMA)");
-                                }
-                            }
-                            
-                            // Check gradient filter: skip longs if EMA gradient is below threshold OR if EMA crossed below OR if close is below Fast EMA
-                            bool skipDueToGradient = emaCrossedBelow || closeBelowFastEma || ShouldSkipLongDueToGradient(gradDegToUse);
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: LONG entry check");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDegToUse={gradDegToUse:F2}° (recalculated from bar that just closed)");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: SkipLongsBelowGradient={SkipLongsBelowGradient:F2}°");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: GradientFilterEnabled={GradientFilterEnabled}");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: double.IsNaN(gradDegToUse)={double.IsNaN(gradDegToUse)}");
-                            Print($"[GRADIENT_CHECK_DETAIL] Bar {CurrentBar}: gradDeg < SkipLongsBelowGradient = {gradDegToUse:F2} < {SkipLongsBelowGradient:F2} = {gradDegToUse < SkipLongsBelowGradient}");
-                            PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry check | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
-                            
-                            // Check EMA crossover filter (only when trend detection is enabled - when disabled, EMA crossover generates signals directly)
-                            bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
-                            PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: LONG entry check | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
-                            
-                            Print($"[ENTRY_DECISION] Bar {CurrentBar}: skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, willEnter={!skipDueToGradient && !skipDueToEmaCrossover}");
-                            
-                            if (!skipDueToGradient && !skipDueToEmaCrossover)
-                            {
-                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: All filters passed! skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}");
-                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Position check - Position.MarketPosition={Position.MarketPosition}, Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
-                                // Don't re-enter if already long - check both actual and intended position
-                                if (Position.Quantity == 0 && intendedPosition != MarketPosition.Long)
+                                if (UseDeferredEntry)
                                 {
                                     // DEFER ENTRY: Instead of entering immediately, defer to next bar for validation
                                     // This ensures we check the bar where the entry will actually appear
@@ -1895,20 +1996,38 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 }
                                 else
                                 {
-                                    Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked - Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
-                                    Print($"[Entry Skip] Bar {CurrentBar}: Already LONG (actual={Position.MarketPosition}, intended={intendedPosition}), not re-entering");
+                                    // IMMEDIATE ENTRY: Enter right away without deferring
+                                    string entryReason = BuildEntryReason(true, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", gradDegToUse);
+                                    Print($"[IMMEDIATE_ENTRY] Bar {CurrentBar}: Entering LONG immediately (UseDeferredEntry=False). Reason: {entryReason}");
+                                    CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                                    currentTradeEntryReason = entryReason;
+                                    ResetExitReason();
+                                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={entryReason}");
+                                    SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
+                                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                    lastEntryBarIndex = CurrentBar;
+                                    lastEntryDirection = MarketPosition.Long;
+                                    intendedPosition = MarketPosition.Long;
+                                    placedEntry = true;
+                                    pendingLongFromBad = false;
+                                    pendingShortFromGood = false;
                                 }
-                            }
-                            else if (AllowMidBarGradientEntry && skipDueToGradient)
-                            {
-                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Gradient blocked but AllowMidBarGradientEntry=True - waiting for mid-bar cross");
-                                // All conditions met except gradient - wait for mid-bar cross
-                                waitingForLongGradient = true;
                             }
                             else
                             {
-                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked by filters - skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked - Position.Quantity={Position.Quantity}, intendedPosition={intendedPosition}");
+                                Print($"[Entry Skip] Bar {CurrentBar}: Already LONG (actual={Position.MarketPosition}, intended={intendedPosition}), not re-entering");
                             }
+                        }
+                        else if (AllowMidBarGradientEntry && skipDueToGradient)
+                        {
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Gradient blocked but AllowMidBarGradientEntry=True - waiting for mid-bar cross");
+                            // All conditions met except gradient - wait for mid-bar cross
+                            waitingForLongGradient = true;
+                        }
+                        else
+                        {
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked by filters - skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
                         }
                     }
                     else
@@ -2015,51 +2134,32 @@ namespace NinjaTrader.NinjaScript.Strategies
                     
                     if (AvoidShortsOnGoodCandle && prevGood)
                     {
-                        Print($"[Entry Block] Bar {CurrentBar}: Deferring SHORT - bar closed GOOD (O:{prevOpen:F2}, C:{prevClose:F2})");
-                        pendingShortFromGood = true;
-                        pendingLongFromBad = false;
+                        if (UseDeferredEntry)
+                        {
+                            Print($"[Entry Block] Bar {CurrentBar}: Deferring SHORT - bar closed GOOD (O:{prevOpen:F2}, C:{prevClose:F2}) - will wait for bad candle");
+                            pendingShortFromGood = true;
+                            pendingLongFromBad = false;
+                        }
+                        else
+                        {
+                            Print($"[Entry Block] Bar {CurrentBar}: BLOCKING SHORT - bar closed GOOD (O:{prevOpen:F2}, C:{prevClose:F2}) and UseDeferredEntry=False (no deferral, entry blocked)");
+                            pendingShortFromGood = false;
+                            pendingLongFromBad = false;
+                        }
                     }
-                    else if (trendDown && prevBad && allowShortThisBar)
+                    else if (allowShortThisBar)
                         {
                             // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
-                            int gradWindow = Math.Max(2, FastGradLookbackBars);
-                            double currentGradDeg;
-                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            double gradDegToUse;
+                            GetCurrentGradient(out gradDegToUse);
                             
                             Print($"[GRADIENT_RECALC] Bar {CurrentBar}: Recalculated gradient for SHORT entry decision: {gradDegToUse:F2}° (was {lastFastEmaGradDeg:F2}°)");
                             
-                            // CRITICAL: Block SHORT entry if close is above Fast EMA OR if Fast EMA is above Slow EMA
-                            // This ensures shorts only enter when price is below Fast EMA (bearish condition)
-                            bool emaCrossedAbove = false;
-                            bool closeAboveFastEma = false;
-                            if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
-                            {
-                                double fastEmaAtBarClose = emaFast[1];
-                                double slowEmaAtBarClose = emaSlow[1];
-                                double closeAtBarClose = Close[1];
-                                
-                                // Block if Fast EMA > Slow EMA (bearish crossover condition)
-                                emaCrossedAbove = fastEmaAtBarClose > slowEmaAtBarClose;
-                                if (emaCrossedAbove)
-                                {
-                                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaAtBarClose:F4}) > Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING SHORT entry regardless of gradient");
-                                }
-                                
-                                // Block if close is above Fast EMA (price is bullish, not suitable for short entry)
-                                closeAboveFastEma = closeAtBarClose > fastEmaAtBarClose;
-                                if (closeAboveFastEma)
-                                {
-                                    Print($"[PRICE_BLOCK] Bar {CurrentBar}: Close ({closeAtBarClose:F4}) > Fast EMA ({fastEmaAtBarClose:F4}) - BLOCKING SHORT entry (price is above Fast EMA)");
-                                }
-                            }
+                            // Check gradient and EMA crossover filters using helper method
+                            bool skipDueToGradient, skipDueToEmaCrossover, emaCrossedAbove, closeAboveFastEma;
+                            CheckGradientAndEmaFiltersForShort(gradDegToUse, out skipDueToGradient, out skipDueToEmaCrossover, out emaCrossedAbove, out closeAboveFastEma);
                             
-                            // Check gradient filter: skip shorts if EMA gradient is above threshold OR if EMA crossed above OR if close is above Fast EMA
-                            bool skipDueToGradient = emaCrossedAbove || closeAboveFastEma || ShouldSkipShortDueToGradient(gradDegToUse);
                             PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: SHORT entry check | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipShortsAboveGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, skipDueToGradient={skipDueToGradient}", "DEBUG");
-                            
-                            // Check EMA crossover filter (this already uses [1], so it's using the bar that just closed)
-                            bool skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: SHORT entry check | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
                             Print($"[SHORT_ENTRY_DEBUG] Bar {CurrentBar}: trendDown={trendDown}, prevBad={prevBad}, allowShortThisBar={allowShortThisBar}, skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, Position={Position.MarketPosition}, intendedPosition={intendedPosition}");
@@ -2071,16 +2171,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 // Don't re-enter if already short - check both actual and intended position
                                 if (Position.Quantity == 0 && intendedPosition != MarketPosition.Short)
                                 {
-                                    // DEFER ENTRY: Instead of entering immediately, defer to next bar for validation
-                                    // This ensures we check the bar where the entry will actually appear
-                                    string entryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", gradDegToUse);
-                                    Print($"[DEFERRED_ENTRY_SET] Bar {CurrentBar}: Deferring SHORT entry to next bar for validation. Reason: {entryReason}");
-                                    deferredShortEntry = true;
-                                    deferredLongEntry = false;
-                                    deferredEntryReason = entryReason;
-                                    intendedPosition = MarketPosition.Short; // Mark intent to prevent duplicate signals
-                                    pendingShortFromGood = false;
-                                    pendingLongFromBad = false;
+                                    if (UseDeferredEntry)
+                                    {
+                                        // DEFER ENTRY: Instead of entering immediately, defer to next bar for validation
+                                        // This ensures we check the bar where the entry will actually appear
+                                        string entryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", gradDegToUse);
+                                        Print($"[DEFERRED_ENTRY_SET] Bar {CurrentBar}: Deferring SHORT entry to next bar for validation. Reason: {entryReason}");
+                                        deferredShortEntry = true;
+                                        deferredLongEntry = false;
+                                        deferredEntryReason = entryReason;
+                                        intendedPosition = MarketPosition.Short; // Mark intent to prevent duplicate signals
+                                        pendingShortFromGood = false;
+                                        pendingLongFromBad = false;
+                                    }
+                                    else
+                                    {
+                                        // IMMEDIATE ENTRY: Enter right away without deferring
+                                        string entryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, skipDueToGradient, skipDueToEmaCrossover, "FreshSignal", gradDegToUse);
+                                        Print($"[IMMEDIATE_ENTRY] Bar {CurrentBar}: Entering SHORT immediately (UseDeferredEntry=False). Reason: {entryReason}");
+                                        CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
+                                        currentTradeEntryReason = entryReason;
+                                        ResetExitReason();
+                                        PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={entryReason}");
+                                        SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
+                                        EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                        lastEntryBarIndex = CurrentBar;
+                                        lastEntryDirection = MarketPosition.Short;
+                                        intendedPosition = MarketPosition.Short;
+                                        placedEntry = true;
+                                        pendingShortFromGood = false;
+                                        pendingLongFromBad = false;
+                                    }
                                 }
                                 else
                                 {
@@ -2615,6 +2736,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "EmaCrossoverMinTicksCloseToFast", EmaCrossoverMinTicksCloseToFast },
                     { "EmaCrossoverMinTicksFastToSlow", EmaCrossoverMinTicksFastToSlow },
                     { "EmaCrossoverRequireBodyBelow", EmaCrossoverRequireBodyBelow },
+                    { "AllowLongWhenBodyAboveFastButFastBelowSlow", AllowLongWhenBodyAboveFastButFastBelowSlow },
+                    { "AllowShortWhenBodyBelowFastButFastAboveSlow", AllowShortWhenBodyBelowFastButFastAboveSlow },
                     
                     // Entry/Exit parameters
                     { "DisableRealTimeTrading", DisableRealTimeTrading },
@@ -2624,6 +2747,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "UsePnLTiebreaker", UsePnLTiebreaker },
                     { "ReverseOnTrendBreak", ReverseOnTrendBreak },
                     { "ExitIfEntryBarOpposite", ExitIfEntryBarOpposite },
+                    { "UseDeferredEntry", UseDeferredEntry },
                     { "StopLossPoints", StopLossPoints },
                     { "UseTrailingStop", UseTrailingStop },
                     { "UseDynamicStopLoss", UseDynamicStopLoss },
@@ -2632,6 +2756,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "UseEmaTrailingStop", UseEmaTrailingStop },
                     { "EmaStopTriggerMode", EmaStopTriggerMode.ToString() },
                     { "EmaStopProfitProtectionPoints", EmaStopProfitProtectionPoints },
+                    { "EmaStopMinDistanceFromEntry", EmaStopMinDistanceFromEntry },
+                    { "EmaStopActivationDelayBars", EmaStopActivationDelayBars },
+                    { "EmaStopMinProfitBeforeActivation", EmaStopMinProfitBeforeActivation },
                     { "UseGradientStopLoss", UseGradientStopLoss },
                     { "ExitLongBelowGradient", ExitLongBelowGradient },
                     { "ExitShortAboveGradient", ExitShortAboveGradient },
@@ -2888,18 +3015,19 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (isExit)
             {
                 // Check if this was a break-even stop exit
-                if (breakEvenActivated && (order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit))
+            if (breakEvenActivated && (order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit))
                 {
                     double exitPrice = execution.Price;
-                    double profitLocked = 0;
+                int qty = Math.Abs(execution.Quantity);
+                double profitLocked = 0;
                     
                     if (order.OrderAction == OrderAction.Sell) // Long exit
                     {
-                        profitLocked = (exitPrice - breakEvenEntryPrice) * Position.Quantity;
+                    profitLocked = (exitPrice - breakEvenEntryPrice) * qty;
                     }
                     else if (order.OrderAction == OrderAction.BuyToCover) // Short exit
                     {
-                        profitLocked = (breakEvenEntryPrice - exitPrice) * Position.Quantity;
+                    profitLocked = (breakEvenEntryPrice - exitPrice) * qty;
                     }
                     
                     Print($"[BREAKEVEN_EXIT] Bar {CurrentBar}: Break-even stop hit! Entry={breakEvenEntryPrice:F2}, Exit={exitPrice:F2}, Locked Profit={profitLocked:F2} points");
@@ -3988,11 +4116,17 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             try
             {
+                if (!dashboardPostSemaphore.Wait(2000))
+                {
+                    Print($"[Dashboard] POST skipped (throttled) for url={url}");
+                    return;
+                }
+
                 EnsureHttpClient();
-                var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
                 // Use ConfigureAwait(false) to avoid sync-context deadlocks
-                var response = sharedClient
+                using var response = sharedClient
                     .SendAsync(request, HttpCompletionOption.ResponseHeadersRead)
                     .ConfigureAwait(false)
                     .GetAwaiter()
@@ -4082,6 +4216,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Log every failure after the first one (but limit frequency)
                     Print($"[Dashboard] POST failed for bar {failedBarIndex}: {ex.GetBaseException().Message}");
                 }
+            }
+            finally
+            {
+                if (dashboardPostSemaphore.CurrentCount < 4)
+                    dashboardPostSemaphore.Release();
             }
         }
 
@@ -4542,13 +4681,16 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             bool isGood = close > open;
             double pnl = close - open;
+            int maxLookback = Math.Max(TrendLookbackBars, MinMatchingBars);
+            if (maxLookback < 1)
+                maxLookback = 1;
 
             recentGood.Enqueue(isGood);
-            if (recentGood.Count > 5)
+            if (recentGood.Count > maxLookback)
                 recentGood.Dequeue();
 
             recentPnl.Enqueue(pnl);
-            if (recentPnl.Count > 5)
+            if (recentPnl.Count > maxLookback)
                 recentPnl.Dequeue();
         }
 
@@ -4660,7 +4802,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             return false;
         }
 
-        private void UpdateTrendLifecycle(MarketPosition currentPos)
+        private void UpdateTrendLifecycle(MarketPosition currentPos, bool updateOverlay = true)
         {
             if (currentPos == MarketPosition.Long && trendSide != MarketPosition.Long)
             {
@@ -4678,7 +4820,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (trendSide == MarketPosition.Long || trendSide == MarketPosition.Short)
             {
                 UpdateTrendProgress();
-                UpdateTrendOverlay();
+                if (updateOverlay)
+                    UpdateTrendOverlay();
             }
         }
 
@@ -4719,13 +4862,29 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 if (ExitOnRetrace)
                 {
+                    // Get current conditions for logging
+                    double currentClose = Close[0];
+                    double currentFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
+                    int gradWindow = Math.Max(2, FastGradLookbackBars);
+                    double currentGradDeg;
+                    ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    bool barAboveEma = !double.IsNaN(currentFastEma) && currentClose > currentFastEma;
+                    
                     if (Position.MarketPosition == MarketPosition.Long)
                     {
+                        Print($"[RETRACE_EXIT] Bar {CurrentBar}: LONG retrace exit triggered");
+                        Print($"[RETRACE_EXIT]   MFE={trendMaxProfit:F2}, Current profit={currentProfit:F2}, Retrace fraction={TrendRetraceFraction:F2}");
+                        Print($"[RETRACE_EXIT]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, AboveEMA={barAboveEma}, Gradient={currentGradDeg:F2}°");
+                        Print($"[RETRACE_EXIT]   NOTE: Retrace exit is based on profit retracement, not current bar conditions");
                         ExitLong("BarsOnTheFlowRetrace", "BarsOnTheFlowLong");
                         RecordExitForCooldown(MarketPosition.Long);
                     }
                     else if (Position.MarketPosition == MarketPosition.Short)
                     {
+                        Print($"[RETRACE_EXIT] Bar {CurrentBar}: SHORT retrace exit triggered");
+                        Print($"[RETRACE_EXIT]   MFE={trendMaxProfit:F2}, Current profit={currentProfit:F2}, Retrace fraction={TrendRetraceFraction:F2}");
+                        Print($"[RETRACE_EXIT]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, BelowEMA={!barAboveEma}, Gradient={currentGradDeg:F2}°");
+                        Print($"[RETRACE_EXIT]   NOTE: Retrace exit is based on profit retracement, not current bar conditions");
                         ExitShort("BarsOnTheFlowRetraceS", "BarsOnTheFlowShort");
                         RecordExitForCooldown(MarketPosition.Short);
                     }
@@ -5560,13 +5719,39 @@ namespace NinjaTrader.NinjaScript.Strategies
                         double bodyBottom = Math.Min(open, close);
                         // Body must be above Fast EMA with minimum gap (same as close requirement)
                         bool bodyAboveFast = bodyBottom >= fastEma + minGapCloseToFast && bodyTop >= fastEma + minGapCloseToFast;
-                        conditionsMet = bodyAboveFast && fastAboveSlow;
-                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, minGap={minGapCloseToFast:F4}, bodyAboveFast={bodyAboveFast} (bodyBottom >= fastEma+gap: {bodyBottom >= fastEma + minGapCloseToFast}, bodyTop >= fastEma+gap: {bodyTop >= fastEma + minGapCloseToFast})");
-                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: conditionsMet={conditionsMet} (bodyAboveFast={bodyAboveFast}, fastAboveSlow={fastAboveSlow})");
+                        
+                        // Check if we should allow entry even when FastEMA < SlowEMA
+                        if (AllowLongWhenBodyAboveFastButFastBelowSlow && bodyAboveFast && !fastAboveSlow)
+                        {
+                            // Allow entry: body is above FastEMA but FastEMA < SlowEMA (no crossover yet)
+                            conditionsMet = true;
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, SlowEMA={slowEma:F4}, minGap={minGapCloseToFast:F4}");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: bodyAboveFast={bodyAboveFast}, fastAboveSlow={fastAboveSlow} (FastEMA < SlowEMA)");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: AllowLongWhenBodyAboveFastButFastBelowSlow=True - ALLOWING entry despite FastEMA < SlowEMA");
+                        }
+                        else
+                        {
+                            // Standard logic: require both bodyAboveFast AND fastAboveSlow
+                            conditionsMet = bodyAboveFast && fastAboveSlow;
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, minGap={minGapCloseToFast:F4}, bodyAboveFast={bodyAboveFast} (bodyBottom >= fastEma+gap: {bodyBottom >= fastEma + minGapCloseToFast}, bodyTop >= fastEma+gap: {bodyTop >= fastEma + minGapCloseToFast})");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: conditionsMet={conditionsMet} (bodyAboveFast={bodyAboveFast}, fastAboveSlow={fastAboveSlow})");
+                        }
                     }
                     else
                     {
-                        conditionsMet = closeAboveFast && fastAboveSlow;
+                        // Check if we should allow entry even when FastEMA < SlowEMA
+                        if (AllowLongWhenBodyAboveFastButFastBelowSlow && closeAboveFast && !fastAboveSlow)
+                        {
+                            // Allow entry: close is above FastEMA but FastEMA < SlowEMA (no crossover yet)
+                            conditionsMet = true;
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: Close={close:F4}, FastEMA={fastEma:F4}, SlowEMA={slowEma:F4}, closeAboveFast={closeAboveFast}, fastAboveSlow={fastAboveSlow} (FastEMA < SlowEMA)");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: AllowLongWhenBodyAboveFastButFastBelowSlow=True - ALLOWING entry despite FastEMA < SlowEMA");
+                        }
+                        else
+                        {
+                            // Standard logic: require both closeAboveFast AND fastAboveSlow
+                            conditionsMet = closeAboveFast && fastAboveSlow;
+                        }
                     }
                     
                     // Track when conditions are met (for cooldown calculation)
@@ -5619,12 +5804,38 @@ namespace NinjaTrader.NinjaScript.Strategies
                         double bodyBottom = Math.Min(open, close);
                         // Body must be below Fast EMA with minimum gap (same as close requirement)
                         bool bodyBelowFast = bodyTop <= fastEma - minGapCloseToFast && bodyBottom <= fastEma - minGapCloseToFast;
-                        conditionsMet = bodyBelowFast && fastBelowSlow;
-                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, minGap={minGapCloseToFast:F4}, bodyBelowFast={bodyBelowFast} (bodyTop <= fastEma-gap: {bodyTop <= fastEma - minGapCloseToFast}, bodyBottom <= fastEma-gap: {bodyBottom <= fastEma - minGapCloseToFast})");
+                        
+                        // Check if we should allow entry even when FastEMA > SlowEMA
+                        if (AllowShortWhenBodyBelowFastButFastAboveSlow && bodyBelowFast && !fastBelowSlow)
+                        {
+                            // Allow entry: body is below FastEMA but FastEMA > SlowEMA (no crossover yet)
+                            conditionsMet = true;
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, SlowEMA={slowEma:F4}, minGap={minGapCloseToFast:F4}");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: bodyBelowFast={bodyBelowFast}, fastBelowSlow={fastBelowSlow} (FastEMA > SlowEMA)");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: AllowShortWhenBodyBelowFastButFastAboveSlow=True - ALLOWING entry despite FastEMA > SlowEMA");
+                        }
+                        else
+                        {
+                            // Standard logic: require both bodyBelowFast AND fastBelowSlow
+                            conditionsMet = bodyBelowFast && fastBelowSlow;
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode - Open={open:F4}, Close={close:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEma:F4}, minGap={minGapCloseToFast:F4}, bodyBelowFast={bodyBelowFast} (bodyTop <= fastEma-gap: {bodyTop <= fastEma - minGapCloseToFast}, bodyBottom <= fastEma-gap: {bodyBottom <= fastEma - minGapCloseToFast})");
+                        }
                     }
                     else
                     {
-                        conditionsMet = closeBelowFast && fastBelowSlow;
+                        // Check if we should allow entry even when FastEMA > SlowEMA
+                        if (AllowShortWhenBodyBelowFastButFastAboveSlow && closeBelowFast && !fastBelowSlow)
+                        {
+                            // Allow entry: close is below FastEMA but FastEMA > SlowEMA (no crossover yet)
+                            conditionsMet = true;
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: Close={close:F4}, FastEMA={fastEma:F4}, SlowEMA={slowEma:F4}, closeBelowFast={closeBelowFast}, fastBelowSlow={fastBelowSlow} (FastEMA > SlowEMA)");
+                            Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: AllowShortWhenBodyBelowFastButFastAboveSlow=True - ALLOWING entry despite FastEMA > SlowEMA");
+                        }
+                        else
+                        {
+                            // Standard logic: require both closeBelowFast AND fastBelowSlow
+                            conditionsMet = closeBelowFast && fastBelowSlow;
+                        }
                     }
                     
                     Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: close={close:F4}, fastEma={fastEma:F4}, slowEma={slowEma:F4}");
@@ -5798,11 +6009,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double bodyBottom = Math.Min(openCurrent, closeCurrent);
                     // Body must be above Fast EMA with minimum gap (same as close requirement)
                     bool bodyAboveFast = bodyBottom >= fastEmaCurrent + minGapCloseToFastCurrent && bodyTop >= fastEmaCurrent + minGapCloseToFastCurrent;
+                    
+                    // Check if we should allow entry even when FastEMA < SlowEMA
+                    if (AllowLongWhenBodyAboveFastButFastBelowSlow && bodyAboveFast && !fastAboveSlow)
+                    {
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode (RequireCrossover=true) - Open={openCurrent:F4}, Close={closeCurrent:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEmaCurrent:F4}, SlowEMA={slowEmaCurrent:F4}, minGap={minGapCloseToFastCurrent:F4}");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: bodyAboveFast={bodyAboveFast}, fastAboveSlow={fastAboveSlow} (FastEMA < SlowEMA)");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: AllowLongWhenBodyAboveFastButFastBelowSlow=True - ALLOWING entry despite FastEMA < SlowEMA");
+                        return true;
+                    }
+                    
                     Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: BodyOnly mode (RequireCrossover=true) - Open={openCurrent:F4}, Close={closeCurrent:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEmaCurrent:F4}, minGap={minGapCloseToFastCurrent:F4}, bodyAboveFast={bodyAboveFast}");
                     return bodyAboveFast && fastAboveSlow;
                 }
                 else
                 {
+                    // Check if we should allow entry even when FastEMA < SlowEMA
+                    if (AllowLongWhenBodyAboveFastButFastBelowSlow && closeAboveFast && !fastAboveSlow)
+                    {
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: Close={closeCurrent:F4}, FastEMA={fastEmaCurrent:F4}, SlowEMA={slowEmaCurrent:F4}, closeAboveFast={closeAboveFast}, fastAboveSlow={fastAboveSlow} (FastEMA < SlowEMA)");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} LONG: AllowLongWhenBodyAboveFastButFastBelowSlow=True - ALLOWING entry despite FastEMA < SlowEMA");
+                        return true;
+                    }
+                    
                     return closeAboveFast && fastAboveSlow;
                 }
             }
@@ -5819,11 +6048,29 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double bodyBottom = Math.Min(openCurrent, closeCurrent);
                     // Body must be below Fast EMA with minimum gap (same as close requirement)
                     bool bodyBelowFast = bodyTop <= fastEmaCurrent - minGapCloseToFastCurrent && bodyBottom <= fastEmaCurrent - minGapCloseToFastCurrent;
+                    
+                    // Check if we should allow entry even when FastEMA > SlowEMA
+                    if (AllowShortWhenBodyBelowFastButFastAboveSlow && bodyBelowFast && !fastBelowSlow)
+                    {
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode (RequireCrossover=true) - Open={openCurrent:F4}, Close={closeCurrent:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEmaCurrent:F4}, SlowEMA={slowEmaCurrent:F4}, minGap={minGapCloseToFastCurrent:F4}");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: bodyBelowFast={bodyBelowFast}, fastBelowSlow={fastBelowSlow} (FastEMA > SlowEMA)");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: AllowShortWhenBodyBelowFastButFastAboveSlow=True - ALLOWING entry despite FastEMA > SlowEMA");
+                        return true;
+                    }
+                    
                     Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: BodyOnly mode (RequireCrossover=true) - Open={openCurrent:F4}, Close={closeCurrent:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, FastEMA={fastEmaCurrent:F4}, minGap={minGapCloseToFastCurrent:F4}, bodyBelowFast={bodyBelowFast}");
                     return bodyBelowFast && fastBelowSlow;
                 }
                 else
                 {
+                    // Check if we should allow entry even when FastEMA > SlowEMA
+                    if (AllowShortWhenBodyBelowFastButFastAboveSlow && closeBelowFast && !fastBelowSlow)
+                    {
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: Close={closeCurrent:F4}, FastEMA={fastEmaCurrent:F4}, SlowEMA={slowEmaCurrent:F4}, closeBelowFast={closeBelowFast}, fastBelowSlow={fastBelowSlow} (FastEMA > SlowEMA)");
+                        Print($"[EMA_FILTER_DEBUG] Bar {CurrentBar} SHORT: AllowShortWhenBodyBelowFastButFastAboveSlow=True - ALLOWING entry despite FastEMA > SlowEMA");
+                        return true;
+                    }
+                    
                     return closeBelowFast && fastBelowSlow;
                 }
             }
@@ -6282,14 +6529,17 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     try
                 {
-                    sharedClient = new HttpClient();
-                        sharedClient.Timeout = TimeSpan.FromMinutes(10); // Increased timeout to handle CSV imports (can take several minutes) and queued requests
-                        sharedClient.DefaultRequestHeaders.ConnectionClose = true; // Close connections to avoid pool exhaustion
+                    var handler = new HttpClientHandler();
+                    handler.AutomaticDecompression = System.Net.DecompressionMethods.GZip | System.Net.DecompressionMethods.Deflate;
+                    sharedClient = new HttpClient(handler);
+                        sharedClient.Timeout = TimeSpan.FromMinutes(10); // Increased timeout to handle CSV imports and queued requests
                         Print($"[EnsureHttpClient] ✓ HttpClient created successfully. BaseUrl: {DashboardBaseUrl}");
-                        // Limit connection pool size (set once globally)
+                        // Tune connection behavior for local dashboard posts
                         try
                         {
-                            System.Net.ServicePointManager.DefaultConnectionLimit = 4; // Limit concurrent connections
+                            System.Net.ServicePointManager.Expect100Continue = false;
+                            System.Net.ServicePointManager.DefaultConnectionLimit = 20;
+                            System.Net.ServicePointManager.UseNagleAlgorithm = false;
                         }
                         catch
                         {
@@ -6576,6 +6826,151 @@ namespace NinjaTrader.NinjaScript.Strategies
                 RecordExitForCooldown(MarketPosition.Short);
                 waitingToExitShortOnGradient = false;
             }
+        }
+
+        /// <summary>
+        /// Helper method to get current gradient with fallback to last known value.
+        /// Reduces repetition of gradient recalculation pattern.
+        /// For entry decisions, uses the CURRENT bar's EMA [0] to check the bar where entry will appear.
+        /// </summary>
+        private double GetCurrentGradient(out double gradDeg)
+        {
+            int gradWindow = Math.Max(2, FastGradLookbackBars);
+            double currentGradDeg;
+            
+            // For entry decisions, check gradient using CURRENT bar [0] to see the bar where entry will appear
+            // This ensures we check bar 2676's gradient, not bar 2675's gradient
+            if (fastEma != null && CurrentBar >= gradWindow && !double.IsNaN(fastEma[0]))
+            {
+                // Calculate gradient including current bar [0] as the most recent point
+                double sumX = 0.0;
+                double sumY = 0.0;
+                double sumXY = 0.0;
+                double sumXX = 0.0;
+                int validPoints = 0;
+                
+                for (int i = 0; i < gradWindow; i++)
+                {
+                    double x = i;
+                    int barsAgo = gradWindow - 1 - i; // i=0 -> [0] (current), i=1 -> [1], etc.
+                    if (barsAgo > CurrentBar)
+                        continue;
+                    double y = fastEma[barsAgo];
+                    if (double.IsNaN(y))
+                        continue;
+                    sumX += x;
+                    sumY += y;
+                    sumXY += x * y;
+                    sumXX += x * x;
+                    validPoints++;
+                }
+                
+                if (validPoints >= 2)
+                {
+                    double denom = (validPoints * sumXX) - (sumX * sumX);
+                    if (Math.Abs(denom) >= 1e-8)
+                    {
+                        double slope = ((validPoints * sumXY) - (sumX * sumY)) / denom;
+                        double angleRad = Math.Atan(slope);
+                        currentGradDeg = angleRad * (180.0 / Math.PI);
+                        gradDeg = currentGradDeg;
+                        return slope;
+                    }
+                }
+            }
+            
+            // Fallback to standard calculation using completed bars [1]
+            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+            gradDeg = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+            return currentGradSlope;
+        }
+
+        /// <summary>
+        /// Helper method to get EMA and price values from the completed bar [1].
+        /// Returns NaN values if EMAs are not ready.
+        /// </summary>
+        private void GetBarCloseValues(out double fastEmaValue, out double slowEmaValue, out double closeValue, out double openValue)
+        {
+            if (emaFast != null && emaSlow != null && CurrentBar >= Math.Max(EmaFastPeriod, EmaSlowPeriod))
+            {
+                fastEmaValue = emaFast[1];
+                slowEmaValue = emaSlow[1];
+                closeValue = Close[1];
+                openValue = Open[1];
+            }
+            else
+            {
+                fastEmaValue = double.NaN;
+                slowEmaValue = double.NaN;
+                closeValue = Close[1];
+                openValue = Open[1];
+            }
+        }
+
+        /// <summary>
+        /// Helper method to check gradient and EMA crossover filters for LONG entries.
+        /// Returns skip flags and EMA crossover status.
+        /// </summary>
+        private void CheckGradientAndEmaFiltersForLong(double gradDeg, out bool skipDueToGradient, out bool skipDueToEmaCrossover, out bool emaCrossedBelow, out bool closeBelowFastEma)
+        {
+            emaCrossedBelow = false;
+            closeBelowFastEma = false;
+            
+            double fastEmaValue, slowEmaValue, closeValue, openValue;
+            GetBarCloseValues(out fastEmaValue, out slowEmaValue, out closeValue, out openValue);
+            
+            if (!double.IsNaN(fastEmaValue) && !double.IsNaN(slowEmaValue))
+            {
+                // Block if Fast EMA < Slow EMA (bearish crossover condition)
+                emaCrossedBelow = fastEmaValue < slowEmaValue;
+                if (emaCrossedBelow)
+                {
+                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaValue:F4}) < Slow EMA ({slowEmaValue:F4}) - BLOCKING LONG entry regardless of gradient");
+                }
+                
+                // Block if close is below Fast EMA (price is bearish, not suitable for long entry)
+                closeBelowFastEma = closeValue < fastEmaValue;
+                if (closeBelowFastEma)
+                {
+                    Print($"[PRICE_BLOCK] Bar {CurrentBar}: Close ({closeValue:F4}) < Fast EMA ({fastEmaValue:F4}) - BLOCKING LONG entry (price is below Fast EMA)");
+                }
+            }
+            
+            skipDueToGradient = emaCrossedBelow || closeBelowFastEma || ShouldSkipLongDueToGradient(gradDeg);
+            skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(true);
+        }
+
+        /// <summary>
+        /// Helper method to check gradient and EMA crossover filters for SHORT entries.
+        /// Returns skip flags and EMA crossover status.
+        /// </summary>
+        private void CheckGradientAndEmaFiltersForShort(double gradDeg, out bool skipDueToGradient, out bool skipDueToEmaCrossover, out bool emaCrossedAbove, out bool closeAboveFastEma)
+        {
+            emaCrossedAbove = false;
+            closeAboveFastEma = false;
+            
+            double fastEmaValue, slowEmaValue, closeValue, openValue;
+            GetBarCloseValues(out fastEmaValue, out slowEmaValue, out closeValue, out openValue);
+            
+            if (!double.IsNaN(fastEmaValue) && !double.IsNaN(slowEmaValue))
+            {
+                // Block if Fast EMA > Slow EMA (bullish crossover - not suitable for short entry)
+                emaCrossedAbove = fastEmaValue > slowEmaValue;
+                if (emaCrossedAbove)
+                {
+                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaValue:F4}) > Slow EMA ({slowEmaValue:F4}) - BLOCKING SHORT entry regardless of gradient");
+                }
+                
+                // Block if close is above Fast EMA (price is bullish, not suitable for short entry)
+                closeAboveFastEma = closeValue > fastEmaValue;
+                if (closeAboveFastEma)
+                {
+                    Print($"[PRICE_BLOCK] Bar {CurrentBar}: Close ({closeValue:F4}) > Fast EMA ({fastEmaValue:F4}) - BLOCKING SHORT entry (price is above Fast EMA)");
+                }
+            }
+            
+            skipDueToGradient = emaCrossedAbove || closeAboveFastEma || ShouldSkipShortDueToGradient(gradDeg);
+            skipDueToEmaCrossover = UseEmaCrossoverFilter && !EmaCrossoverFilterPasses(false);
         }
 
         /// <summary>

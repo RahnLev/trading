@@ -205,13 +205,27 @@
     <div class="container">
         <div class="header">
             <h1>Bar Debug - Trade Analysis</h1>
-            <a href="table-viewer.html" class="back-btn">← Back to Tables</a>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <button onclick="loadBars()" style="background: white; color: #667eea; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: 600;">🔄 Refresh</button>
+                <label style="color: white; display: flex; align-items: center; gap: 5px;">
+                    <input type="checkbox" id="autoRefresh" checked style="width: auto;">
+                    <span>Auto-refresh (5s)</span>
+                </label>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                <a href="troubleshoot.html" class="back-btn" style="background: rgba(245, 158, 11, 0.3);">🔧 Troubleshoot</a>
+                <a href="table-viewer.html" class="back-btn">← Back to Tables</a>
+            </div>
+            </div>
         </div>
         
         <div class="stats" id="stats">
             <div class="stat-item">
                 <span class="stat-label">Total Bars</span>
                 <span class="stat-value" id="totalBars">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">API Total Rows</span>
+                <span class="stat-value" id="apiTotalRows">-</span>
             </div>
             <div class="stat-item">
                 <span class="stat-label">Bars in Trade</span>
@@ -293,7 +307,7 @@
                         <th>Body</th>
                         <th>Stop Loss</th>
                         <th>Trade</th>
-                        <th>Entry/Exit Reason</th>
+                        <th style="min-width: 250px;">Entry/Exit Reason</th>
                         <th>Candle</th>
                         <th>Trend↑</th>
                         <th>Trend↓</th>
@@ -320,17 +334,37 @@
         let activeTrades = {}; // Map of entry_bar -> trade (for tracking active trades)
         let currentPage = 0;
         const pageSize = 200;
+        let autoRefreshInterval = null;
+        let lastBarCount = 0;
+        let lastTradeCount = 0;
 
-        async function loadBars() {
+        async function loadBars(isAutoRefresh = false) {
+            let trades = []; // Declare trades at function scope
             try {
-                document.getElementById('loading').style.display = 'block';
-                document.getElementById('error').style.display = 'none';
-                document.getElementById('barTable').style.display = 'none';
+                // Only show loading spinner on manual refresh, not auto-refresh
+                if (!isAutoRefresh) {
+                    document.getElementById('loading').style.display = 'block';
+                    document.getElementById('error').style.display = 'none';
+                    document.getElementById('barTable').style.display = 'none';
+                }
+
+                // Check strategy state first to see if it's running
+                let strategyState = null;
+                try {
+                    const stateResponse = await fetch('/api/strategy-state');
+                    if (stateResponse.ok) {
+                        strategyState = await stateResponse.json();
+                        console.log('[BAR_DEBUG] Strategy state:', strategyState);
+                    }
+                } catch (stateError) {
+                    console.warn('[BAR_DEBUG] Could not fetch strategy state:', stateError);
+                }
 
                 // Load bars and trades in parallel
+                // Use a very large limit to get all bars (or remove limit entirely)
                 const [barsResponse, tradesResponse] = await Promise.all([
-                    fetch('/api/databases/table-data?database_name=volatility.db&table_name=bar_samples&limit=10000'),
-                    fetch('/api/databases/table-data?database_name=dashboard.db&table_name=trades&limit=10000')
+                    fetch('/api/databases/table-data?database_name=volatility.db&table_name=bar_samples&limit=1000000'),
+                    fetch('/api/databases/table-data?database_name=dashboard.db&table_name=trades&limit=1000000')
                 ]);
                 
                 if (!barsResponse.ok) {
@@ -369,17 +403,92 @@
                     console.warn('[BAR_DEBUG] No bars found after parsing');
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('error').style.display = 'block';
-                    document.getElementById('error').textContent = 'No bar data found. Make sure the strategy is running and recording bar samples.';
+                    let errorMsg = 'No bar data found in database. ';
+                    
+                    if (barsData.total_rows === 0) {
+                        errorMsg += '\n\nPossible reasons:\n';
+                        errorMsg += '1. Strategy is still running in historical mode (bars stored in memory, not database yet)\n';
+                        errorMsg += '2. Strategy has not transitioned to real-time yet (bars are sent when transitioning)\n';
+                        errorMsg += '3. Strategy is not running or not recording bar samples\n';
+                        errorMsg += '4. Database was cleared\n\n';
+                        
+                        if (strategyState) {
+                            if (strategyState._isStale) {
+                                errorMsg += '⚠ Strategy state file is stale (>5 min old) - strategy may have stopped.\n';
+                            } else {
+                                errorMsg += 'ℹ Strategy appears to be running (state file is recent).\n';
+                            }
+                        }
+                        
+                        errorMsg += '\nSOLUTION:\n';
+                        errorMsg += '• Wait for strategy to finish historical playback and transition to real-time\n';
+                        errorMsg += '• OR enable "RecordBarSamplesInHistorical" parameter in strategy settings\n';
+                        errorMsg += '  (WARNING: May cause timeouts with large datasets)';
+                    } else {
+                        errorMsg += '\n\nAPI reports ' + barsData.total_rows + ' total rows but parsing returned 0 bars.\n';
+                        errorMsg += 'Check browser console for detailed error messages.';
+                    }
+                    
+                    document.getElementById('error').textContent = errorMsg;
+                    document.getElementById('error').style.whiteSpace = 'pre-line'; // Allow line breaks
+                    document.getElementById('error').style.textAlign = 'left';
+                    document.getElementById('error').style.padding = '20px';
                     return;
                 }
                 
                 console.log('[BAR_DEBUG] Successfully loaded', allBars.length, 'bars. Sample bar:', allBars[0]);
+                console.log('[BAR_DEBUG] Total rows from API:', barsData.total_rows);
+                console.log('[BAR_DEBUG] First few bar indices:', allBars.slice(0, 10).map(b => b.bar_index || b.barIndex));
+                
+                // If we got very few bars but API says there are more, try fetching more
+                if (allBars.length < 100 && barsData.total_rows && barsData.total_rows > allBars.length) {
+                    console.warn('[BAR_DEBUG] WARNING: Only', allBars.length, 'bars loaded but API reports', barsData.total_rows, 'total rows.');
+                    console.warn('[BAR_DEBUG] This suggests a limit issue. Attempting to fetch more...');
+                    
+                    // Try fetching with offset to get more bars
+                    try {
+                        const moreBarsResponse = await fetch(`/api/databases/table-data?database_name=volatility.db&table_name=bar_samples&limit=1000000&offset=0`);
+                        if (moreBarsResponse.ok) {
+                            const moreBarsData = await moreBarsResponse.json();
+                            if (moreBarsData.rows && Array.isArray(moreBarsData.rows) && moreBarsData.rows.length > allBars.length) {
+                                console.log('[BAR_DEBUG] Successfully fetched', moreBarsData.rows.length, 'bars on retry');
+                                allBars = moreBarsData.rows;
+                            }
+                        }
+                    } catch (retryError) {
+                        console.error('[BAR_DEBUG] Retry failed:', retryError);
+                    }
+                }
+                
+                // Check if we got fewer bars than expected
+                const apiTotalRows = barsData.total_rows || 0;
+                const loadedBars = allBars.length;
+                
+                if (loadedBars < 10) {
+                    console.warn('[BAR_DEBUG] WARNING: Only', loadedBars, 'bars loaded.');
+                    console.warn('[BAR_DEBUG] API reports total_rows:', apiTotalRows);
+                    
+                    if (apiTotalRows === loadedBars) {
+                        console.warn('[BAR_DEBUG] Database has exactly', loadedBars, 'bars. This is normal if:');
+                        console.warn('  - Strategy just started and only processed a few bars');
+                        console.warn('  - Strategy is in real-time mode and only a few bars have occurred');
+                        console.warn('  - Strategy is still in historical mode (bars stored in memory, not database)');
+                    } else if (apiTotalRows > loadedBars) {
+                        console.warn('[BAR_DEBUG] API reports', apiTotalRows, 'total rows but only', loadedBars, 'were loaded.');
+                        console.warn('[BAR_DEBUG] This suggests a parsing or limit issue.');
+                    } else {
+                        console.warn('[BAR_DEBUG] Database has limited data. Check if strategy is running and recording bar samples.');
+                    }
+                } else {
+                    console.log('[BAR_DEBUG] Successfully loaded', loadedBars, 'bars (API total:', apiTotalRows, ')');
+                }
                 
                 // Load trades if available
                 if (tradesResponse.ok) {
                     try {
                         const tradesData = await tradesResponse.json();
-                        let trades = [];
+                        // Reset trades array
+                        trades = [];
                         if (tradesData.rows && Array.isArray(tradesData.rows)) {
                             trades = tradesData.rows;
                         } else if (tradesData.success && tradesData.data) {
@@ -391,17 +500,30 @@
                         // Build map of trades by bar index and track active trades
                         tradesByBar = {};
                         activeTrades = {};
+                        // Also store all trades for checking bars between entry and exit
+                        const allTradesList = [];
+                        
                         trades.forEach(trade => {
                             const entryBar = trade.entry_bar;
                             const exitBar = trade.exit_bar;
+                            
+                            // Store all trades for checking bars between entry and exit
+                            if (entryBar !== null && entryBar !== undefined) {
+                                allTradesList.push(trade);
+                            }
                             
                             if (entryBar !== null && entryBar !== undefined) {
                                 if (!tradesByBar[entryBar]) {
                                     tradesByBar[entryBar] = {entry: null, exit: null};
                                 }
                                 tradesByBar[entryBar].entry = trade;
-                                // Track as active trade from entry to exit
-                                activeTrades[entryBar] = trade;
+                                
+                                // Track as active trade ONLY if it doesn't have an exit yet (or exit is in the future)
+                                // This means the trade is currently open
+                                if (exitBar === null || exitBar === undefined) {
+                                    activeTrades[entryBar] = trade;
+                                    console.log('[BAR_DEBUG] Active trade found: Entry bar', entryBar, 'Direction:', trade.direction, '(no exit yet)');
+                                }
                             }
                             
                             if (exitBar !== null && exitBar !== undefined) {
@@ -411,15 +533,58 @@
                                 tradesByBar[exitBar].exit = trade;
                             }
                         });
+                        
+                        // Store all trades globally so we can check bars between entry and exit
+                        window.allTradesList = allTradesList;
+                        
+                        console.log('[BAR_DEBUG] Loaded', trades.length, 'trades. Active trades (no exit):', Object.keys(activeTrades).length);
                     } catch (tradesError) {
                         console.warn('Failed to load trades:', tradesError);
                         // Continue without trades
                     }
                 }
                 
+                // Display API total rows for debugging
+                if (barsData.total_rows !== undefined) {
+                    document.getElementById('apiTotalRows').textContent = barsData.total_rows;
+                    
+                    // Show a notice if we have very few bars
+                    if (barsData.total_rows < 50 && allBars.length > 0) {
+                        const noticeDiv = document.createElement('div');
+                        noticeDiv.style.cssText = 'background: #f59e0b; color: white; padding: 10px; margin: 10px 0; border-radius: 4px;';
+                        noticeDiv.innerHTML = `
+                            <strong>⚠ Limited Data:</strong> Only ${barsData.total_rows} bars in database. 
+                            ${barsData.total_rows < 10 ? 'This is normal if the strategy just started or is still in historical mode.' : 'Consider waiting for more bars to accumulate or enable "RecordBarSamplesInHistorical" for historical data.'}
+                        `;
+                        document.querySelector('.stats').appendChild(noticeDiv);
+                    }
+                }
+                
+                // Check if we have new data
+                const newBarCount = allBars.length;
+                const newTradeCount = trades.length;
+                const hasNewData = newBarCount !== lastBarCount || newTradeCount !== lastTradeCount;
+                
+                if (hasNewData && isAutoRefresh) {
+                    console.log('[BAR_DEBUG] New data detected:', {
+                        bars: `${lastBarCount} → ${newBarCount}`,
+                        trades: `${lastTradeCount} → ${newTradeCount}`
+                    });
+                }
+                
+                lastBarCount = newBarCount;
+                lastTradeCount = newTradeCount;
+                
                 allBars.sort((a, b) => (b.bar_index || 0) - (a.bar_index || 0));
-                applyFilters();
+                // Preserve current page during auto-refresh
+                applyFilters(isAutoRefresh);
                 updateStats();
+                
+                // Hide loading spinner if it was shown
+                if (!isAutoRefresh) {
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('barTable').style.display = 'table';
+                }
             } catch (error) {
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('error').style.display = 'block';
@@ -430,7 +595,37 @@
 
         function updateStats() {
             const total = allBars.length;
-            const inTrade = allBars.filter(b => b.in_trade == 1).length;
+            
+            // Count bars in trade - use both in_trade field AND all trades
+            let inTrade = 0;
+            const tradesToCheck = window.allTradesList || [];
+            
+            allBars.forEach(bar => {
+                let isInTrade = bar.in_trade == 1;
+                
+                // Also check if this bar is between entry and exit using ALL trades (not just active ones)
+                if (!isInTrade) {
+                    const currentBarNum = bar.bar_index;
+                    
+                    for (const trade of tradesToCheck) {
+                        const entryBarNum = trade.entry_bar;
+                        const exitBarNum = trade.exit_bar;
+                        
+                        if (entryBarNum !== null && entryBarNum !== undefined) {
+                            // Bar is in trade if it's >= entry bar and (no exit yet or <= exit bar)
+                            if (currentBarNum >= entryBarNum && (exitBarNum === null || exitBarNum === undefined || currentBarNum <= exitBarNum)) {
+                                isInTrade = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (isInTrade) {
+                    inTrade++;
+                }
+            });
+            
             const longEntries = allBars.filter((b, i) => 
                 i > 0 && b.direction === 'LONG' && allBars[i-1].direction !== 'LONG'
             ).length;
@@ -444,21 +639,63 @@
             document.getElementById('shortEntries').textContent = shortEntries;
         }
 
-        function applyFilters() {
+        function applyFilters(preservePage = false) {
             const barStart = document.getElementById('barStart').value;
             const barEnd = document.getElementById('barEnd').value;
             const direction = document.getElementById('directionFilter').value;
-            const inTrade = document.getElementById('inTradeFilter').value;
+            const inTradeFilter = document.getElementById('inTradeFilter').value;
+
+            // Store previous filtered count to check if filters changed
+            const prevFilteredCount = filteredBars ? filteredBars.length : 0;
 
             filteredBars = allBars.filter(bar => {
                 if (barStart && bar.bar_index < parseInt(barStart)) return false;
                 if (barEnd && bar.bar_index > parseInt(barEnd)) return false;
                 if (direction && bar.direction !== direction) return false;
-                if (inTrade !== '' && bar.in_trade != parseInt(inTrade)) return false;
+                
+                // Check in_trade status using both bar.in_trade field AND all trades
+                if (inTradeFilter !== '') {
+                    let isInTrade = bar.in_trade == 1;
+                    
+                    // Also check if this bar is between entry and exit using ALL trades (not just active ones)
+                    if (!isInTrade) {
+                        const currentBarNum = bar.bar_index;
+                        const tradesToCheck = window.allTradesList || [];
+                        
+                        for (const trade of tradesToCheck) {
+                            const entryBarNum = trade.entry_bar;
+                            const exitBarNum = trade.exit_bar;
+                            
+                            if (entryBarNum !== null && entryBarNum !== undefined) {
+                                // Bar is in trade if it's >= entry bar and (no exit yet or <= exit bar)
+                                if (currentBarNum >= entryBarNum && (exitBarNum === null || exitBarNum === undefined || currentBarNum <= exitBarNum)) {
+                                    isInTrade = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    const filterValue = parseInt(inTradeFilter);
+                    if (filterValue === 1 && !isInTrade) return false;
+                    if (filterValue === 0 && isInTrade) return false;
+                }
+                
                 return true;
             });
 
-            currentPage = 0;
+            // Only reset page if filters actually changed (different count) or if not preserving page
+            // During auto-refresh, preserve the current page if filter results are similar
+            if (!preservePage || Math.abs(filteredBars.length - prevFilteredCount) > 10) {
+                currentPage = 0;
+            } else {
+                // Ensure currentPage is still valid after filtering
+                const maxPage = Math.ceil(filteredBars.length / pageSize) - 1;
+                if (currentPage > maxPage) {
+                    currentPage = Math.max(0, maxPage);
+                }
+            }
+            
             renderTable();
         }
 
@@ -486,7 +723,32 @@
 
             pageBars.forEach(bar => {
                 const row = document.createElement('tr');
-                if (bar.in_trade == 1) {
+                
+                // Check if bar is in trade - use both bar.in_trade field AND all trades
+                let isInTrade = bar.in_trade == 1;
+                
+                // Also check if this bar is between entry and exit using ALL trades (not just active ones)
+                // This handles completed trades where bars between entry and exit should be marked as "in trade"
+                if (!isInTrade) {
+                    const currentBarNum = bar.bar_index;
+                    
+                    // Check all trades (including completed ones)
+                    const tradesToCheck = window.allTradesList || [];
+                    for (const trade of tradesToCheck) {
+                        const entryBarNum = trade.entry_bar;
+                        const exitBarNum = trade.exit_bar;
+                        
+                        if (entryBarNum !== null && entryBarNum !== undefined) {
+                            // Bar is in trade if it's >= entry bar and (no exit yet or <= exit bar)
+                            if (currentBarNum >= entryBarNum && (exitBarNum === null || exitBarNum === undefined || currentBarNum <= exitBarNum)) {
+                                isInTrade = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                
+                if (isInTrade) {
                     row.classList.add('in-trade');
                 }
 
@@ -720,17 +982,21 @@
                 let tradeStyle = '';
                 let hasTrade = false;
                 
-                // Check if this bar is part of an active trade (between entry and exit)
+                // Check if this bar is part of a trade (between entry and exit) - check ALL trades, not just active ones
                 let activeTrade = null;
-                for (const entryBar in activeTrades) {
-                    const trade = activeTrades[entryBar];
-                    const entryBarNum = parseInt(entryBar);
+                const currentBarNum = bar.bar_index;
+                const tradesToCheck = window.allTradesList || [];
+                
+                for (const trade of tradesToCheck) {
+                    const entryBarNum = trade.entry_bar;
                     const exitBarNum = trade.exit_bar;
-                    const currentBarNum = bar.bar_index;
                     
-                    if (currentBarNum >= entryBarNum && (exitBarNum === null || exitBarNum === undefined || currentBarNum <= exitBarNum)) {
-                        activeTrade = trade;
-                        break;
+                    if (entryBarNum !== null && entryBarNum !== undefined) {
+                        // Bar is part of trade if it's >= entry bar and (no exit yet or <= exit bar)
+                        if (currentBarNum >= entryBarNum && (exitBarNum === null || exitBarNum === undefined || currentBarNum <= exitBarNum)) {
+                            activeTrade = trade;
+                            break;
+                        }
                     }
                 }
                 
@@ -799,7 +1065,15 @@
                 }
                 
                 row.innerHTML = `
-                    <td class="bar-index">${bar.bar_index || '-'}</td>
+                    <td class="bar-index">
+                        <a href="bar_analysis.html?bar_index=${bar.bar_index}" 
+                           style="color: #667eea; text-decoration: none; font-weight: 700; cursor: pointer;"
+                           title="Click to view detailed analysis for this bar"
+                           onmouseover="this.style.textDecoration='underline'"
+                           onmouseout="this.style.textDecoration='none'">
+                            ${bar.bar_index || '-'}
+                        </a>
+                    </td>
                     <td>${bar.timestamp || '-'}</td>
                     <td>${formatPrice(bar.open_price)}</td>
                     <td>${formatPrice(bar.high_price)}</td>
@@ -815,21 +1089,89 @@
                     <td style="${bodyBgColor}color: ${bodyTextColor}; font-weight: 700; text-align: center;">${formatPrice(bar.body_size)}</td>
                     <td style="text-align: center;">${(bar.stop_loss_points !== null && bar.stop_loss_points !== undefined && bar.stop_loss_points !== '' && bar.stop_loss_points !== 'null' && !isNaN(parseFloat(bar.stop_loss_points))) ? parseFloat(bar.stop_loss_points).toFixed(2) : '-'}</td>
                     <td style="${tradeStyle}">${tradeText}</td>
-                    <td style="text-align: center; font-size: 0.8rem;">${(() => {
-                        // Show entry reason on entry bars, exit reason on exit bars
-                        let reason = '-';
-                        if (barTradeInfo.exit) {
-                            // Exit bar - show exit reason
-                            reason = barTradeInfo.exit.exit_reason || '-';
-                        } else if (barTradeInfo.entry && barTradeInfo.entry.exit_reason) {
-                            // One-bar trade (entry and exit on same bar) - show exit reason
-                            reason = barTradeInfo.entry.exit_reason;
-                        } else if (barTradeInfo.entry) {
-                            // Entry bar - show entry reason
-                            reason = barTradeInfo.entry.entry_reason || '-';
+                    <td style="text-align: left; font-size: 0.75rem; max-width: 300px; word-wrap: break-word; padding: 8px;">${(() => {
+                        // Format reason string for better readability
+                        const formatReason = (reasonStr) => {
+                            if (!reasonStr || reasonStr === '-') return '';
+                            // Split by semicolon and format each part
+                            const parts = reasonStr.split(';').map(p => p.trim()).filter(p => p);
+                            if (parts.length === 0) return '';
+                            // Return HTML with line breaks
+                            return parts.map(part => {
+                                // Color-code different types
+                                let color = '#e0e0e0';
+                                let bgColor = '';
+                                if (part.includes('FreshSignal')) {
+                                    color = '#3b82f6'; // Blue
+                                } else if (part.includes('Pending') || part.includes('Deferred')) {
+                                    color = '#f59e0b'; // Orange
+                                } else if (part.includes('Reverse')) {
+                                    color = '#8b5cf6'; // Purple
+                                } else if (part.includes('TrendUp') || part.includes('TrendDown')) {
+                                    color = '#10b981'; // Green
+                                } else if (part.includes('GradientOK') || part.includes('GradientBlocked')) {
+                                    color = '#06b6d4'; // Cyan
+                                } else if (part.includes('EMACrossoverOK') || part.includes('EMACrossoverBlocked')) {
+                                    color = '#ec4899'; // Pink
+                                } else if (part.includes('GoodCandle')) {
+                                    color = '#10b981'; // Green
+                                } else if (part.includes('BadCandle')) {
+                                    color = '#ef4444'; // Red
+                                } else if (part.includes('Stop') || part.includes('Retrace') || part.includes('Exit')) {
+                                    color = '#ef4444'; // Red
+                                    bgColor = 'background-color: rgba(239, 68, 68, 0.2);';
+                                }
+                                return `<div style="color: ${color}; ${bgColor} padding: 2px 4px; margin: 1px 0; border-radius: 2px;">${part}</div>`;
+                            }).join('');
+                        };
+                        
+                        let html = '';
+                        let hasContent = false;
+                        
+                        // Get entry reason from trade or active trade
+                        let entryReason = '';
+                        if (barTradeInfo.entry) {
+                            entryReason = barTradeInfo.entry.entry_reason || '';
+                        } else if (activeTrade) {
+                            entryReason = activeTrade.entry_reason || '';
                         }
-                        // Bars between entry and exit don't have reasons
-                        return reason || '-';
+                        
+                        // Get exit reason
+                        let exitReason = '';
+                        if (barTradeInfo.exit) {
+                            exitReason = barTradeInfo.exit.exit_reason || '';
+                        } else if (barTradeInfo.entry && barTradeInfo.entry.exit_reason) {
+                            exitReason = barTradeInfo.entry.exit_reason;
+                        } else if (activeTrade && bar.bar_index === activeTrade.exit_bar) {
+                            exitReason = activeTrade.exit_reason || '';
+                        }
+                        
+                        // Format and display entry reason
+                        if (entryReason) {
+                            const formatted = formatReason(entryReason);
+                            if (formatted) {
+                                html += `<div style="margin-bottom: 4px;"><strong style="color: #3b82f6;">ENTRY:</strong>${formatted}</div>`;
+                                hasContent = true;
+                            }
+                        }
+                        
+                        // Format and display exit reason
+                        if (exitReason) {
+                            const formatted = formatReason(exitReason);
+                            if (formatted) {
+                                html += `<div><strong style="color: #ef4444;">EXIT:</strong>${formatted}</div>`;
+                                hasContent = true;
+                            }
+                        }
+                        
+                        // If no content, show dash
+                        if (!hasContent) {
+                            return '<span style="color: #888;">-</span>';
+                        }
+                        
+                        // Add tooltip with full text
+                        const fullText = [entryReason, exitReason].filter(r => r).join(' | ');
+                        return `<div title="${fullText.replace(/"/g, '&quot;')}" style="cursor: help;">${html}</div>`;
                     })()}</td>
                     <td style="text-align: center; font-size: 0.8rem; ${(() => {
                         const ct = bar.candle_type || '';
@@ -862,9 +1204,6 @@
                 `Page ${currentPage + 1} of ${maxPage + 1} (${filteredBars.length} bars)`;
             document.getElementById('prevBtn').disabled = currentPage === 0;
             document.getElementById('nextBtn').disabled = currentPage >= maxPage;
-
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('barTable').style.display = 'table';
         }
 
         function formatPrice(value) {
@@ -874,8 +1213,49 @@
             return num.toFixed(2);
         }
 
+        // Auto-refresh functionality
+        function startAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+            
+            const autoRefreshCheckbox = document.getElementById('autoRefresh');
+            if (autoRefreshCheckbox && autoRefreshCheckbox.checked) {
+                autoRefreshInterval = setInterval(() => {
+                    console.log('[BAR_DEBUG] Auto-refreshing...');
+                    loadBars(true); // Pass true to indicate auto-refresh (don't show loading spinner)
+                }, 5000); // Refresh every 5 seconds
+            }
+        }
+        
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+        
+        // Setup auto-refresh checkbox listener
+        document.addEventListener('DOMContentLoaded', () => {
+            const autoRefreshCheckbox = document.getElementById('autoRefresh');
+            if (autoRefreshCheckbox) {
+                autoRefreshCheckbox.addEventListener('change', (e) => {
+                    if (e.target.checked) {
+                        startAutoRefresh();
+                    } else {
+                        stopAutoRefresh();
+                    }
+                });
+            }
+        });
+        
         // Load data on page load
         loadBars();
+        
+        // Start auto-refresh after initial load
+        setTimeout(() => {
+            startAutoRefresh();
+        }, 2000); // Wait 2 seconds after initial load
     </script>
 </body>
 </html>
