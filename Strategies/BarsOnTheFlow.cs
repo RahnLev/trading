@@ -35,6 +35,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool DisableRealTimeTrading { get; set; } = false;
 
         [NinjaScriptProperty]
+        [Display(Name = "Trade Real-Time Only", Order = 3, GroupName = "Trading/Entry", Description = "When enabled, the strategy will only trade and log in real-time. Historical processing will be skipped.")]
+        public bool TradeRealtimeOnly { get; set; } = false;
+
+        [NinjaScriptProperty]
         [Display(Name = "ExitOnTrendBreak", Order = 3, GroupName = "Trading/Entry")]
         public bool ExitOnTrendBreak { get; set; } = true;
 
@@ -45,6 +49,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Display(Name = "TrendRetraceFraction", Order = 2, GroupName = "Retrace")]
         public double TrendRetraceFraction { get; set; } = 0.66; // end trend visuals when profit gives back 66% of MFE
+
+        [NinjaScriptProperty]
+        [Display(Name = "Delay Retrace Exit On Bullish EMA", Order = 3, GroupName = "Retrace", Description = "When enabled, if a retrace exit is triggered but Fast EMA gradient is positive and price is above Fast EMA, postpone exit by one bar and re-check.")]
+        public bool DelayRetraceExitOnBullishEma { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Delay Retrace Exit On Favorable Gradient", Order = 4, GroupName = "Retrace", Description = "When enabled, if a retrace exit is triggered but EMA gradient favors the current trade, postpone exit by one bar and re-check.")]
+        public bool DelayRetraceExitOnFavorableGradient { get; set; } = false;
 
         [NinjaScriptProperty]
         [Display(Name = "EnableTrendOverlay", Order = 1, GroupName = "Display/Visualization")]
@@ -121,13 +133,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool UseEmaCrossoverFilter { get; set; } = false; // enable EMA crossover confirmation filter
 
         [NinjaScriptProperty]
-        [Range(5, 50)]
-        [Display(Name = "EMA Fast Period", Order = 1, GroupName = "EMA Crossover Filter", Description = "Fast EMA period for crossover confirmation (e.g., 10).")]
-        public int EmaFastPeriod { get; set; } = 10;
-
-        [NinjaScriptProperty]
         [Range(10, 100)]
-        [Display(Name = "EMA Slow Period", Order = 2, GroupName = "EMA Crossover Filter", Description = "Slow EMA period for crossover confirmation (e.g., 20).")]
+        [Display(Name = "EMA Slow Period", Order = 2, GroupName = "EMA Crossover Filter", Description = "Slow EMA period for crossover confirmation (e.g., 20). Fast EMA period is shared with Fast EMA/Gradient settings.")]
         public int EmaSlowPeriod { get; set; } = 20;
 
         [NinjaScriptProperty]
@@ -174,6 +181,14 @@ namespace NinjaTrader.NinjaScript.Strategies
         [Range(1, int.MaxValue)]
         [Display(Name = "Fast EMA Period", Order = 2, GroupName = "Fast EMA/Gradient")]
         public int FastEmaPeriod { get; set; } = 10;
+
+        // Back-compat: if a template references EmaFastPeriod, keep it in sync.
+        [Browsable(false)]
+        public int EmaFastPeriod
+        {
+            get { return FastEmaPeriod; }
+            set { FastEmaPeriod = value; }
+        }
 
         [NinjaScriptProperty]
         [Range(2, int.MaxValue)]
@@ -310,17 +325,21 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double EmaStopMinProfitBeforeActivation { get; set; } = 0; // Minimum profit before EMA stop activates
 
         [NinjaScriptProperty]
-        [Display(Name = "UseGradientStopLoss", Order = 16, GroupName = "Stop Loss", Description = "When enabled, exit position if gradient crosses into unfavorable territory. For longs: exit when gradient drops below ExitLongBelowGradient. For shorts: exit when gradient rises above ExitShortAboveGradient.")]
+        [Display(Name = "Reverse On EMA Stop", Order = 16, GroupName = "Stop Loss", Description = "When enabled, reverse position when EMA stop triggers (long->short, short->long). Requires EnableShorts for short entries.")]
+        public bool ReverseOnEmaStop { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "UseGradientStopLoss", Order = 17, GroupName = "Stop Loss", Description = "When enabled, exit position if gradient crosses into unfavorable territory. For longs: exit when gradient drops below ExitLongBelowGradient. For shorts: exit when gradient rises above ExitShortAboveGradient.")]
         public bool UseGradientStopLoss { get; set; } = false; // exit based on gradient crossing threshold
 
         [NinjaScriptProperty]
         [Range(-90, 90)]
-        [Display(Name = "ExitLongBelowGradient", Order = 17, GroupName = "Stop Loss", Description = "Exit LONG position when gradient drops below this value (degrees). E.g., 0 = exit when gradient becomes negative, -10 = exit when gradient < -10°.")]
+        [Display(Name = "ExitLongBelowGradient", Order = 18, GroupName = "Stop Loss", Description = "Exit LONG position when gradient drops below this value (degrees). E.g., 0 = exit when gradient becomes negative, -10 = exit when gradient < -10°.")]
         public double ExitLongBelowGradient { get; set; } = 0; // exit long when gradient < this value
 
         [NinjaScriptProperty]
         [Range(-90, 90)]
-        [Display(Name = "ExitShortAboveGradient", Order = 18, GroupName = "Stop Loss", Description = "Exit SHORT position when gradient rises above this value (degrees). E.g., 0 = exit when gradient becomes positive, 10 = exit when gradient > 10°.")]
+        [Display(Name = "ExitShortAboveGradient", Order = 19, GroupName = "Stop Loss", Description = "Exit SHORT position when gradient rises above this value (degrees). E.g., 0 = exit when gradient becomes positive, 10 = exit when gradient > 10°.")]
         public double ExitShortAboveGradient { get; set; } = 0; // exit short when gradient > this value
 
         [NinjaScriptProperty]
@@ -440,6 +459,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         private System.Windows.Controls.TextBox stopLossTextBox;
         private System.Windows.Controls.Button stopLossPlusButton;
         private System.Windows.Controls.Button stopLossMinusButton;
+        
+        // Panel controls
+        private System.Windows.Controls.Button pauseTradingButton;
+        private System.Windows.Controls.Button flattenButton;
+        private bool pauseTradingFromPanel;
 
         protected override void OnStateChange()
         {
@@ -458,11 +482,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.DataLoaded)
             {
-                fastEma = EMA(FastEmaPeriod);
+                emaFast = EMA(FastEmaPeriod);
+                fastEma = emaFast; // Use the same Fast EMA instance for gradient/trailing/crossover
                 
                 // Initialize EMA crossover filter indicators (always initialize, filter is checked at runtime)
-                emaFast = EMA(EmaFastPeriod);
                 emaSlow = EMA(EmaSlowPeriod);
+
+                // Draw EMAs on chart
+                emaFast.Plots[0].Brush = Brushes.Blue;
+                emaSlow.Plots[0].Brush = Brushes.Yellow;
+                AddChartIndicator(emaFast);
+                AddChartIndicator(emaSlow);
                 
                 InitializeLog();
                 
@@ -608,6 +638,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool pendingLongFromBad;
         private bool pendingExitLongOnGood;  // postpone long exit if next bar is good
         private bool pendingExitShortOnBad;  // postpone short exit if next bar is bad
+        private bool pendingRetraceExitLong; // postpone long retrace exit by one bar
+        private int pendingRetraceExitLongBar = -1;
+        private bool pendingRetraceExitShort; // postpone short retrace exit by one bar
+        private int pendingRetraceExitShortBar = -1;
         
         // Deferred entry tracking - waits one bar to validate against the bar where entry will appear
         private bool deferredLongEntry;       // long entry deferred to next bar for validation
@@ -626,6 +660,13 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
+            // If configured to trade real-time only, skip all historical processing (no trades/logs)
+            if (TradeRealtimeOnly && State != State.Realtime)
+            {
+                Print($"[REALTIME_ONLY] Bar {CurrentBar}: Skipping historical processing (State={State})");
+                return;
+            }
+
             // Simple check: if real-time trading is disabled and we're NOT in historical mode, skip all trading logic
             // This catches all real-time scenarios (State.Realtime, State.Transition, etc.)
             if (DisableRealTimeTrading && State != State.Historical)
@@ -819,6 +860,12 @@ namespace NinjaTrader.NinjaScript.Strategies
             
             bool placedEntry = false;
             MarketPosition currentPos = Position.MarketPosition;
+
+            if (pauseTradingFromPanel && Position.Quantity == 0)
+            {
+                Print($"[PANEL] Bar {CurrentBar}: Trading paused - skipping new entries");
+                return false;
+            }
             
             // Reset intendedPosition if we're flat but intendedPosition is stuck from a previous unfilled entry
             // This prevents blocking valid entries when a previous entry order didn't fill
@@ -1167,8 +1214,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double completedBarHigh = High[1];
                 double completedBarLow = Low[1];
                 double completedBarClose = Close[1];
+                double completedBarOpen = Open[1];
                 double completedBarFastEma = fastEma[1]; // Use completed bar's EMA to match the bar we're checking
                 bool shouldExit = false;
+                bool allowShortOnEmaStop = !(AvoidShortsOnGoodCandle && completedBarClose > completedBarOpen);
+                bool allowLongOnEmaStop = !(AvoidLongsOnBadCandle && completedBarClose < completedBarOpen);
                 
                 // Determine the effective stop loss level (considering break-even floor/ceiling)
                 double effectiveStopLoss = double.NaN;
@@ -1290,7 +1340,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         // Body only: the FULL body (both bodyTop and bodyBottom) must be below the stop loss
                         // This ensures the entire body range is below the stop, not just part of it
-                        double completedBarOpen = Open[1];
                         double bodyTop = Math.Max(completedBarOpen, completedBarClose);
                         double bodyBottom = Math.Min(completedBarOpen, completedBarClose);
                         // For LONG exits: FULL body must be below stop loss (both top and bottom must be below)
@@ -1381,7 +1430,6 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         // Body only: the FULL body (both bodyTop and bodyBottom) must be above the stop loss
                         // This ensures the entire body range is above the stop, not just part of it
-                        double completedBarOpen = Open[1];
                         double bodyTop = Math.Max(completedBarOpen, completedBarClose);
                         double bodyBottom = Math.Min(completedBarOpen, completedBarClose);
                         // For SHORT exits: FULL body must be above stop loss (both top and bottom must be above)
@@ -1449,6 +1497,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                         ExitLong("BarsOnTheFlowEmaStop", "BarsOnTheFlowLong");
                         intendedPosition = MarketPosition.Flat;
                         RecordExitForCooldown(MarketPosition.Long);
+
+                        if (ReverseOnEmaStop && EnableShorts && allowShortOnEmaStop)
+                        {
+                            if (intendedPosition != MarketPosition.Short)
+                            {
+                                currentTradeEntryReason = "ReverseFromEmaStop";
+                                ResetExitReason();
+                                Print($"[EMA_STOP_REVERSE] Bar {CurrentBar}: Reversing to SHORT after EMA stop");
+                                SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
+                                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                lastEntryBarIndex = CurrentBar;
+                                lastEntryDirection = MarketPosition.Short;
+                                intendedPosition = MarketPosition.Short;
+                                placedEntry = true;
+                            }
+                        }
                     }
                     else if (currentPos == MarketPosition.Short)
                     {
@@ -1457,6 +1521,22 @@ namespace NinjaTrader.NinjaScript.Strategies
                         ExitShort("BarsOnTheFlowEmaStopS", "BarsOnTheFlowShort");
                         intendedPosition = MarketPosition.Flat;
                         RecordExitForCooldown(MarketPosition.Short);
+
+                        if (ReverseOnEmaStop && allowLongOnEmaStop)
+                        {
+                            if (intendedPosition != MarketPosition.Long)
+                            {
+                                currentTradeEntryReason = "ReverseFromEmaStop";
+                                ResetExitReason();
+                                Print($"[EMA_STOP_REVERSE] Bar {CurrentBar}: Reversing to LONG after EMA stop");
+                                SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
+                                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                lastEntryBarIndex = CurrentBar;
+                                lastEntryDirection = MarketPosition.Long;
+                                intendedPosition = MarketPosition.Long;
+                                placedEntry = true;
+                            }
+                        }
                     }
                 }
             }
@@ -1595,8 +1675,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         double fastEmaAtBarClose = emaFast[1];
                         double slowEmaAtBarClose = emaSlow[1];
+                        double openAtBarClose = Open[1];
+                        double closeAtBarClose = Close[1];
+                        double minGapCloseToFast = EmaCrossoverMinTicksCloseToFast * TickSize;
+                        double bodyBottom = Math.Min(openAtBarClose, closeAtBarClose);
+                        bool bodyAboveFast = bodyBottom >= fastEmaAtBarClose + minGapCloseToFast;
+
                         emaCrossedBelow = fastEmaAtBarClose < slowEmaAtBarClose;
-                        if (emaCrossedBelow)
+                        if (emaCrossedBelow && AllowLongWhenBodyAboveFastButFastBelowSlow && bodyAboveFast)
+                        {
+                            // Allow long if body is above Fast EMA even though Fast EMA is below Slow EMA
+                            emaCrossedBelow = false;
+                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingShortFromGood->LONG): Fast EMA below Slow EMA, but body above Fast EMA - allowing LONG");
+                        }
+                        else if (emaCrossedBelow)
                         {
                             Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingShortFromGood->LONG): Fast EMA ({fastEmaAtBarClose:F4}) < Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING LONG entry");
                         }
@@ -1653,10 +1745,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                         double fastEmaAtBarClose = emaFast[1];
                         double slowEmaAtBarClose = emaSlow[1];
                         double closeAtBarClose = Close[1];
+                        double openAtBarClose = Open[1];
+                        double minGapCloseToFast = EmaCrossoverMinTicksCloseToFast * TickSize;
+                        double bodyTop = Math.Max(openAtBarClose, closeAtBarClose);
+                        bool bodyBelowFast = bodyTop <= fastEmaAtBarClose - minGapCloseToFast;
                         
                         // Block if Fast EMA > Slow EMA (bearish crossover condition)
                         emaCrossedAbove = fastEmaAtBarClose > slowEmaAtBarClose;
-                        if (emaCrossedAbove)
+                        if (emaCrossedAbove && AllowShortWhenBodyBelowFastButFastAboveSlow && bodyBelowFast)
+                        {
+                            // Allow short if body is below Fast EMA even though Fast EMA is above Slow EMA
+                            emaCrossedAbove = false;
+                            Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingShortFromGood->SHORT): Fast EMA above Slow EMA, but body below Fast EMA - allowing SHORT");
+                        }
+                        else if (emaCrossedAbove)
                         {
                             Print($"[GRADIENT_BLOCK] Bar {CurrentBar} (pendingShortFromGood->SHORT): Fast EMA ({fastEmaAtBarClose:F4}) > Slow EMA ({slowEmaAtBarClose:F4}) - BLOCKING SHORT entry");
                         }
@@ -2556,6 +2658,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         /// </summary>
         private void ProcessPendingCSVLogs()
         {
+            if (TradeRealtimeOnly && State != State.Realtime)
+                return;
+
             if (IsFirstTickOfBar && pendingLogs.Count > 0)
             {
                 int justClosedBar = CurrentBar - 1;
@@ -2674,6 +2779,9 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void ProcessCSVLogging(double prevOpen, double prevClose, bool allowLongThisBar, bool allowShortThisBar, 
             bool trendUp, bool trendDown, bool placedEntry)
         {
+            if (TradeRealtimeOnly && State != State.Realtime)
+                return;
+
             // Write a per-bar snapshot even when no orders fire
             LogBarSnapshot(1, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
             
@@ -2715,6 +2823,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "EnableShorts", EnableShorts },
                     { "AvoidShortsOnGoodCandle", AvoidShortsOnGoodCandle },
                     { "AvoidLongsOnBadCandle", AvoidLongsOnBadCandle },
+                    { "TradeRealtimeOnly", TradeRealtimeOnly },
                     
                     // EMA and gradient parameters
                     { "FastEmaPeriod", FastEmaPeriod },
@@ -2759,9 +2868,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                     { "EmaStopMinDistanceFromEntry", EmaStopMinDistanceFromEntry },
                     { "EmaStopActivationDelayBars", EmaStopActivationDelayBars },
                     { "EmaStopMinProfitBeforeActivation", EmaStopMinProfitBeforeActivation },
+                    { "ReverseOnEmaStop", ReverseOnEmaStop },
                     { "UseGradientStopLoss", UseGradientStopLoss },
                     { "ExitLongBelowGradient", ExitLongBelowGradient },
                     { "ExitShortAboveGradient", ExitShortAboveGradient },
+                    { "ExitOnRetrace", ExitOnRetrace },
+                    { "TrendRetraceFraction", TrendRetraceFraction },
+                    { "DelayRetraceExitOnBullishEma", DelayRetraceExitOnBullishEma },
+                    { "DelayRetraceExitOnFavorableGradient", DelayRetraceExitOnFavorableGradient },
                     
                     // Mid-bar parameters
                     { "AllowMidBarGradientEntry", AllowMidBarGradientEntry },
@@ -3003,6 +3117,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (execution.Order.OrderState != OrderState.Filled && execution.Order.OrderState != OrderState.PartFilled)
                 return;
 
+            if (TradeRealtimeOnly && State != State.Realtime)
+                return;
+
             // Ensure log ready
             if (!logInitialized)
                 InitializeLog();
@@ -3045,6 +3162,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Update intendedPosition when entries fill
             else if (isEntry)
             {
+                int fillQty = Math.Abs(execution.Quantity);
+                int orderQty = order.Quantity;
+                int posQty = Math.Abs(Position.Quantity);
+                if (fillQty > Math.Max(1, Contracts) || orderQty > Math.Max(1, Contracts) || posQty > Math.Max(1, Contracts))
+                {
+                    Print($"[ENTRY_FILL_QTY] Bar {CurrentBar}: Entry fill qty mismatch. FillQty={fillQty}, OrderQty={orderQty}, PositionQty={posQty}, Contracts={Contracts}, OrderName={order.Name}");
+                }
+
                 if (action == OrderAction.Buy)
                 {
                     Print($"[ENTRY_FILL_DEBUG] Bar {CurrentBar}: Long entry filled, setting intendedPosition=Long");
@@ -3160,6 +3285,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                 EmaFastValue = (emaFast != null && CurrentBar >= EmaFastPeriod) ? emaFast[0] : double.NaN,
                 EmaSlowValue = (emaSlow != null && CurrentBar >= EmaSlowPeriod) ? emaSlow[0] : double.NaN
             });
+        }
+
+        protected override void OnOrderUpdate(Order order, double limitPrice, double stopPrice, int quantity, int filled,
+            double averageFillPrice, OrderState orderState, DateTime time, ErrorCode error, string comment)
+        {
+            base.OnOrderUpdate(order, limitPrice, stopPrice, quantity, filled, averageFillPrice, orderState, time, error, comment);
+
+            if (order == null)
+                return;
+
+            // Log only when something goes wrong or the order is cancelled/rejected
+            if (error != ErrorCode.NoError || orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
+            {
+                Print($"[ORDER_UPDATE] Bar {CurrentBar}: {order.Name} {order.OrderAction} {order.OrderType} " +
+                      $"State={orderState}, Error={error}, Comment={comment}, Qty={quantity}, Filled={filled}, " +
+                      $"AvgFill={averageFillPrice:F2}, Limit={limitPrice:F2}, Stop={stopPrice:F2}");
+            }
         }
 
         protected override void OnPositionUpdate(Cbi.Position position, double averagePrice, int quantity, Cbi.MarketPosition marketPosition)
@@ -3862,10 +4004,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 logWriter.WriteLine($"# ExitOnTrendBreak={ExitOnTrendBreak}");
                 logWriter.WriteLine($"# ExitOnRetrace={ExitOnRetrace}");
                 logWriter.WriteLine($"# TrendRetraceFraction={TrendRetraceFraction:F2}");
+                logWriter.WriteLine($"# DelayRetraceExitOnBullishEma={DelayRetraceExitOnBullishEma}");
+                logWriter.WriteLine($"# DelayRetraceExitOnFavorableGradient={DelayRetraceExitOnFavorableGradient}");
+                logWriter.WriteLine($"# ReverseOnEmaStop={ReverseOnEmaStop}");
                 logWriter.WriteLine($"# EnableTrendOverlay={EnableTrendOverlay}");
                 logWriter.WriteLine($"# EnableShorts={EnableShorts}");
                 logWriter.WriteLine($"# AvoidShortsOnGoodCandle={AvoidShortsOnGoodCandle}");
                 logWriter.WriteLine($"# AvoidLongsOnBadCandle={AvoidLongsOnBadCandle}");
+                logWriter.WriteLine($"# TradeRealtimeOnly={TradeRealtimeOnly}");
                 
                 // EMA and gradient parameters
                 logWriter.WriteLine($"# FastEmaPeriod={FastEmaPeriod}");
@@ -4858,6 +5004,18 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             bool shouldEndTrend = trendMaxProfit > 0 && currentProfit <= triggerProfit;
 
+            // Clear pending retrace defer if conditions no longer apply or position changed
+            if (!shouldEndTrend || Position.MarketPosition != MarketPosition.Long)
+            {
+                pendingRetraceExitLong = false;
+                pendingRetraceExitLongBar = -1;
+            }
+            if (!shouldEndTrend || Position.MarketPosition != MarketPosition.Short)
+            {
+                pendingRetraceExitShort = false;
+                pendingRetraceExitShortBar = -1;
+            }
+
             if (shouldEndTrend)
             {
                 if (ExitOnRetrace)
@@ -4869,9 +5027,44 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double currentGradDeg;
                     ComputeFastEmaGradient(gradWindow, out currentGradDeg);
                     bool barAboveEma = !double.IsNaN(currentFastEma) && currentClose > currentFastEma;
+                    bool deferLongDueToBullishEma = DelayRetraceExitOnBullishEma && currentGradDeg > 0 && barAboveEma;
+                    bool deferShortDueToBullishEma = DelayRetraceExitOnBullishEma && currentGradDeg < 0 && !barAboveEma;
+                    bool deferLongDueToFavorableGradient = DelayRetraceExitOnFavorableGradient && currentGradDeg > 0;
+                    bool deferShortDueToFavorableGradient = DelayRetraceExitOnFavorableGradient && currentGradDeg < 0;
                     
                     if (Position.MarketPosition == MarketPosition.Long)
                     {
+                        // If favorable gradient is enabled, keep deferring as long as gradient favors the trade
+                        if (deferLongDueToFavorableGradient)
+                        {
+                            Print($"[RETRACE_EXIT] Bar {CurrentBar}: LONG retrace exit DEFERRED (favorable gradient). Will re-check next bar.");
+                            Print($"[RETRACE_EXIT]   Close={currentClose:F2}, FastEMA={currentFastEma:F2}, AboveEMA={barAboveEma}, Gradient={currentGradDeg:F2}°");
+                            return;
+                        }
+
+                        // Defer one bar if bullish EMA conditions are present
+                        if (deferLongDueToBullishEma && !pendingRetraceExitLong)
+                        {
+                            pendingRetraceExitLong = true;
+                            pendingRetraceExitLongBar = CurrentBar;
+                            Print($"[RETRACE_EXIT] Bar {CurrentBar}: LONG retrace exit DEFERRED (bullish EMA). Will re-check next bar.");
+                            Print($"[RETRACE_EXIT]   Close={currentClose:F2}, FastEMA={currentFastEma:F2}, AboveEMA={barAboveEma}, Gradient={currentGradDeg:F2}°");
+                            return;
+                        }
+
+                        // If we deferred on the current bar, wait until next bar to re-check
+                        if (pendingRetraceExitLong && CurrentBar == pendingRetraceExitLongBar)
+                        {
+                            return;
+                        }
+
+                        // Clear defer flag after the next bar re-check
+                        if (pendingRetraceExitLong && CurrentBar >= pendingRetraceExitLongBar + 1)
+                        {
+                            pendingRetraceExitLong = false;
+                            pendingRetraceExitLongBar = -1;
+                        }
+
                         Print($"[RETRACE_EXIT] Bar {CurrentBar}: LONG retrace exit triggered");
                         Print($"[RETRACE_EXIT]   MFE={trendMaxProfit:F2}, Current profit={currentProfit:F2}, Retrace fraction={TrendRetraceFraction:F2}");
                         Print($"[RETRACE_EXIT]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, AboveEMA={barAboveEma}, Gradient={currentGradDeg:F2}°");
@@ -4881,6 +5074,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (Position.MarketPosition == MarketPosition.Short)
                     {
+                        // If favorable gradient is enabled, keep deferring as long as gradient favors the trade
+                        if (deferShortDueToFavorableGradient)
+                        {
+                            Print($"[RETRACE_EXIT] Bar {CurrentBar}: SHORT retrace exit DEFERRED (favorable gradient). Will re-check next bar.");
+                            Print($"[RETRACE_EXIT]   Close={currentClose:F2}, FastEMA={currentFastEma:F2}, BelowEMA={!barAboveEma}, Gradient={currentGradDeg:F2}°");
+                            return;
+                        }
+
+                        // Defer one bar if bearish EMA conditions are present
+                        if (deferShortDueToBullishEma && !pendingRetraceExitShort)
+                        {
+                            pendingRetraceExitShort = true;
+                            pendingRetraceExitShortBar = CurrentBar;
+                            Print($"[RETRACE_EXIT] Bar {CurrentBar}: SHORT retrace exit DEFERRED (bearish EMA). Will re-check next bar.");
+                            Print($"[RETRACE_EXIT]   Close={currentClose:F2}, FastEMA={currentFastEma:F2}, BelowEMA={!barAboveEma}, Gradient={currentGradDeg:F2}°");
+                            return;
+                        }
+
+                        // If we deferred on the current bar, wait until next bar to re-check
+                        if (pendingRetraceExitShort && CurrentBar == pendingRetraceExitShortBar)
+                        {
+                            return;
+                        }
+
+                        // Clear defer flag after the next bar re-check
+                        if (pendingRetraceExitShort && CurrentBar >= pendingRetraceExitShortBar + 1)
+                        {
+                            pendingRetraceExitShort = false;
+                            pendingRetraceExitShortBar = -1;
+                        }
+
                         Print($"[RETRACE_EXIT] Bar {CurrentBar}: SHORT retrace exit triggered");
                         Print($"[RETRACE_EXIT]   MFE={trendMaxProfit:F2}, Current profit={currentProfit:F2}, Retrace fraction={TrendRetraceFraction:F2}");
                         Print($"[RETRACE_EXIT]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, BelowEMA={!barAboveEma}, Gradient={currentGradDeg:F2}°");
@@ -4928,6 +5152,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             trendBrush = null;
             trendSide = MarketPosition.Flat;
             trendEntryPrice = double.NaN;
+            pendingRetraceExitLong = false;
+            pendingRetraceExitLongBar = -1;
+            pendingRetraceExitShort = false;
+            pendingRetraceExitShortBar = -1;
             trendMaxProfit = double.NaN;
         }
 
@@ -5036,6 +5264,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 };
 
                 // Create row definitions
+                barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
                 barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
                 barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
 
@@ -5167,10 +5396,67 @@ namespace NinjaTrader.NinjaScript.Strategies
                 stopLossPanel.Children.Add(stopLossTextBox);
                 stopLossPanel.Children.Add(stopLossPlusButton);
 
+                // ===== ROW 2: TRADING CONTROLS =====
+                var tradingControlPanel = new System.Windows.Controls.StackPanel
+                {
+                    Orientation = System.Windows.Controls.Orientation.Horizontal,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    Margin = new System.Windows.Thickness(5, 0, 5, 6)
+                };
+                System.Windows.Controls.Grid.SetColumn(tradingControlPanel, 0);
+                System.Windows.Controls.Grid.SetRow(tradingControlPanel, 2);
+                System.Windows.Controls.Grid.SetColumnSpan(tradingControlPanel, 2);
+
+                pauseTradingButton = new System.Windows.Controls.Button
+                {
+                    Content = "Pause",
+                    FontSize = 12,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 70,
+                    Height = 28,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(234, 179, 8)),
+                    Foreground = System.Windows.Media.Brushes.Black,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Pause new entries"
+                };
+                pauseTradingButton.Click += (sender, e) =>
+                {
+                    TriggerCustomEvent(_ =>
+                    {
+                        pauseTradingFromPanel = !pauseTradingFromPanel;
+                        Print($"[PANEL] PauseTradingFromPanel={pauseTradingFromPanel}");
+                    }, null);
+                    UpdatePauseTradingButton();
+                };
+
+                flattenButton = new System.Windows.Controls.Button
+                {
+                    Content = "Flatten",
+                    FontSize = 12,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 70,
+                    Height = 28,
+                    Margin = new System.Windows.Thickness(6, 0, 0, 0),
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(239, 68, 68)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Flatten position and cancel working orders"
+                };
+                flattenButton.Click += (sender, e) =>
+                {
+                    TriggerCustomEvent(_ => FlattenFromPanel(), null);
+                };
+
+                tradingControlPanel.Children.Add(pauseTradingButton);
+                tradingControlPanel.Children.Add(flattenButton);
+
                 // Add all controls to main panel
                 barNavPanel.Children.Add(barNavTextBox);
                 barNavPanel.Children.Add(barNavButton);
                 barNavPanel.Children.Add(stopLossPanel);
+                barNavPanel.Children.Add(tradingControlPanel);
 
                 // Add panel to chart
                 if (ChartControl.Parent is System.Windows.Controls.Grid)
@@ -5178,6 +5464,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     var parent = ChartControl.Parent as System.Windows.Controls.Grid;
                     parent.Children.Add(barNavPanel);
                 }
+
+                UpdatePauseTradingButton();
             }
             catch (Exception ex)
             {
@@ -5230,6 +5518,67 @@ namespace NinjaTrader.NinjaScript.Strategies
             catch (Exception ex)
             {
                 Print($"[Stop Loss] Failed to adjust stop loss: {ex.Message}");
+            }
+        }
+
+        private void UpdatePauseTradingButton()
+        {
+            if (ChartControl == null)
+                return;
+
+            ChartControl.Dispatcher.InvokeAsync(() =>
+            {
+                if (pauseTradingButton == null)
+                    return;
+
+                if (pauseTradingFromPanel)
+                {
+                    pauseTradingButton.Content = "Resume";
+                    pauseTradingButton.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94));
+                    pauseTradingButton.Foreground = System.Windows.Media.Brushes.White;
+                    pauseTradingButton.ToolTip = "Resume new entries";
+                }
+                else
+                {
+                    pauseTradingButton.Content = "Pause";
+                    pauseTradingButton.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(234, 179, 8));
+                    pauseTradingButton.Foreground = System.Windows.Media.Brushes.Black;
+                    pauseTradingButton.ToolTip = "Pause new entries";
+                }
+            });
+        }
+
+        private void FlattenFromPanel()
+        {
+            try
+            {
+                if (Account != null)
+                {
+                    foreach (Order order in Account.Orders)
+                    {
+                        if (order != null && order.OrderState == OrderState.Working && order.Instrument == Instrument)
+                        {
+                            CancelOrder(order);
+                        }
+                    }
+                }
+
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    Print($"[PANEL] Flatten requested - exiting LONG");
+                    ExitLong("BarsOnTheFlowManualFlatten", "BarsOnTheFlowLong");
+                }
+                else if (Position.MarketPosition == MarketPosition.Short)
+                {
+                    Print($"[PANEL] Flatten requested - exiting SHORT");
+                    ExitShort("BarsOnTheFlowManualFlattenS", "BarsOnTheFlowShort");
+                }
+
+                intendedPosition = MarketPosition.Flat;
+            }
+            catch (Exception ex)
+            {
+                Print($"[PANEL] Flatten error: {ex.Message}");
             }
         }
 
@@ -6922,8 +7271,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!double.IsNaN(fastEmaValue) && !double.IsNaN(slowEmaValue))
             {
                 // Block if Fast EMA < Slow EMA (bearish crossover condition)
+                double minGapCloseToFast = EmaCrossoverMinTicksCloseToFast * TickSize;
+                double bodyBottom = Math.Min(openValue, closeValue);
+                bool bodyAboveFast = bodyBottom >= fastEmaValue + minGapCloseToFast;
+
                 emaCrossedBelow = fastEmaValue < slowEmaValue;
-                if (emaCrossedBelow)
+                if (emaCrossedBelow && AllowLongWhenBodyAboveFastButFastBelowSlow && bodyAboveFast)
+                {
+                    emaCrossedBelow = false;
+                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA below Slow EMA, but body above Fast EMA - allowing LONG");
+                }
+                else if (emaCrossedBelow)
                 {
                     Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaValue:F4}) < Slow EMA ({slowEmaValue:F4}) - BLOCKING LONG entry regardless of gradient");
                 }
@@ -6955,8 +7313,17 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (!double.IsNaN(fastEmaValue) && !double.IsNaN(slowEmaValue))
             {
                 // Block if Fast EMA > Slow EMA (bullish crossover - not suitable for short entry)
+                double minGapCloseToFast = EmaCrossoverMinTicksCloseToFast * TickSize;
+                double bodyTop = Math.Max(openValue, closeValue);
+                bool bodyBelowFast = bodyTop <= fastEmaValue - minGapCloseToFast;
+
                 emaCrossedAbove = fastEmaValue > slowEmaValue;
-                if (emaCrossedAbove)
+                if (emaCrossedAbove && AllowShortWhenBodyBelowFastButFastAboveSlow && bodyBelowFast)
+                {
+                    emaCrossedAbove = false;
+                    Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA above Slow EMA, but body below Fast EMA - allowing SHORT");
+                }
+                else if (emaCrossedAbove)
                 {
                     Print($"[GRADIENT_BLOCK] Bar {CurrentBar}: Fast EMA ({fastEmaValue:F4}) > Slow EMA ({slowEmaValue:F4}) - BLOCKING SHORT entry regardless of gradient");
                 }
@@ -7044,16 +7411,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (fastEma == null || ChartControl == null || ChartBars == null || ChartPanel == null)
                 return double.NaN;
 
-            // For immediate visual slope, use 2 most recent completed bars (barsAgo 1 and 2)
-            // This matches what you see when you put a protractor on the EMA line at that bar
-            if (CurrentBar < 2)
+            int window = Math.Max(2, lookback);
+            // Use completed bars only: most recent completed is barsAgo=1
+            if (CurrentBar < window)
                 return double.NaN;
 
-            int barRecent = CurrentBar - 1;        // most recent completed bar
-            int barOld = CurrentBar - 2;           // one bar before that
+            int barsAgoRecent = 1;
+            int barsAgoOld = window;               // lookback bars ago
+            int barRecent = CurrentBar - barsAgoRecent; // most recent completed bar
+            int barOld = CurrentBar - barsAgoOld;       // older bar based on lookback
 
-            double emaRecent = fastEma[1];          // EMA at barRecent
-            double emaOld = fastEma[2];             // EMA at barOld
+            double emaRecent = fastEma[barsAgoRecent]; // EMA at barRecent
+            double emaOld = fastEma[barsAgoOld];       // EMA at barOld
 
             double xRecent = ChartControl.GetXByBarIndex(ChartBars, barRecent);
             double xOld = ChartControl.GetXByBarIndex(ChartBars, barOld);
@@ -7074,13 +7443,10 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (dx < 1e-6)
                 return double.NaN;
 
-            double dyPixels = Math.Abs(yRecent - yOld);
-
+            // Use signed dy so positive angles = upward slope
+            double dyPixels = yOld - yRecent;
             double angleRad = Math.Atan2(dyPixels, dx);
-            double angleMagnitude = angleRad * (180.0 / Math.PI);
-
-            double priceDelta = emaRecent - emaOld;
-            double angleDeg = priceDelta >= 0 ? angleMagnitude : -angleMagnitude;
+            double angleDeg = angleRad * (180.0 / Math.PI);
 
             return angleDeg;
         }
