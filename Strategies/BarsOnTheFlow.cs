@@ -438,6 +438,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string currentTradeExitReason = ""; // Track exit reason when trade exits
         private int lastExitBarIndex = -1; // Track which bar the exit happened on
         private MarketPosition previousPosition = MarketPosition.Flat;
+        private int lastPositionQuantity = int.MinValue; // Track last position size for state refresh
+        private DateTime lastMismatchLogTime = DateTime.MinValue; // Throttle mismatch diagnostics
         
         // Reset exit reason when a new entry occurs
         private void ResetExitReason()
@@ -479,6 +481,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 IsExitOnSessionCloseStrategy = false;
                 ExitOnSessionCloseSeconds = 30;
                 BarsRequiredToTrade = 4;
+                lastPositionQuantity = int.MinValue;
             }
             else if (State == State.DataLoaded)
             {
@@ -3308,6 +3311,29 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             base.OnPositionUpdate(position, averagePrice, quantity, marketPosition);
 
+            if (quantity != lastPositionQuantity)
+            {
+                lastPositionQuantity = quantity;
+                try
+                {
+                    ExportStrategyState();
+                }
+                catch (Exception ex)
+                {
+                    Print($"[STATE_UPDATE] Bar {CurrentBar}: Failed to export state on size change: {ex.Message}");
+                }
+            }
+
+            int expectedQty = Math.Max(1, Contracts);
+            if (marketPosition != MarketPosition.Flat && Math.Abs(quantity) > expectedQty)
+            {
+                if ((DateTime.Now - lastMismatchLogTime).TotalSeconds >= 5)
+                {
+                    lastMismatchLogTime = DateTime.Now;
+                    LogPositionSizeMismatch(quantity, marketPosition, expectedQty);
+                }
+            }
+
             // Detect when a new position is opened (Flat -> Long/Short)
             if (previousPosition == MarketPosition.Flat && marketPosition != MarketPosition.Flat)
             {
@@ -3387,6 +3413,72 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             previousPosition = marketPosition;
+        }
+
+        private void LogPositionSizeMismatch(int quantity, MarketPosition marketPosition, int expectedQty)
+        {
+            try
+            {
+                string accountName = Account != null ? Account.Name : "null";
+                Print($"[POSITION_MISMATCH] Bar {CurrentBar}: PositionQty={quantity}, Expected={expectedQty}, MarketPosition={marketPosition}, Contracts={Contracts}, Account={accountName}");
+
+                // Log account-level position for this instrument
+                int accountQuantity = 0;
+                if (Account != null && Account.Positions != null)
+                {
+                    foreach (var pos in Account.Positions)
+                    {
+                        if (pos.Instrument == Instrument)
+                        {
+                            accountQuantity = pos.Quantity;
+                            break;
+                        }
+                    }
+                }
+                Print($"[POSITION_MISMATCH] AccountQuantity={accountQuantity} for {Instrument.FullName}");
+
+                // Log recent executions for this instrument (last 5 by time)
+                if (Account != null && Account.Executions != null)
+                {
+                    var recentExecs = Account.Executions
+                        .Where(e => e != null && e.Instrument == Instrument)
+                        .OrderByDescending(e => e.Time)
+                        .Take(5)
+                        .ToList();
+
+                    if (recentExecs.Count == 0)
+                    {
+                        Print("[POSITION_MISMATCH] No recent executions found for this instrument.");
+                    }
+                    else
+                    {
+                        foreach (var exec in recentExecs)
+                        {
+                            string orderName = exec.Order != null ? exec.Order.Name : "null";
+                            string orderAction = exec.Order != null ? exec.Order.OrderAction.ToString() : "null";
+                            string orderId = exec.Order != null ? exec.Order.OrderId : "null";
+                            string fromEntrySignal = exec.Order != null ? exec.Order.FromEntrySignal : "null";
+                            string oco = exec.Order != null ? exec.Order.Oco : "null";
+                            string orderState = exec.Order != null ? exec.Order.OrderState.ToString() : "null";
+                            string execId = exec.ExecutionId ?? "null";
+                            bool strategyNamed = !string.IsNullOrEmpty(orderName) && orderName.StartsWith("BarsOnTheFlow", StringComparison.Ordinal);
+                            bool strategySignal = !string.IsNullOrEmpty(fromEntrySignal) && fromEntrySignal.StartsWith("BarsOnTheFlow", StringComparison.Ordinal);
+                            string origin = (strategyNamed || strategySignal)
+                                ? "Strategy"
+                                : "External";
+                            Print($"[POSITION_MISMATCH] Exec Time={exec.Time:HH:mm:ss.fff}, Qty={exec.Quantity}, Price={exec.Price:F2}, Order={orderName}, Action={orderAction}, OrderId={orderId}, ExecId={execId}, Origin={origin}, FromEntrySignal={fromEntrySignal}, OCO={oco}, OrderState={orderState}");
+                        }
+                    }
+                }
+                else
+                {
+                    Print("[POSITION_MISMATCH] Account.Executions not available.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[POSITION_MISMATCH] Error logging mismatch details: {ex.Message}");
+            }
         }
 
         private void UpdateTradeMFEandMAE()
