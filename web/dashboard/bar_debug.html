@@ -302,6 +302,11 @@
                         <th>C→F Ticks</th>
                         <th>F→S Ticks</th>
                         <th>Gradient Deg</th>
+                        <th>Grad Src</th>
+                        <th>Grad Bar</th>
+                        <th>Grad Rec</th>
+                        <th>Grad Cur</th>
+                        <th>Grad Last</th>
                         <th>Volume</th>
                         <th>Range</th>
                         <th>Body</th>
@@ -1084,6 +1089,11 @@
                     <td style="${closeToFastBgColor}color: ${closeToFastTextColor}; font-weight: 700; text-align: center;">${closeToFastTicks}${closeToFastSymbol ? ' ' + closeToFastSymbol : ''}</td>
                     <td style="${fastToSlowBgColor}color: ${fastToSlowTextColor}; font-weight: 700; text-align: center;">${fastToSlowTicks}${fastToSlowSymbol ? ' ' + fastToSlowSymbol : ''}</td>
                     <td style="${gradDegBgColor}color: ${gradDegTextColor}; font-weight: 700; text-align: center;">${formatPrice(bar.fast_ema_grad_deg) || '-'}</td>
+                    <td style="text-align: center;">${bar.grad_source || '-'}</td>
+                    <td style="text-align: center;">${(bar.grad_bar_index !== null && bar.grad_bar_index !== undefined) ? bar.grad_bar_index : '-'}</td>
+                    <td style="text-align: center;">${formatPrice(bar.grad_recorded) || '-'}</td>
+                    <td style="text-align: center;">${formatPrice(bar.grad_current) || '-'}</td>
+                    <td style="text-align: center;">${formatPrice(bar.grad_last) || '-'}</td>
                     <td>${bar.volume || '-'}</td>
                     <td>${formatPrice(bar.bar_range)}</td>
                     <td style="${bodyBgColor}color: ${bodyTextColor}; font-weight: 700; text-align: center;">${formatPrice(bar.body_size)}</td>

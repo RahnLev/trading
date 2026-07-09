@@ -16,6 +16,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
+from db_config import bars_db_path, dashboard_db_path, volatility_db_path
+
 app = FastAPI()
 
 # Add CORS middleware to allow browser access
@@ -69,6 +71,15 @@ async def serve_trend_parameter_analyzer():
             return HTMLResponse(content=f.read())
     except FileNotFoundError:
         return HTMLResponse('<h1>Trend Parameter Analyzer not found</h1>', status_code=404)
+
+@app.get('/traffic_profile.html')
+async def serve_traffic_profile():
+    html_path = os.path.join(os.path.dirname(__file__), 'traffic_profile.html')
+    if os.path.exists(html_path):
+        with open(html_path, 'r', encoding='utf-8') as f:
+            return HTMLResponse(f.read())
+    return HTMLResponse('<h1>Traffic Profile page not found</h1>', status_code=404)
+
 ws_clients: List[WebSocket] = []
 
 async def ws_broadcast(message: Dict[str, Any]):
@@ -152,8 +163,9 @@ def parse_bool(val):
 
 # --- SQLite configuration with connection pooling ---
 USE_SQLITE = True
-DB_PATH = os.path.join(os.path.dirname(__file__), 'dashboard.db')
-BARS_DB_PATH = os.path.join(os.path.dirname(__file__), 'bars.db')
+DB_PATH = str(dashboard_db_path())
+BARS_DB_PATH = str(bars_db_path())
+VOLATILITY_DB_PATH = str(volatility_db_path())
 _db_connection = None
 _bars_db_connection = None
 
@@ -1251,13 +1263,12 @@ def api_bar_analysis(bar_index: int):
     """Get detailed analysis for a specific bar index including trade exits, entry conditions, etc."""
     try:
         dashboard_db_path = DB_PATH
-        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
-        
-        if not os.path.exists(dashboard_db_path) or not os.path.exists(volatility_db_path):
+
+        if not os.path.exists(dashboard_db_path) or not os.path.exists(VOLATILITY_DB_PATH):
             return JSONResponse({'error': 'Database not found'}, status_code=404)
-        
+
         conn_dashboard = sqlite3.connect(dashboard_db_path)
-        conn_volatility = sqlite3.connect(volatility_db_path)
+        conn_volatility = sqlite3.connect(VOLATILITY_DB_PATH)
         conn_dashboard.row_factory = sqlite3.Row
         conn_volatility.row_factory = sqlite3.Row
         
@@ -1448,100 +1459,133 @@ def api_strategy_state():
 # VOLATILITY / DYNAMIC STOP LOSS API
 # ============================================================================
 
-VOLATILITY_DB_PATH = os.path.join(os.path.dirname(__file__), 'volatility.db')
-
 @app.get('/api/volatility/recommended-stop')
-def api_volatility_recommended_stop(hour: int = None, volume: int = 0, symbol: str = 'MNQ'):
-    """Get recommended stop loss in ticks based on quarter hour and current volume.
-    
-    Query params:
-        hour: Hour of day (0-23 ET). If not provided, uses current hour and minute to calculate quarter hour.
-        volume: Current bar volume for volume-adjusted stop
-        symbol: Trading symbol (default MNQ)
-    
-    Returns:
-        recommended_stop_ticks: Recommended stop loss in ticks
-        avg_bar_range: Average bar range for this quarter hour (in points)
-        avg_volume: Average volume for this quarter hour
-        volume_condition: LOW/NORMAL/HIGH based on current vs average
-        confidence: LOW/MEDIUM/HIGH based on sample count
+def api_volatility_recommended_stop(
+    hour: int = None,
+    minute: int = None,
+    dow: int = None,
+    volume: int = 0,
+    symbol: str = 'MNQ',
+):
+    """Return a recommended stop-loss in ticks using traffic + bar-range data.
+
+    Query params (all optional — server uses wall clock for anything omitted):
+        hour:   Hour of day 0-23 ET
+        minute: Minute of hour 0-59
+        dow:    Day of week (Python convention: 0=Mon … 4=Fri)
+        volume: Current bar volume (for volume adjustment)
+        symbol: Trading symbol
+
+    Resolution order:
+      1. traffic_stats_minute  (per-minute, per-dow) – most granular
+      2. volatility_stats      (per-quarter-hour, all-days) – historical rollup
+      3. Hardcoded default 16 ticks (4 pts) if nothing else matches
     """
     try:
         now = datetime.now()
         if hour is None:
             hour = now.hour
-        
-        # Calculate quarter hour: 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
-        quarter_hour = hour * 4 + (now.minute // 15)
-        
+        if minute is None:
+            minute = now.minute
+        if dow is None:
+            dow = now.weekday()
+
+        minute_of_day = hour * 60 + minute
+        quarter_hour = hour * 4 + (minute // 15)
+
         conn = sqlite3.connect(VOLATILITY_DB_PATH)
         cursor = conn.cursor()
-        
-        # Get stats for this quarter hour
+
+        source = 'default'
+        avg_range = 0.0
+        avg_volume_val = 0.0
+        sample_count = 0
+        avg_tpm = 0.0
+
+        # --- 1. Try traffic_stats_minute (±2 minute window for smoothing) ---
         cursor.execute('''
-            SELECT avg_bar_range, avg_volume, avg_range_per_1k_volume, sample_count
+            SELECT SUM(sum_volume_per_minute) / SUM(sample_count) AS avg_vpm,
+                   SUM(sum_ticks_per_minute)  / SUM(sample_count) AS avg_tpm,
+                   SUM(sample_count) AS samples
+            FROM traffic_stats_minute
+            WHERE symbol = ? AND day_of_week = ?
+              AND minute_of_day BETWEEN ? AND ?
+              AND sample_count > 0
+        ''', (symbol, dow, minute_of_day - 2, minute_of_day + 2))
+        trow = cursor.fetchone()
+
+        if trow and trow[2] and trow[2] >= 3:
+            avg_tpm = trow[1] or 0
+            avg_volume_val = trow[0] or 0
+            sample_count = trow[2]
+            source = 'traffic_minute'
+
+        # --- 2. Get bar-range from volatility_stats for this quarter-hour ---
+        cursor.execute('''
+            SELECT avg_bar_range, avg_volume, sample_count
             FROM volatility_stats
             WHERE quarter_hour = ? AND symbol = ? AND day_of_week IS NULL
         ''', (quarter_hour, symbol))
-        
-        row = cursor.fetchone()
+        vrow = cursor.fetchone()
+
+        if vrow and vrow[2] >= 5:
+            avg_range = vrow[0]
+            if source == 'default':
+                avg_volume_val = vrow[1]
+                sample_count = vrow[2]
+                source = 'volatility_stats'
+
         conn.close()
-        
-        if not row or row[3] < 10:  # Need at least 10 samples
-            return JSONResponse({
-                'recommended_stop_ticks': 16,  # Default 4 points
-                'avg_bar_range': 0,
-                'avg_volume': 0,
-                'volume_condition': 'UNKNOWN',
-                'confidence': 'LOW',
-                'message': f'Insufficient data for quarter hour {quarter_hour} (hour {hour}) ({row[3] if row else 0} samples)'
-            })
-        
-        avg_range, avg_volume, avg_range_per_vol, sample_count = row
-        
-        # Determine volume condition
-        if volume > 0 and avg_volume > 0:
-            volume_ratio = volume / avg_volume
+
+        # --- Volume condition ---
+        if volume > 0 and avg_volume_val > 0:
+            volume_ratio = volume / avg_volume_val
             if volume_ratio < 0.7:
                 volume_condition = 'LOW'
-                volume_multiplier = 0.85  # Tighter stops in low volume
+                volume_multiplier = 0.85
             elif volume_ratio > 1.3:
                 volume_condition = 'HIGH'
-                volume_multiplier = 1.25  # Wider stops in high volume
+                volume_multiplier = 1.25
             else:
                 volume_condition = 'NORMAL'
                 volume_multiplier = 1.0
         else:
             volume_condition = 'NORMAL'
             volume_multiplier = 1.0
-        
-        # Calculate recommended stop
-        # Base: average bar range * 1.2 buffer * volume adjustment
-        base_stop_points = avg_range * 1.2 * volume_multiplier
-        recommended_ticks = int(base_stop_points * 4)  # 4 ticks per point
-        
-        # Confidence based on sample count
-        if sample_count >= 100:
+
+        # --- Compute stop ---
+        if avg_range > 0:
+            base_stop_points = avg_range * 1.2 * volume_multiplier
+        elif avg_tpm > 0:
+            base_stop_points = (avg_tpm / 200.0) * volume_multiplier
+        else:
+            base_stop_points = 4.0
+
+        recommended_ticks = int(base_stop_points * 4)
+        recommended_ticks = max(8, min(80, recommended_ticks))
+
+        if sample_count >= 50:
             confidence = 'HIGH'
-        elif sample_count >= 30:
+        elif sample_count >= 15:
             confidence = 'MEDIUM'
         else:
             confidence = 'LOW'
-        
-        # Clamp to reasonable range (2-20 points = 8-80 ticks)
-        recommended_ticks = max(8, min(80, recommended_ticks))
-        
+
         return JSONResponse({
             'recommended_stop_ticks': recommended_ticks,
             'avg_bar_range': round(avg_range, 2),
-            'avg_volume': int(avg_volume),
+            'avg_volume': int(avg_volume_val),
+            'avg_tpm': round(avg_tpm, 1),
             'volume_condition': volume_condition,
             'confidence': confidence,
             'sample_count': sample_count,
+            'source': source,
             'hour': hour,
-            'quarter_hour': quarter_hour
+            'minute': minute,
+            'dow': dow,
+            'quarter_hour': quarter_hour,
         })
-        
+
     except Exception as ex:
         print(f'[API] volatility recommended-stop error: {ex}')
         return JSONResponse({'status': 'error', 'message': str(ex)}, status_code=500)
@@ -1877,6 +1921,15 @@ async def api_volatility_record_trade(request: Request):
         has_fast_ema_grad_deg = 'fast_ema_grad_deg' in columns
         has_bar_pattern = 'bar_pattern' in columns
         has_entry_reason = 'entry_reason' in columns
+        has_grad_source = 'grad_source' in columns
+        has_grad_recorded = 'grad_recorded' in columns
+        has_grad_bar_index = 'grad_bar_index' in columns
+        has_grad_current = 'grad_current' in columns
+        has_grad_last = 'grad_last' in columns
+        has_bar_minutes = 'bar_minutes' in columns
+        has_volume_per_minute = 'volume_per_minute' in columns
+        has_ticks_in_bar = 'ticks_in_bar' in columns
+        has_ticks_per_minute = 'ticks_per_minute' in columns
         
         # Add missing columns
         if not has_contracts:
@@ -2058,6 +2111,7 @@ async def api_volatility_record_bar(request: Request):
         # Calculate quarter hour: 0-95 (0=00:00-00:14, 1=00:15-00:29, ..., 95=23:45-23:59)
         quarter_hour = hour_of_day * 4 + (dt.minute // 15)
         day_of_week = dt.weekday()
+        minute_of_day = hour_of_day * 60 + dt.minute
         
         # Calculate metrics
         bar_range = high_p - low_p
@@ -2091,6 +2145,15 @@ async def api_volatility_record_bar(request: Request):
         has_avoid_longs = 'avoid_longs_on_bad_candle' in columns
         has_avoid_shorts = 'avoid_shorts_on_good_candle' in columns
         has_entry_reason = 'entry_reason' in columns
+        has_grad_source = 'grad_source' in columns
+        has_grad_recorded = 'grad_recorded' in columns
+        has_grad_bar_index = 'grad_bar_index' in columns
+        has_grad_current = 'grad_current' in columns
+        has_grad_last = 'grad_last' in columns
+        has_bar_minutes = 'bar_minutes' in columns
+        has_volume_per_minute = 'volume_per_minute' in columns
+        has_ticks_in_bar = 'ticks_in_bar' in columns
+        has_ticks_per_minute = 'ticks_per_minute' in columns
         
         if not has_ema_fast:
             cursor.execute("ALTER TABLE bar_samples ADD COLUMN ema_fast_period INTEGER")
@@ -2124,6 +2187,28 @@ async def api_volatility_record_bar(request: Request):
             cursor.execute("ALTER TABLE bar_samples ADD COLUMN avoid_shorts_on_good_candle INTEGER")
         if not has_entry_reason:
             cursor.execute("ALTER TABLE bar_samples ADD COLUMN entry_reason TEXT")
+        if not has_grad_source:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN grad_source TEXT")
+        if not has_grad_recorded:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN grad_recorded REAL")
+        if not has_grad_bar_index:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN grad_bar_index INTEGER")
+        if not has_grad_current:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN grad_current REAL")
+        if not has_grad_last:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN grad_last REAL")
+        if not has_bar_minutes:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN bar_minutes REAL")
+            has_bar_minutes = True
+        if not has_volume_per_minute:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN volume_per_minute REAL")
+            has_volume_per_minute = True
+        if not has_ticks_in_bar:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN ticks_in_bar INTEGER")
+            has_ticks_in_bar = True
+        if not has_ticks_per_minute:
+            cursor.execute("ALTER TABLE bar_samples ADD COLUMN ticks_per_minute REAL")
+            has_ticks_per_minute = True
         
         # Get EMA values and gradient degree, handle null/None
         # C# sends string "null" when EMA is not ready, Python json.loads() parses it as string "null"
@@ -2168,12 +2253,50 @@ async def api_volatility_record_bar(request: Request):
         avoid_longs_on_bad_candle = 1 if data.get('avoid_longs_on_bad_candle', False) in (True, 'true', 1, '1') else 0
         avoid_shorts_on_good_candle = 1 if data.get('avoid_shorts_on_good_candle', False) in (True, 'true', 1, '1') else 0
         entry_reason = data.get('entry_reason', '') or ''
+        grad_source = data.get('grad_source', '') or ''
+        grad_recorded = parse_ema_value(data.get('grad_recorded'))
+        try:
+            grad_bar_index = int(data.get('grad_bar_index', -1))
+        except (ValueError, TypeError):
+            grad_bar_index = -1
+        grad_current = parse_ema_value(data.get('grad_current'))
+        grad_last = parse_ema_value(data.get('grad_last'))
+        bar_minutes_val = parse_ema_value(data.get('bar_minutes'))
+        volume_per_minute_val = parse_ema_value(data.get('volume_per_minute'))
+        ticks_in_bar_val = data.get('ticks_in_bar')
+        try:
+            ticks_in_bar_val = int(ticks_in_bar_val) if ticks_in_bar_val is not None else None
+        except (ValueError, TypeError):
+            ticks_in_bar_val = None
+        ticks_per_minute_val = parse_ema_value(data.get('ticks_per_minute'))
         
-        has_all_debug_cols = (has_candle_type and has_trend_up and has_trend_down and has_allow_long and 
-                              has_allow_short and has_pending_long and has_pending_short and 
-                              has_avoid_longs and has_avoid_shorts and has_entry_reason)
+        has_all_debug_cols = (has_candle_type and has_trend_up and has_trend_down and has_allow_long and
+                              has_allow_short and has_pending_long and has_pending_short and
+                              has_avoid_longs and has_avoid_shorts and has_entry_reason and
+                              has_grad_source and has_grad_recorded and has_grad_bar_index and has_grad_current and has_grad_last)
         
         try:
+            # Persistent traffic profile (no repeated rows).
+            # One row per (symbol, day_of_week, minute_of_day) with sample_count = number of observed days.
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS traffic_stats_minute (
+                    symbol TEXT NOT NULL,
+                    day_of_week INTEGER NOT NULL,
+                    minute_of_day INTEGER NOT NULL,
+                    hour_of_day INTEGER NOT NULL,
+                    minute INTEGER NOT NULL,
+                    sample_count INTEGER NOT NULL DEFAULT 0,
+                    sum_ticks_per_minute REAL NOT NULL DEFAULT 0,
+                    sum_volume_per_minute REAL NOT NULL DEFAULT 0,
+                    sum_bar_minutes REAL NOT NULL DEFAULT 0,
+                    min_ticks_per_minute REAL,
+                    max_ticks_per_minute REAL,
+                    last_ticks_per_minute REAL,
+                    last_timestamp TEXT,
+                    PRIMARY KEY(symbol, day_of_week, minute_of_day)
+                )
+            """)
+
             if has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg and has_stop_loss and has_all_debug_cols:
                 cursor.execute('''
                     INSERT OR IGNORE INTO bar_samples (
@@ -2183,8 +2306,10 @@ async def api_volatility_record_bar(request: Request):
                         ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
                         range_per_1k_volume, direction, in_trade, trade_result_ticks,
                         candle_type, trend_up, trend_down, allow_long_this_bar, allow_short_this_bar,
-                        pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason,
+                        grad_source, grad_recorded, grad_bar_index, grad_current, grad_last,
+                        bar_minutes, volume_per_minute, ticks_in_bar, ticks_per_minute
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     timestamp, bar_index, symbol, hour_of_day, quarter_hour, day_of_week,
                     open_p, high_p, low_p, close_p, volume,
@@ -2193,7 +2318,9 @@ async def api_volatility_record_bar(request: Request):
                     ema_fast_value, ema_slow_value, fast_ema_grad_deg, stop_loss_points,
                     range_per_1k_volume, direction, 1 if in_trade else 0, trade_result,
                     candle_type, trend_up, trend_down, allow_long_this_bar, allow_short_this_bar,
-                    pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason
+                    pending_long_from_bad, pending_short_from_good, avoid_longs_on_bad_candle, avoid_shorts_on_good_candle, entry_reason,
+                    grad_source, grad_recorded, grad_bar_index, grad_current, grad_last,
+                    bar_minutes_val, volume_per_minute_val, ticks_in_bar_val, ticks_per_minute_val
                 ))
             elif has_ema_fast and has_ema_slow and has_ema_fast_value and has_ema_slow_value and has_grad_deg and has_stop_loss:
                 cursor.execute('''
@@ -2337,6 +2464,55 @@ async def api_volatility_record_bar(request: Request):
                     raise add_ex
             else:
                 raise
+
+        # Update aggregated traffic profile row (no duplicates; sample_count == number of days observed).
+        try:
+            if ticks_per_minute_val is not None and ticks_in_bar_val is not None and ticks_in_bar_val > 0:
+                x_ticks = float(ticks_per_minute_val)
+                x_vol = float(volume_per_minute_val) if volume_per_minute_val is not None else 0.0
+                x_mins = float(bar_minutes_val) if bar_minutes_val is not None else 0.0
+                cursor.execute(
+                    """
+                    INSERT INTO traffic_stats_minute (
+                        symbol, day_of_week, minute_of_day, hour_of_day, minute,
+                        sample_count, sum_ticks_per_minute, sum_volume_per_minute, sum_bar_minutes,
+                        min_ticks_per_minute, max_ticks_per_minute, last_ticks_per_minute, last_timestamp
+                    ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(symbol, day_of_week, minute_of_day) DO UPDATE SET
+                        sample_count = sample_count + 1,
+                        sum_ticks_per_minute = sum_ticks_per_minute + excluded.sum_ticks_per_minute,
+                        sum_volume_per_minute = sum_volume_per_minute + excluded.sum_volume_per_minute,
+                        sum_bar_minutes = sum_bar_minutes + excluded.sum_bar_minutes,
+                        min_ticks_per_minute = CASE
+                            WHEN min_ticks_per_minute IS NULL THEN excluded.min_ticks_per_minute
+                            WHEN excluded.min_ticks_per_minute < min_ticks_per_minute THEN excluded.min_ticks_per_minute
+                            ELSE min_ticks_per_minute
+                        END,
+                        max_ticks_per_minute = CASE
+                            WHEN max_ticks_per_minute IS NULL THEN excluded.max_ticks_per_minute
+                            WHEN excluded.max_ticks_per_minute > max_ticks_per_minute THEN excluded.max_ticks_per_minute
+                            ELSE max_ticks_per_minute
+                        END,
+                        last_ticks_per_minute = excluded.last_ticks_per_minute,
+                        last_timestamp = excluded.last_timestamp
+                    """,
+                    (
+                        symbol,
+                        int(day_of_week),
+                        int(minute_of_day),
+                        int(hour_of_day),
+                        int(dt.minute),
+                        x_ticks,
+                        x_vol,
+                        x_mins,
+                        x_ticks,
+                        x_ticks,
+                        x_ticks,
+                        timestamp,
+                    ),
+                )
+        except Exception as traffic_ex:
+            print(f"[API] traffic_stats_minute update failed: {traffic_ex}")
         
         conn.commit()
         
@@ -6752,17 +6928,47 @@ def aggregate_optimal_parameters(analyzed_trends):
         },
     }
 
+@app.get('/api/traffic-profile')
+async def api_traffic_profile():
+    """Aggregated traffic data for the traffic profile visualisation page."""
+    try:
+        conn = sqlite3.connect(VOLATILITY_DB_PATH)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT day_of_week, minute_of_day, sample_count,
+                   sum_ticks_per_minute, sum_volume_per_minute, sum_bar_minutes,
+                   min_ticks_per_minute, max_ticks_per_minute, last_timestamp
+            FROM traffic_stats_minute
+            ORDER BY day_of_week, minute_of_day
+        """)
+        rows = cur.fetchall()
+        conn.close()
+        data = []
+        for r in rows:
+            sc = r[2] or 1
+            data.append({
+                'dow': r[0], 'minute': r[1],
+                'samples': r[2],
+                'avg_tpm': round(r[3] / sc, 2),
+                'avg_vpm': round(r[4] / sc, 2),
+                'avg_bar_min': round(r[5] / sc, 4) if r[5] else None,
+                'min_tpm': r[6], 'max_tpm': r[7],
+                'last_ts': r[8],
+            })
+        return JSONResponse({'rows': data, 'count': len(data)})
+    except Exception as ex:
+        return JSONResponse({'error': str(ex)}, status_code=500)
+
+
 @app.get('/api/databases/status')
 async def get_databases_status():
     """Get status of all databases and tables with their current state and history."""
     try:
         databases = {}
-        # VOLATILITY_DB_PATH is defined later in the file, but will be available at runtime
-        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
         db_files = {
             'dashboard.db': DB_PATH,
             'bars.db': BARS_DB_PATH,
-            'volatility.db': volatility_db_path
+            'volatility.db': VOLATILITY_DB_PATH
         }
         
         conn = get_db_connection()
@@ -6906,11 +7112,10 @@ async def record_table_event(request: Request):
             return JSONResponse({'error': 'database_name, table_name, and status are required'}, status_code=400)
         
         # Get current row count
-        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
         db_files = {
             'dashboard.db': DB_PATH,
             'bars.db': BARS_DB_PATH,
-            'volatility.db': volatility_db_path
+            'volatility.db': VOLATILITY_DB_PATH
         }
         
         row_count = 0
@@ -6956,11 +7161,10 @@ async def get_table_data(database_name: str, table_name: str, limit: int = 1000,
     """Get table data with pagination. Optionally filter by barIndex."""
     try:
         # Get database path
-        volatility_db_path = os.path.join(os.path.dirname(__file__), 'volatility.db')
         db_files = {
             'dashboard.db': DB_PATH,
             'bars.db': BARS_DB_PATH,
-            'volatility.db': volatility_db_path
+            'volatility.db': VOLATILITY_DB_PATH
         }
         
         if database_name not in db_files:

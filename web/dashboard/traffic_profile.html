@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Traffic Profile - BarsOnTheFlow</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e0e0e0; --muted: #888; --accent: #5b8def;
+    --green: #22c55e; --red: #ef4444; --amber: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  header .meta { color: var(--muted); font-size: .85rem; margin-left: auto; }
+  .controls { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center; }
+  .controls label { color: var(--muted); font-size: .85rem; }
+  .controls select, .controls input { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: .85rem; }
+  .controls button { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 16px; cursor: pointer; font-size: .85rem; }
+  .controls button:hover { opacity: .85; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 20px; padding: 20px 24px; max-width: 1600px; margin: 0 auto; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card h2 { font-size: .95rem; font-weight: 600; margin-bottom: 10px; color: var(--muted); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .row2 { grid-template-columns: 1fr; } }
+  .chart-wrap { position: relative; width: 100%; }
+  .chart-wrap.tall { height: 420px; }
+  .chart-wrap.short { height: 320px; }
+
+  /* Heatmap */
+  .heatmap-container { overflow-x: auto; }
+  .heatmap { display: grid; grid-template-columns: 60px repeat(var(--cols), 1fr); gap: 1px; font-size: .7rem; }
+  .heatmap .row-label { display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; color: var(--muted); font-weight: 600; }
+  .heatmap .cell { aspect-ratio: 1; border-radius: 2px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform .1s; min-width: 3px; }
+  .heatmap .cell:hover { transform: scale(1.6); z-index: 10; position: relative; }
+  .heatmap .header-cell { color: var(--muted); font-weight: 600; text-align: center; padding: 2px 0; }
+
+  .tooltip { position: fixed; background: #222; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: .8rem; pointer-events: none; z-index: 100; display: none; line-height: 1.5; }
+
+  .stat-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; min-width: 140px; }
+  .stat .val { font-size: 1.3rem; font-weight: 700; color: var(--accent); }
+  .stat .lbl { font-size: .75rem; color: var(--muted); }
+
+  .loading { text-align: center; padding: 60px; color: var(--muted); font-size: 1.1rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Traffic Profile</h1>
+  <span style="color:var(--muted)">Ticks &amp; Volume per minute by day &amp; time</span>
+  <span class="meta" id="metaInfo">Loading...</span>
+</header>
+
+<div class="controls">
+  <label>Metric
+    <select id="metricSel">
+      <option value="avg_tpm" selected>Ticks / min</option>
+      <option value="avg_vpm">Volume / min</option>
+    </select>
+  </label>
+  <label>Day
+    <select id="daySel">
+      <option value="all" selected>All weekdays</option>
+      <option value="0">Monday</option>
+      <option value="1">Tuesday</option>
+      <option value="2">Wednesday</option>
+      <option value="3">Thursday</option>
+      <option value="4">Friday</option>
+    </select>
+  </label>
+  <label>Session
+    <select id="timeRange">
+      <option value="globex" selected>Globex (18:00-17:00 ET)</option>
+      <option value="rth">RTH (9:30-16:00 ET)</option>
+      <option value="eth">ETH (18:00-9:30 ET)</option>
+      <option value="premarket">Pre-market (7:00-9:30 ET)</option>
+      <option value="full24">Full 24h (midnight start)</option>
+    </select>
+  </label>
+  <label>Timezone
+    <select id="tzSel">
+      <option value="0" selected>ET (exchange)</option>
+      <option value="7">Israel (ET+7)</option>
+    </select>
+  </label>
+  <button onclick="refresh()">Refresh</button>
+</div>
+
+<div id="loadingMsg" class="loading">Loading traffic data...</div>
+
+<div class="grid" id="mainGrid" style="display:none">
+
+  <div class="stat-cards" id="statCards"></div>
+
+  <div class="card">
+    <h2>Heatmap &mdash; <span id="heatmapLabel">Ticks/min</span> by Day &amp; Time</h2>
+    <div class="heatmap-container" id="heatmapWrap"></div>
+  </div>
+
+  <div class="row2">
+    <div class="card">
+      <h2 id="lineTitle">Avg Ticks/min by Time of Day</h2>
+      <div class="chart-wrap tall"><canvas id="lineChart"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>Daily Comparison (hourly buckets)</h2>
+      <div class="chart-wrap tall"><canvas id="barChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Sample Density (bars recorded per minute slot)</h2>
+    <div class="chart-wrap short"><canvas id="densityChart"></canvas></div>
+  </div>
+
+</div>
+
+<div class="tooltip" id="tip"></div>
+
+<script>
+const DOW = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
+const DOW_COLORS = ['#5b8def','#22c55e','#f59e0b','#ef4444','#a78bfa'];
+const DOW_COLORS_A = ['rgba(91,141,239,.15)','rgba(34,197,94,.15)','rgba(245,158,11,.15)','rgba(239,68,68,.15)','rgba(167,139,250,.15)'];
+
+let RAW = [];
+let lineChart, barChart, densityChart;
+
+// CME Globex MNQ session: 18:00 ET → 17:00 ET next day
+// RTH 9:30–16:00, ETH is the rest of the Globex session
+const TIME_RANGES = {
+  globex:    { label:'Globex (18:00-17:00)', spans:[[1080,1439],[0,1020]] },
+  rth:       { label:'RTH (9:30-16:00)',     spans:[[570,960]] },
+  eth:       { label:'ETH (18:00-9:30)',     spans:[[1080,1439],[0,570]] },
+  premarket: { label:'Pre-market (7:00-9:30)', spans:[[420,570]] },
+  full24:    { label:'Full 24h (0:00-23:59)',  spans:[[0,1439]] },
+};
+
+function getTzOffset() { return parseInt(document.getElementById('tzSel').value, 10) * 60; }
+function getTzLabel() { return document.getElementById('tzSel').selectedOptions[0].text; }
+
+function minuteLabel(m) {
+  const shifted = ((m + getTzOffset()) % 1440 + 1440) % 1440;
+  const h = Math.floor(shifted / 60), mm = shifted % 60;
+  return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+
+function minuteLabelET(m) {
+  const h = Math.floor(m / 60), mm = m % 60;
+  return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+}
+
+// Convert wall-clock minute to "session offset" where 0 = 18:00
+function toSessionOffset(m) { return m >= 1080 ? m - 1080 : m + 360; }
+function fromSessionOffset(s) { return s < 360 ? s + 1080 : s - 360; }
+
+function inRange(m, range) {
+  return range.spans.some(([lo,hi]) => m >= lo && m <= hi);
+}
+
+function filtered() {
+  const metric = document.getElementById('metricSel').value;
+  const dayVal = document.getElementById('daySel').value;
+  const rangeKey = document.getElementById('timeRange').value;
+  const range = TIME_RANGES[rangeKey];
+  // Use session-offset ordering for sessions that cross midnight
+  const useSessionAxis = (rangeKey === 'globex' || rangeKey === 'eth');
+  let d = RAW.filter(r => inRange(r.minute, range));
+  if (dayVal !== 'all') d = d.filter(r => r.dow === +dayVal);
+  return { data: d, metric, dayVal, range, useSessionAxis, rangeKey };
+}
+
+function updateStats(data, metric) {
+  if (!data.length) { document.getElementById('statCards').innerHTML = ''; return; }
+  const vals = data.map(r => r[metric]).filter(v => v != null);
+  const avg = vals.reduce((a,b) => a+b, 0) / vals.length;
+  const max = Math.max(...vals);
+  const min = Math.min(...vals);
+  const totalSamples = data.reduce((a,r) => a + r.samples, 0);
+  const label = metric === 'avg_tpm' ? 'Ticks/min' : 'Vol/min';
+  document.getElementById('statCards').innerHTML = `
+    <div class="stat"><div class="val">${avg.toFixed(0)}</div><div class="lbl">Avg ${label}</div></div>
+    <div class="stat"><div class="val">${max.toFixed(0)}</div><div class="lbl">Peak ${label}</div></div>
+    <div class="stat"><div class="val">${min.toFixed(0)}</div><div class="lbl">Minimum ${label}</div></div>
+    <div class="stat"><div class="val">${totalSamples.toLocaleString()}</div><div class="lbl">Total bar samples</div></div>
+    <div class="stat"><div class="val">${data.length}</div><div class="lbl">Minute slots</div></div>
+  `;
+}
+
+/* ---- Heatmap ---- */
+function buildHeatmap(data, metric, range, useSessionAxis) {
+  const wrap = document.getElementById('heatmapWrap');
+  const metricLabel = metric === 'avg_tpm' ? 'Ticks/min' : 'Vol/min';
+  document.getElementById('heatmapLabel').textContent = metricLabel;
+
+  const allVals = data.map(r => r[metric]).filter(v => v != null && v > 0);
+  if (!allVals.length) { wrap.innerHTML = '<p style="color:var(--muted)">No data</p>'; return; }
+  const p95 = allVals.sort((a,b) => a-b)[Math.floor(allVals.length * .95)] || 1;
+
+  const byDow = {};
+  data.forEach(r => { (byDow[r.dow] = byDow[r.dow] || {})[r.minute] = r; });
+
+  let minutes = [...new Set(data.map(r => r.minute))];
+  if (useSessionAxis) {
+    minutes.sort((a,b) => toSessionOffset(a) - toSessionOffset(b));
+  } else {
+    minutes.sort((a,b) => a - b);
+  }
+  const step = minutes.length > 300 ? 5 : 1;
+  const buckets = [];
+  for (let i = 0; i < minutes.length; i += step) {
+    buckets.push(minutes[i]);
+  }
+
+  const days = Object.keys(byDow).map(Number).sort();
+  const cols = buckets.length;
+
+  let html = `<div class="heatmap" style="--cols:${cols}">`;
+  html += '<div class="row-label"></div>';
+  buckets.forEach((m, i) => {
+    if (i % Math.max(1, Math.floor(cols / 12)) === 0) {
+      html += `<div class="header-cell">${minuteLabel(m)}</div>`;
+    } else {
+      html += '<div class="header-cell"></div>';
+    }
+  });
+
+  days.forEach(dow => {
+    html += `<div class="row-label">${DOW[dow].slice(0,3)}</div>`;
+    buckets.forEach(m => {
+      const r = byDow[dow]?.[m];
+      const val = r ? r[metric] : 0;
+      const intensity = Math.min(val / p95, 1);
+      const h = metric === 'avg_tpm' ? 215 : 140;
+      const bg = val ? `hsl(${h}, 80%, ${10 + intensity * 50}%)` : 'rgba(255,255,255,.03)';
+      html += `<div class="cell" style="background:${bg}" data-dow="${dow}" data-min="${m}" data-val="${val ? val.toFixed(0) : 'N/A'}" data-samples="${r ? r.samples : 0}"></div>`;
+    });
+  });
+  html += '</div>';
+  wrap.innerHTML = html;
+
+  const tip = document.getElementById('tip');
+  wrap.addEventListener('mouseover', e => {
+    const c = e.target.closest('.cell');
+    if (!c) { tip.style.display = 'none'; return; }
+    const wallMin = +c.dataset.min;
+    const tzOff = getTzOffset();
+    const etPart = minuteLabelET(wallMin);
+    const localPart = tzOff ? ` (${minuteLabel(wallMin)} ${getTzLabel()})` : '';
+    tip.innerHTML = `<strong>${DOW[c.dataset.dow]}</strong> ${etPart} ET${localPart}<br>${metricLabel}: <strong>${c.dataset.val}</strong><br>Samples: ${c.dataset.samples}`;
+    tip.style.display = 'block';
+  });
+  wrap.addEventListener('mousemove', e => {
+    tip.style.left = e.clientX + 14 + 'px';
+    tip.style.top = e.clientY + 14 + 'px';
+  });
+  wrap.addEventListener('mouseout', () => { tip.style.display = 'none'; });
+}
+
+/* ---- Line chart (overlay all days) ---- */
+function buildLineChart(data, metric, dayVal, useSessionAxis) {
+  const metricLabel = metric === 'avg_tpm' ? 'Ticks/min' : 'Vol/min';
+  document.getElementById('lineTitle').textContent = `Avg ${metricLabel} by Time of Day`;
+
+  const days = dayVal === 'all' ? [0,1,2,3,4] : [+dayVal];
+
+  const datasets = days.map(dow => {
+    const pts = data.filter(r => r.dow === dow)
+      .map(r => ({ x: useSessionAxis ? toSessionOffset(r.minute) : r.minute, y: r[metric], wallMin: r.minute }))
+      .sort((a,b) => a.x - b.x);
+    return {
+      label: DOW[dow],
+      data: pts,
+      borderColor: DOW_COLORS[dow],
+      backgroundColor: DOW_COLORS_A[dow],
+      fill: days.length === 1,
+      borderWidth: days.length === 1 ? 2 : 1.5,
+      pointRadius: 0,
+      tension: .3,
+    };
+  });
+
+  const tickCb = useSessionAxis
+    ? v => minuteLabel(fromSessionOffset(v))
+    : v => minuteLabel(v);
+  const tipCb = useSessionAxis
+    ? items => minuteLabel(fromSessionOffset(items[0].parsed.x))
+    : items => minuteLabel(items[0].parsed.x);
+
+  const cfg = {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Time (ET)', color: '#888' },
+             ticks: { callback: tickCb, color: '#888', maxTicksLimit: 16 },
+             grid: { color: 'rgba(255,255,255,.05)' } },
+        y: { title: { display: true, text: metricLabel, color: '#888' },
+             ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,.05)' },
+             beginAtZero: true },
+      },
+      plugins: {
+        legend: { labels: { color: '#ccc' } },
+        tooltip: { callbacks: { title: tipCb } },
+      },
+    },
+  };
+
+  if (lineChart) lineChart.destroy();
+  lineChart = new Chart(document.getElementById('lineChart'), cfg);
+}
+
+/* ---- Bar chart (hourly buckets per day) ---- */
+function buildBarChart(data, metric, useSessionAxis) {
+  const metricLabel = metric === 'avg_tpm' ? 'Ticks/min' : 'Vol/min';
+
+  const byDowHour = {};
+  data.forEach(r => {
+    const h = Math.floor(r.minute / 60);
+    const key = `${r.dow}-${h}`;
+    if (!byDowHour[key]) byDowHour[key] = { sum: 0, cnt: 0, dow: r.dow, hour: h };
+    byDowHour[key].sum += r[metric];
+    byDowHour[key].cnt += 1;
+  });
+
+  let hours = [...new Set(Object.values(byDowHour).map(v => v.hour))];
+  if (useSessionAxis) {
+    // Sort so 18,19,..23,0,1,..17
+    hours.sort((a,b) => {
+      const sa = a >= 18 ? a - 18 : a + 6;
+      const sb = b >= 18 ? b - 18 : b + 6;
+      return sa - sb;
+    });
+  } else {
+    hours.sort((a,b) => a - b);
+  }
+  const days = [...new Set(Object.values(byDowHour).map(v => v.dow))].sort();
+
+  const datasets = days.map(dow => ({
+    label: DOW[dow],
+    data: hours.map(h => {
+      const v = byDowHour[`${dow}-${h}`];
+      return v ? +(v.sum / v.cnt).toFixed(1) : 0;
+    }),
+    backgroundColor: DOW_COLORS[dow] + '99',
+    borderColor: DOW_COLORS[dow],
+    borderWidth: 1,
+  }));
+
+  const cfg = {
+    type: 'bar',
+    data: { labels: hours.map(h => minuteLabel(h * 60)), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,.05)' } },
+        y: { title: { display: true, text: metricLabel, color: '#888' }, ticks: { color: '#888' },
+             grid: { color: 'rgba(255,255,255,.05)' }, beginAtZero: true },
+      },
+      plugins: { legend: { labels: { color: '#ccc' } } },
+    },
+  };
+
+  if (barChart) barChart.destroy();
+  barChart = new Chart(document.getElementById('barChart'), cfg);
+}
+
+/* ---- Density chart ---- */
+function buildDensityChart(data, useSessionAxis) {
+  const byMinute = {};
+  data.forEach(r => {
+    byMinute[r.minute] = (byMinute[r.minute] || 0) + r.samples;
+  });
+  const minutes = Object.keys(byMinute).map(Number);
+  if (useSessionAxis) {
+    minutes.sort((a,b) => toSessionOffset(a) - toSessionOffset(b));
+  } else {
+    minutes.sort((a,b) => a - b);
+  }
+  const pts = minutes.map(m => ({ x: useSessionAxis ? toSessionOffset(m) : m, y: byMinute[m] }));
+
+  const tickCb = useSessionAxis
+    ? v => minuteLabel(fromSessionOffset(v))
+    : v => minuteLabel(v);
+
+  const cfg = {
+    type: 'bar',
+    data: { datasets: [{ label: 'Samples', data: pts, backgroundColor: 'rgba(91,141,239,.4)', borderColor: '#5b8def', borderWidth: 1 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'Time (ET)', color: '#888' },
+             ticks: { callback: tickCb, color: '#888', maxTicksLimit: 16 },
+             grid: { color: 'rgba(255,255,255,.05)' } },
+        y: { title: { display: true, text: 'Bar samples', color: '#888' },
+             ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,.05)' }, beginAtZero: true },
+      },
+      plugins: { legend: { display: false } },
+    },
+  };
+
+  if (densityChart) densityChart.destroy();
+  densityChart = new Chart(document.getElementById('densityChart'), cfg);
+}
+
+/* ---- Main render ---- */
+function render() {
+  const { data, metric, dayVal, range, useSessionAxis } = filtered();
+  updateStats(data, metric);
+  buildHeatmap(data, metric, range, useSessionAxis);
+  buildLineChart(data, metric, dayVal, useSessionAxis);
+  buildBarChart(data, metric, useSessionAxis);
+  buildDensityChart(data, useSessionAxis);
+}
+
+['metricSel','daySel','timeRange','tzSel'].forEach(id =>
+  document.getElementById(id).addEventListener('change', render)
+);
+
+async function refresh() {
+  try {
+    const resp = await fetch('/api/traffic-profile');
+    const json = await resp.json();
+    RAW = json.rows || [];
+    document.getElementById('metaInfo').textContent = `${RAW.length} minute slots loaded`;
+    document.getElementById('loadingMsg').style.display = 'none';
+    document.getElementById('mainGrid').style.display = '';
+    render();
+  } catch (e) {
+    document.getElementById('loadingMsg').textContent = 'Error loading data: ' + e.message;
+  }
+}
+
+refresh();
+</script>
+</body>
+</html>

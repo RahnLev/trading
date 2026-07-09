@@ -43,6 +43,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool ExitOnTrendBreak { get; set; } = true;
 
         [NinjaScriptProperty]
+        [Range(1, 20)]
+        [Display(Name = "Min Bars Before Trend Break Exit", Order = 9, GroupName = "Trading/Entry", Description = "Minimum bars to hold a position before allowing exit on trend break. Prevents exiting one bar after entry when the entry bar closes opposite and breaks the trend count. Default: 2.")]
+        public int MinBarsBeforeTrendBreakExit { get; set; } = 2;
+
+        [NinjaScriptProperty]
         [Display(Name = "ExitOnRetrace", Order = 1, GroupName = "Retrace")]
         public bool ExitOnRetrace { get; set; } = true;
 
@@ -87,6 +92,15 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool ShowTickGapIndicators { get; set; } = false;
 
         [NinjaScriptProperty]
+        [Display(Name = "Show Trading/Traffic Status", Order = 6, GroupName = "Display", Description = "Shows a fixed label (top-left) indicating whether Traffic Log is enabled and whether trading is currently allowed (Trading Hours / ATR filters).")]
+        public bool ShowTradingTrafficStatus { get; set; } = true;
+
+        [NinjaScriptProperty]
+        [Range(0, 12)]
+        [Display(Name = "Status Label Top Padding (lines)", Order = 7, GroupName = "Display", Description = "Moves the Trading/Traffic status label down by adding blank lines above it. Increase if it overlaps chart text.")]
+        public int TradingTrafficStatusTopPaddingLines { get; set; } = 2;
+
+        [NinjaScriptProperty]
         [Display(Name = "EnableShorts", Order = 3, GroupName = "Trading/Entry")]
         public bool EnableShorts { get; set; } = true; // trade shorts symmetrically to longs
 
@@ -99,8 +113,78 @@ namespace NinjaTrader.NinjaScript.Strategies
         public bool AvoidLongsOnBadCandle { get; set; } = true; // block longs that trigger off a down-close bar and restart counting
 
         [NinjaScriptProperty]
+        [Display(Name = "AvoidShortsOnGoodCandle (Current Bar)", Order = 4, GroupName = "Trading/Entry", Description = "When enabled, block SHORT entries if the current bar is up (Close[0] > Open[0]) at the moment of entry.")]
+        public bool AvoidShortsOnGoodCandleCurrentBar { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "AvoidLongsOnBadCandle (Current Bar)", Order = 5, GroupName = "Trading/Entry", Description = "When enabled, block LONG entries if the current bar is down (Close[0] < Open[0]) at the moment of entry.")]
+        public bool AvoidLongsOnBadCandleCurrentBar { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "Min Ticks: Current Bar Direction", Order = 6, GroupName = "Trading/Entry", Description = "Minimum ticks the current bar must move against the entry to block it. 0 = any move against blocks, 1+ requires that many ticks against before blocking.")]
+        public int MinTicksCurrentBarDirection { get; set; } = 1;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Trading Hours Filter", Order = 7, GroupName = "Trading/Entry", Description = "When enabled, restricts entries to a time window.")]
+        public bool UseTradingHoursFilter { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(0, 23)]
+        [Display(Name = "Trading Start Hour", Order = 8, GroupName = "Trading/Entry", Description = "Start hour for trading window (0-23).")]
+        public int TradingStartHour { get; set; } = 11;
+
+        [NinjaScriptProperty]
+        [Range(0, 59)]
+        [Display(Name = "Trading Start Minute", Order = 9, GroupName = "Trading/Entry", Description = "Start minute for trading window (0-59).")]
+        public int TradingStartMinute { get; set; } = 0;
+
+        [NinjaScriptProperty]
+        [Range(0, 23)]
+        [Display(Name = "Trading End Hour", Order = 10, GroupName = "Trading/Entry", Description = "End hour for trading window (0-23).")]
+        public int TradingEndHour { get; set; } = 12;
+
+        [NinjaScriptProperty]
+        [Range(0, 59)]
+        [Display(Name = "Trading End Minute", Order = 11, GroupName = "Trading/Entry", Description = "End minute for trading window (0-59).")]
+        public int TradingEndMinute { get; set; } = 0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use ATR Filter", Order = 12, GroupName = "Trading/Entry", Description = "When enabled, restricts entries by ATR range.")]
+        public bool UseAtrFilter { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(2, 200)]
+        [Display(Name = "ATR Period", Order = 13, GroupName = "Trading/Entry")]
+        public int AtrPeriod { get; set; } = 14;
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "ATR Min (Points)", Order = 14, GroupName = "Trading/Entry", Description = "Minimum ATR in points required to allow entries. 0 = no minimum.")]
+        public double AtrMin { get; set; } = 0;
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "ATR Max (Points)", Order = 15, GroupName = "Trading/Entry", Description = "Maximum ATR in points allowed for entries. 0 = no maximum.")]
+        public double AtrMax { get; set; } = 0;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Use Traffic Filter (Ticks/Min)", Order = 16, GroupName = "Trading/Entry", Description = "When enabled, blocks entries when recent ticks-per-minute (from the traffic counter) is below a threshold. This lets you trade Extended Hours but avoid very low-liquidity periods.")]
+        public bool UseTrafficFilter { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(0, 100000)]
+        [Display(Name = "Min Ticks/Min To Trade", Order = 17, GroupName = "Trading/Entry", Description = "Minimum recent ticks-per-minute required to allow entries. 0 disables the minimum (no blocking).")]
+        public double MinTicksPerMinuteToTrade { get; set; } = 0;
+
+        [NinjaScriptProperty]
+        [Range(1, 50)]
+        [Display(Name = "Traffic Lookback Bars", Order = 18, GroupName = "Trading/Entry", Description = "Average ticks-per-minute across the last N closed bars for the Traffic Filter. 1 = use only the last closed bar.")]
+        public int TrafficFilterLookbackBars { get; set; } = 3;
+
+        [NinjaScriptProperty]
         [Display(Name = "ExitIfEntryBarOpposite", Order = 6, GroupName = "Trading/Entry", Description = "Exit immediately if the entry bar closes opposite to trade direction (e.g., long entry bar closes down). Helps avoid positions that show immediate weakness.")]
-        public bool ExitIfEntryBarOpposite { get; set; } = true; // exit if the entry bar closes opposite to trade direction
+        public bool ExitIfEntryBarOpposite { get; set; } = false; // exit if the entry bar closes opposite to trade direction
 
         [NinjaScriptProperty]
         [Display(Name = "UseDeferredEntry", Order = 7, GroupName = "Trading/Entry", Description = "When enabled, defers entry to the next bar for validation using the decision bar's completed data. When disabled, entries execute immediately. Deferred entry prevents entries based on stale data but may delay execution by one bar.")]
@@ -130,7 +214,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "Enable EMA Crossover Filter", Order = 0, GroupName = "EMA Crossover Filter", Description = "When enabled, requires EMA crossover confirmation for entries. Can be used alone or together with other filters.")]
-        public bool UseEmaCrossoverFilter { get; set; } = false; // enable EMA crossover confirmation filter
+        public bool UseEmaCrossoverFilter { get; set; } = true; // enable EMA crossover confirmation filter
 
         [NinjaScriptProperty]
         [Range(10, 100)]
@@ -149,12 +233,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         [NinjaScriptProperty]
         [Range(0, 20)]
         [Display(Name = "Min Ticks: Close to Fast EMA", Order = 5, GroupName = "EMA Crossover Filter", Description = "Minimum number of ticks between Close price and Fast EMA. Entry requires Close >= Fast EMA + (this value * TickSize) for longs, or Close <= Fast EMA - (this value * TickSize) for shorts. 0 = no minimum gap required.")]
-        public int EmaCrossoverMinTicksCloseToFast { get; set; } = 0; // Minimum ticks between Close and Fast EMA
+        public int EmaCrossoverMinTicksCloseToFast { get; set; } = 4; // Minimum ticks between Close and Fast EMA
 
         [NinjaScriptProperty]
         [Range(0, 20)]
         [Display(Name = "Min Ticks: Fast EMA to Slow EMA", Order = 6, GroupName = "EMA Crossover Filter", Description = "Minimum number of ticks between Fast EMA and Slow EMA. Entry requires Fast EMA >= Slow EMA + (this value * TickSize) for longs, or Fast EMA <= Slow EMA - (this value * TickSize) for shorts. 0 = no minimum gap required.")]
-        public int EmaCrossoverMinTicksFastToSlow { get; set; } = 0; // Minimum ticks between Fast EMA and Slow EMA
+        public int EmaCrossoverMinTicksFastToSlow { get; set; } = 4; // Minimum ticks between Fast EMA and Slow EMA
 
         [NinjaScriptProperty]
         [Range(0, 5)]
@@ -175,7 +259,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "GradientFilterEnabled", Order = 1, GroupName = "Fast EMA/Gradient")]
-        public bool GradientFilterEnabled { get; set; } = false; // enable gradient-based entry filtering
+        public bool GradientFilterEnabled { get; set; } = true; // enable gradient-based entry filtering
 
         [NinjaScriptProperty]
         [Range(1, int.MaxValue)]
@@ -192,8 +276,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Range(2, int.MaxValue)]
-        [Display(Name = "FastGradLookbackBars", Order = 3, GroupName = "Fast EMA/Gradient")]
-        public int FastGradLookbackBars { get; set; } = 2; // gradient lookback - use 2 for immediate visual slope
+        [Display(Name = "FastGradLookbackBars", Order = 3, GroupName = "Fast EMA/Gradient", Description = "Legacy setting. Bar-close gradient always uses the 1-bar slope (EMA on the bar that just closed vs the prior bar).")]
+        public int FastGradLookbackBars { get; set; } = 2;
 
         [NinjaScriptProperty]
         [Display(Name = "Use Chart-Scaled FastGrad Deg", Order = 4, GroupName = "Fast EMA/Gradient")]
@@ -231,11 +315,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "SkipShortsAboveGradient", Order = 5, GroupName = "Fast EMA/Gradient")]
-        public double SkipShortsAboveGradient { get; set; } = -7.0; // skip shorts when EMA gradient > this degrees
+        public double SkipShortsAboveGradient { get; set; } = -10.0; // skip shorts when EMA gradient > this degrees
 
         [NinjaScriptProperty]
         [Display(Name = "SkipLongsBelowGradient", Order = 6, GroupName = "Fast EMA/Gradient")]
-        public double SkipLongsBelowGradient { get; set; } = 7.0; // skip longs when EMA gradient < this degrees
+        public double SkipLongsBelowGradient { get; set; } = 10.0; // skip longs when EMA gradient < this degrees
 
         [NinjaScriptProperty]
         [Display(Name = "AllowMidBarGradientEntry", Order = 7, GroupName = "Fast EMA/Gradient")]
@@ -243,7 +327,12 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "AllowMidBarGradientExit", Order = 8, GroupName = "Fast EMA/Gradient")]
-        public bool AllowMidBarGradientExit { get; set; } = false; // allow exit mid-bar when gradient crosses unfavorable threshold
+        public bool AllowMidBarGradientExit { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(1, int.MaxValue)]
+        [Display(Name = "EMA 21 Period", Order = 9, GroupName = "Fast EMA/Gradient", Description = "Period for the third EMA line plotted on chart (default 21).")]
+        public int Ema21Period { get; set; } = 21;
 
         [NinjaScriptProperty]
         [Range(0, int.MaxValue)]
@@ -282,12 +371,36 @@ namespace NinjaTrader.NinjaScript.Strategies
         public int BreakEvenTrigger { get; set; } = 5; // profit points needed to trigger break-even
 
         [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "MfeProtectTrigger", Order = 85, GroupName = "Stop Loss", Description = "Peak MFE (points) to arm profit floor and skip gradient give-back exits. Uses bar high/low. 0 = use BreakEvenTrigger.")]
+        public int MfeProtectTrigger { get; set; } = 6;
+
+        [NinjaScriptProperty]
         [Range(0, 20)]
         [Display(Name = "BreakEvenOffset", Order = 9, GroupName = "Stop Loss", Description = "Points above entry to place break-even stop (e.g., 2 = stop at entry+2 points for small profit lock).")]
         public int BreakEvenOffset { get; set; } = 2; // points above entry for break-even stop
 
         [NinjaScriptProperty]
-        [Display(Name = "UseEmaTrailingStop", Order = 10, GroupName = "Stop Loss", Description = "When enabled, stop loss follows Fast EMA value. For longs: stop = Fast EMA (only moves up). For shorts: stop = Fast EMA (only moves down). When enabled, this OVERRIDES UseTrailingStop, UseDynamicStopLoss, StopLossPoints, and UseBreakEven.")]
+        [Display(Name = "Use Profit Target", Order = 90, GroupName = "Stop Loss", Description = "When enabled, place a profit target (take-profit) order in points. Use this if you expect the strategy to exit after a fixed profit like +40 points.")]
+        public bool UseProfitTarget { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "Profit Target (Points)", Order = 91, GroupName = "Stop Loss", Description = "Profit target distance in points. 0 disables the profit target even if Use Profit Target is enabled.")]
+        public double ProfitTargetPoints { get; set; } = 40;
+
+        [NinjaScriptProperty]
+        [Range(0.5, 3.0)]
+        [Display(Name = "Stop Loss Multiplier", Order = 10, GroupName = "Stop Loss", Description = "Multiply the computed stop loss by this value. 1.0 = default, 1.5 = 50% wider (gives trades more room). Use if stops are hit too often.")]
+        public double StopLossMultiplier { get; set; } = 1.0;
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "Min Stop Loss Points", Order = 11, GroupName = "Stop Loss", Description = "Minimum stop distance in points. Stops will never be set below this (0 = use 1 point floor). Use to avoid overly tight dynamic/volume-aware stops.")]
+        public double MinStopLossPoints { get; set; } = 0; // 0 = use default 4-tick minimum
+
+        [NinjaScriptProperty]
+        [Display(Name = "UseEmaTrailingStop", Order = 12, GroupName = "Stop Loss", Description = "When enabled, stop loss follows Fast EMA value. For longs: stop = Fast EMA (only moves up). For shorts: stop = Fast EMA (only moves down). When enabled, this OVERRIDES UseTrailingStop, UseDynamicStopLoss, StopLossPoints, and UseBreakEven.")]
         public bool UseEmaTrailingStop { get; set; } = false; // use Fast EMA as trailing stop loss
 
         /// <summary>
@@ -302,7 +415,7 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         [NinjaScriptProperty]
         [Display(Name = "EmaStopTriggerMode", Order = 11, GroupName = "Stop Loss", Description = "How the EMA trailing stop triggers: FullCandle = entire candle range (High to Low) must be below/above stop, BodyOnly = only the candle body (Open to Close, excluding wicks) must be below/above stop, CloseOnly = only the close price needs to be below/above stop. Checked on bar close. NOTE: This parameter only applies when UseEmaTrailingStop is enabled. If UseEmaTrailingStop is disabled, this setting is ignored.")]
-        public EmaStopTriggerModeType EmaStopTriggerMode { get; set; } = EmaStopTriggerModeType.CloseOnly; // default to close only for more responsive exits. Only used when UseEmaTrailingStop is enabled.
+        public EmaStopTriggerModeType EmaStopTriggerMode { get; set; } = EmaStopTriggerModeType.BodyOnly; // default to body-only for less noisy exits. Only used when UseEmaTrailingStop is enabled.
 
         [NinjaScriptProperty]
         [Range(0, 50)]
@@ -343,8 +456,44 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double ExitShortAboveGradient { get; set; } = 0; // exit short when gradient > this value
 
         [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "GradientStopMinBarsDelay", Order = 20, GroupName = "Stop Loss", Description = "Minimum bars a trade must be held before the gradient stop can trigger. Prevents premature exits during initial volatility after entry. 0 = no delay (legacy behavior). Recommended: 5.")]
+        public int GradientStopMinBarsDelay { get; set; } = 5;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Stop Loss Research", Order = 21, GroupName = "Stop Loss", Description = "When a trade closes with negative PnL, log a research row (avg bar size, ATR, MFE/MAE) to strategy_logs and suggest stop improvements to prevent mid-trade stops.")]
+        public bool EnableStopLossResearch { get; set; } = true;
+
+        [NinjaScriptProperty]
+        [Range(5, 50)]
+        [Display(Name = "Stop Loss Research Avg Bar Lookback", Order = 21, GroupName = "Stop Loss", Description = "Bars used to compute average bar size at entry for stop loss research. Default 20.")]
+        public int StopLossResearchAvgBarLookback { get; set; } = 20;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Stop Loss Research Live Adjust", Order = 22, GroupName = "Stop Loss", Description = "When a trade closes with negative PnL, automatically adjust MinStopLossPoints and/or StopLossMultiplier (within caps) so next trades get wider stops if research suggests it. Works in addition to CSV logging.")]
+        public bool EnableStopLossResearchLiveAdjust { get; set; } = true;
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "Live Adjust Max MinStopLossPoints", Order = 23, GroupName = "Stop Loss", Description = "Cap for auto-adjusted MinStopLossPoints (prevents runaway increases). Default 50.")]
+        public int StopLossResearchLiveAdjustMaxMinPoints { get; set; } = 50;
+
+        [NinjaScriptProperty]
+        [Range(1.0, 3.0)]
+        [Display(Name = "Live Adjust Max StopLossMultiplier", Order = 24, GroupName = "Stop Loss", Description = "Cap for auto-adjusted StopLossMultiplier. Default 2.0.")]
+        public double StopLossResearchLiveAdjustMaxMultiplier { get; set; } = 2.0;
+
+        [NinjaScriptProperty]
         [Display(Name = "EnableOpportunityLog", Order = 1, GroupName = "Logging/JSON")]
         public bool EnableOpportunityLog { get; set; } = true; // log every bar with opportunity analysis
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Traffic Log", Order = 2, GroupName = "Logging/JSON", Description = "Log one row per bar: Date, Hour, DayOfWeek, Instrument, Volume, BarMinutes, VolumePerMinute, TicksInBar, TicksPerMinute. Use the CSV to build tables and predict traffic (high vs low activity) by hour and day of week. Efficient: one row per bar close, no tick spam.")]
+        public bool EnableTrafficLog { get; set; } = false;
+
+        [NinjaScriptProperty]
+        [Display(Name = "Enable Order Audit Log", Order = 2, GroupName = "Logging/JSON", Description = "When enabled, logs every order update (including order names, signals, IDs) to help trace unexpected orders.")]
+        public bool EnableOrderAuditLog { get; set; } = false;
 
         private readonly Queue<bool> recentGood = new Queue<bool>(10);
         private readonly Queue<double> recentPnl = new Queue<double>(10);
@@ -352,10 +501,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         private double lastFastEmaSlope = double.NaN;
         private DateTime lastStateUpdateTime = DateTime.MinValue; // for throttling state updates
         private double lastStateUpdatePrice = double.NaN; // for price-change updates
+        private DateTime strategyRunStartTime = DateTime.MinValue; // when this run started (DataLoaded); used for "running since" in state/dashboard
 
         // Optional bar index labels (copied from BareOhlcLogger)
         private bool showBarIndexLabels = true;
         private bool showFastGradLabels = true;
+        private int lastTradingTrafficStatusLabelBar = -1;
+        private const string tradingTrafficStatusLabelTag = "BOTF_TradingTrafficStatus";
 
         // Logging
         private StreamWriter logWriter;
@@ -376,6 +528,71 @@ namespace NinjaTrader.NinjaScript.Strategies
         private string outputLogPath;
         private bool outputLogInitialized;
 
+        // Stop loss research (on losing trades)
+        private StreamWriter stopLossResearchWriter;
+        private string stopLossResearchPath;
+        private bool stopLossResearchInitialized;
+
+        // Traffic log (volume per minute by hour/day for predicting activity)
+        private StreamWriter trafficLogWriter;
+        private string trafficLogPath;
+        private bool trafficLogInitialized;
+        
+        // Tick-traffic tracking (per bar). Used for traffic log + bar_samples payload.
+        private int ticksInCurrentBar;
+        private int lastClosedBarIndex = -1;
+        private int lastClosedBarTicks;
+        private double lastClosedBarMinutes = double.NaN;
+        private double lastClosedBarTicksPerMinute = double.NaN;
+        private readonly Queue<double> recentTicksPerMinute = new Queue<double>(64);
+
+        private void UpdateTickTrafficCounters()
+        {
+            // Called on every OnBarUpdate tick (BIP 0). Maintains per-bar tick counts.
+            if (CurrentBar < 0)
+                return;
+
+            if (IsFirstTickOfBar)
+            {
+                // We are at the first tick of a NEW bar; finalize the bar that just closed.
+                lastClosedBarIndex = CurrentBar - 1;
+                lastClosedBarTicks = ticksInCurrentBar <= 0 ? 1 : ticksInCurrentBar;
+
+                if (CurrentBar >= 2)
+                {
+                    double mins = (Time[1] - Time[2]).TotalMinutes;
+                    lastClosedBarMinutes = mins > 0 ? mins : double.NaN;
+                }
+                else
+                {
+                    lastClosedBarMinutes = double.NaN;
+                }
+
+                lastClosedBarTicksPerMinute =
+                    (!double.IsNaN(lastClosedBarMinutes) && lastClosedBarMinutes > 0)
+                        ? (lastClosedBarTicks / lastClosedBarMinutes)
+                        : double.NaN;
+
+                if (!double.IsNaN(lastClosedBarTicksPerMinute) && lastClosedBarTicksPerMinute > 0)
+                {
+                    recentTicksPerMinute.Enqueue(lastClosedBarTicksPerMinute);
+                    while (recentTicksPerMinute.Count > 50)
+                        recentTicksPerMinute.Dequeue();
+                }
+
+                // Start counting ticks for the new bar (include this tick).
+                ticksInCurrentBar = 1;
+            }
+            else
+            {
+                // Mid-bar: increment tick count.
+                if (ticksInCurrentBar <= 0)
+                    ticksInCurrentBar = 1;
+                else
+                    ticksInCurrentBar++;
+            }
+        }
+
         // Deferred execution logs waiting for bar-close OHLC
         private readonly List<PendingLogEntry> pendingLogs = new List<PendingLogEntry>();
 
@@ -385,6 +602,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         // EMA crossover filter indicators
         private EMA emaFast;
         private EMA emaSlow;
+        private EMA ema21;
 
         // EMA trailing stop loss tracking
         private double entryFastEmaValue = double.NaN; // Fast EMA value at entry
@@ -423,6 +641,10 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Track break-even activation
         private bool breakEvenActivated = false;
+        private bool profitFloorModeActive = false; // once armed: never SetTrailStop for this entry signal until flat
+        private double profitFloorStopPrice = double.NaN;
+        private string profitFloorEntrySignal = null;
+        private int lastProfitFloorReinforceLogBar = -1;
         private double breakEvenEntryPrice = double.NaN;
 
         // Trade tracking for dashboard logging
@@ -432,6 +654,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         private MarketPosition currentTradeDirection = MarketPosition.Flat;
         private int currentTradeContracts = 0;
         private double currentTradeMFE = 0.0;  // Maximum Favorable Excursion
+        private double currentTradeMfePoints = 0.0; // Peak favorable excursion in points (bar high/low)
         private double currentTradeMAE = 0.0;   // Maximum Adverse Excursion
         private double currentTradeStopLossPoints = 0.0; // Track the stop loss distance that was set
         private string currentTradeEntryReason = ""; // Track all reasons/filters that applied when entering the trade
@@ -440,22 +663,594 @@ namespace NinjaTrader.NinjaScript.Strategies
         private MarketPosition previousPosition = MarketPosition.Flat;
         private int lastPositionQuantity = int.MinValue; // Track last position size for state refresh
         private DateTime lastMismatchLogTime = DateTime.MinValue; // Throttle mismatch diagnostics
-        
+        private int exitTraceBatchId = 0;
+        private int exitTraceBatchBar = -1;
+        private int exitTraceSeq = 0;
+        private int exitOverlapBar = -1;
+        private readonly HashSet<string> exitOverlapReasons = new HashSet<string>();
+        private bool exitOverlapLogged;
+        private int lastExitSubmitBar = -1;
+        private MarketPosition lastExitSubmitSide = MarketPosition.Flat;
+        private int entrySignalSeq = 0;
+        private string activeEntrySignal;
+
+        private string AllocateEntrySignal(MarketPosition direction)
+        {
+            entrySignalSeq++;
+            activeEntrySignal = direction == MarketPosition.Long
+                ? $"BarsOnTheFlowLong_{entrySignalSeq}"
+                : $"BarsOnTheFlowShort_{entrySignalSeq}";
+            return activeEntrySignal;
+        }
+
+        private string GetActiveEntrySignal()
+        {
+            if (!string.IsNullOrEmpty(activeEntrySignal))
+                return activeEntrySignal;
+            return Position.MarketPosition == MarketPosition.Long ? "BarsOnTheFlowLong" : "BarsOnTheFlowShort";
+        }
+
+        private static bool IsBarsOnTheFlowEntrySignalName(string name)
+        {
+            return !string.IsNullOrEmpty(name)
+                && (name.StartsWith("BarsOnTheFlowLong", StringComparison.Ordinal)
+                    || name.StartsWith("BarsOnTheFlowShort", StringComparison.Ordinal));
+        }
+
+        private void SubmitLongEntry()
+        {
+            string signal = AllocateEntrySignal(MarketPosition.Long);
+            SetInitialStopLoss(signal, MarketPosition.Long);
+            EnterLong(Math.Max(1, Contracts), signal);
+        }
+
+        private void SubmitShortEntry()
+        {
+            string signal = AllocateEntrySignal(MarketPosition.Short);
+            SetInitialStopLoss(signal, MarketPosition.Short);
+            EnterShort(Math.Max(1, Contracts), signal);
+        }
+
         // Reset exit reason when a new entry occurs
+        private void ResetMfeProtectionState(bool clearActiveEntrySignal = false)
+        {
+            breakEvenActivated = false;
+            profitFloorModeActive = false;
+            breakEvenEntryPrice = double.NaN;
+            currentTradeMfePoints = 0.0;
+            profitFloorStopPrice = double.NaN;
+            profitFloorEntrySignal = null;
+            lastProfitFloorReinforceLogBar = -1;
+            if (clearActiveEntrySignal)
+                activeEntrySignal = null;
+        }
+
+        /// <summary>
+        /// Arm fixed profit floor for this entry signal.
+        /// Trail logic may continue, but effective stop is always clamped to this floor.
+        /// </summary>
+        private void ApplyProfitFloorStop(string orderName, double floorPrice)
+        {
+            profitFloorStopPrice = Instrument.MasterInstrument.RoundToTickSize(floorPrice);
+            profitFloorEntrySignal = orderName;
+            profitFloorModeActive = true;
+
+            SetProfitFloorClampedStop(orderName, profitFloorStopPrice, "floor-arm");
+
+            Print($"[MFE_FLOOR_LOCK] Bar {CurrentBar}: Profit floor armed for {orderName} @ {profitFloorStopPrice:F2} (hybrid clamp mode)");
+            Print($"[MFE_FLOOR_STOP] Bar {CurrentBar}: Fixed minimum floor @ {profitFloorStopPrice:F2} on {orderName} (mode=FloorClamp)");
+        }
+
+        private bool IsProfitFloorActive()
+        {
+            return (breakEvenActivated || profitFloorModeActive)
+                && !double.IsNaN(profitFloorStopPrice)
+                && !UseEmaTrailingStop;
+        }
+
+        private bool IsProfitFloorActiveForOrder(string orderName)
+        {
+            if (!IsProfitFloorActive())
+                return false;
+            if (string.IsNullOrEmpty(profitFloorEntrySignal))
+                return true;
+            return string.Equals(orderName, profitFloorEntrySignal, StringComparison.Ordinal);
+        }
+
+        private bool ShouldAllowTrailStop(string orderName)
+        {
+            return UseTrailingStop;
+        }
+
+        private static bool IsTrailStopOrder(Order order)
+        {
+            if (order == null)
+                return false;
+            string name = order.Name ?? string.Empty;
+            return name.IndexOf("Trail", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static bool IsWorkingStopOrder(Order order)
+        {
+            if (order == null)
+                return false;
+            if (order.OrderState != OrderState.Working
+                && order.OrderState != OrderState.Accepted
+                && order.OrderState != OrderState.PartFilled)
+                return false;
+            return order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit;
+        }
+
+        private List<Order> FindAllWorkingStopOrders(string orderName)
+        {
+            var stops = new List<Order>();
+            if (Account == null || string.IsNullOrEmpty(orderName))
+                return stops;
+
+            foreach (Order order in Account.Orders)
+            {
+                if (order == null || order.Instrument != Instrument)
+                    continue;
+                if (!string.Equals(order.FromEntrySignal, orderName, StringComparison.Ordinal))
+                    continue;
+                if (!IsWorkingStopOrder(order))
+                    continue;
+                stops.Add(order);
+            }
+
+            return stops;
+        }
+
+        private int CancelWorkingTrailStopsForSignal(string orderName)
+        {
+            int cancelled = 0;
+            foreach (Order order in FindAllWorkingStopOrders(orderName))
+            {
+                if (!IsTrailStopOrder(order))
+                    continue;
+                try
+                {
+                    CancelOrder(order);
+                    cancelled++;
+                }
+                catch (Exception ex)
+                {
+                    Print($"[MFE_FLOOR_LOCK] Bar {CurrentBar}: Cancel trail failed on {order.Name}: {ex.Message}");
+                }
+            }
+            return cancelled;
+        }
+
+        private int CancelNonCompliantOrTrailStopsForSignal(string orderName, double floorPrice)
+        {
+            int cancelled = 0;
+            foreach (Order order in FindAllWorkingStopOrders(orderName))
+            {
+                bool isTrail = IsTrailStopOrder(order);
+                bool isCompliant = IsProfitFloorStopCompliant(order.StopPrice, floorPrice);
+                if (!isTrail && isCompliant)
+                    continue;
+                try
+                {
+                    CancelOrder(order);
+                    cancelled++;
+                }
+                catch (Exception ex)
+                {
+                    Print($"[MFE_FLOOR_ENFORCE] Bar {CurrentBar}: Cancel stop failed on {order.Name}: {ex.Message}");
+                }
+            }
+            return cancelled;
+        }
+
+        private void ApplyFixedProfitFloorStop(string orderName, double floorPrice)
+        {
+            SetStopLoss(orderName, CalculationMode.Price, floorPrice, false);
+            ReapplyProfitTargetIfConfigured(orderName);
+        }
+
+        private double ClampStopToFloor(double candidateStopPrice, double floorPrice)
+        {
+            if (Position.MarketPosition == MarketPosition.Long)
+                return Math.Max(candidateStopPrice, floorPrice);
+            if (Position.MarketPosition == MarketPosition.Short)
+                return Math.Min(candidateStopPrice, floorPrice);
+            return floorPrice;
+        }
+
+        private double ComputeTrailCandidateStopPriceFromTicks(int stopLossTicks)
+        {
+            double tickSize = Instrument.MasterInstrument.TickSize;
+            if (tickSize <= 0)
+                tickSize = 0.25;
+
+            int safeTicks = Math.Max(1, stopLossTicks);
+            double distance = safeTicks * tickSize;
+            double fallback = Close[0];
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                double bid = 0;
+                try { bid = GetCurrentBid(); } catch { }
+                double marketRef = bid > 0 ? bid : fallback;
+                return Instrument.MasterInstrument.RoundToTickSize(marketRef - distance);
+            }
+
+            if (Position.MarketPosition == MarketPosition.Short)
+            {
+                double ask = 0;
+                try { ask = GetCurrentAsk(); } catch { }
+                double marketRef = ask > 0 ? ask : fallback;
+                return Instrument.MasterInstrument.RoundToTickSize(marketRef + distance);
+            }
+
+            return double.NaN;
+        }
+
+        private void SetProfitFloorClampedStop(string orderName, double floorPrice, string reason)
+        {
+            double floor = Instrument.MasterInstrument.RoundToTickSize(floorPrice);
+            int stopLossTicks = CalculateStopLossTicks();
+            int ticksPerPoint = GetTicksPerPoint();
+            if (stopLossTicks <= 0)
+                stopLossTicks = Math.Max(4, ticksPerPoint > 0 ? ticksPerPoint : 4);
+
+            double trailCandidate = ComputeTrailCandidateStopPriceFromTicks(stopLossTicks);
+            if (double.IsNaN(trailCandidate))
+                trailCandidate = floor;
+
+            double effectiveStop = Instrument.MasterInstrument.RoundToTickSize(ClampStopToFloor(trailCandidate, floor));
+            WorkingStopSnapshot before = CaptureWorkingStopSnapshot(orderName, floor);
+
+            bool hasWorking = before != null && before.Found;
+            bool workingCompliant = hasWorking && before.IsCompliant;
+            bool atEffective = hasWorking && !double.IsNaN(before.StopPrice)
+                && Math.Abs(before.StopPrice - effectiveStop) <= (Instrument.MasterInstrument.TickSize > 0 ? Instrument.MasterInstrument.TickSize * 0.5 : 0.125);
+
+            if (!hasWorking || !workingCompliant || !atEffective)
+                ApplyFixedProfitFloorStop(orderName, effectiveStop);
+
+            Print($"[MFE_FLOOR_TRAIL_CLAMP] Bar {CurrentBar}: signal={orderName}, reason={reason}, floor={floor:F2}, trailCandidate={trailCandidate:F2}, effectiveStop={effectiveStop:F2}, hadWorking={hasWorking}, compliant={workingCompliant}, atEffective={atEffective}");
+        }
+
+        private sealed class WorkingStopSnapshot
+        {
+            public bool Found;
+            public string Name;
+            public string Type;
+            public double StopPrice;
+            public OrderState State;
+            public bool IsTrailing;
+            public bool IsCompliant;
+        }
+
+        private Order FindWorkingStopOrder(string orderName)
+        {
+            if (Account == null || string.IsNullOrEmpty(orderName))
+                return null;
+
+            Order best = null;
+            foreach (Order order in Account.Orders)
+            {
+                if (order == null || order.Instrument != Instrument)
+                    continue;
+                if (!string.Equals(order.FromEntrySignal, orderName, StringComparison.Ordinal))
+                    continue;
+                if (!IsWorkingStopOrder(order))
+                    continue;
+
+                if (best == null)
+                {
+                    best = order;
+                    continue;
+                }
+
+                bool candidateIsTrail = IsTrailStopOrder(order);
+                bool currentIsTrail = IsTrailStopOrder(best);
+                if (currentIsTrail && !candidateIsTrail)
+                {
+                    best = order;
+                    continue;
+                }
+
+                bool candidateIsWorking = order.OrderState == OrderState.Working;
+                bool currentIsWorking = best.OrderState == OrderState.Working;
+                if (candidateIsWorking && !currentIsWorking)
+                    best = order;
+            }
+
+            return best;
+        }
+
+        private bool IsProfitFloorStopCompliant(double stopPrice, double floorPrice)
+        {
+            if (stopPrice <= 0 || double.IsNaN(floorPrice))
+                return false;
+
+            double tickSize = Instrument.MasterInstrument.TickSize;
+            if (tickSize <= 0)
+                tickSize = 0.25;
+            double tolerance = tickSize * 0.5;
+            bool isLong = Position.MarketPosition == MarketPosition.Long;
+            bool isShort = Position.MarketPosition == MarketPosition.Short;
+            return (isLong && stopPrice >= floorPrice - tolerance)
+                || (isShort && stopPrice <= floorPrice + tolerance);
+        }
+
+        private WorkingStopSnapshot CaptureWorkingStopSnapshot(string orderName, double floorPrice)
+        {
+            var snapshot = new WorkingStopSnapshot
+            {
+                Found = false,
+                Name = "none",
+                Type = "none",
+                StopPrice = double.NaN,
+                State = default(OrderState),
+                IsTrailing = false,
+                IsCompliant = false
+            };
+
+            Order best = FindWorkingStopOrder(orderName);
+            if (best == null)
+                return snapshot;
+
+            snapshot.Found = true;
+            snapshot.Name = best.Name ?? "null";
+            snapshot.Type = best.OrderType.ToString();
+            snapshot.StopPrice = best.StopPrice;
+            snapshot.State = best.OrderState;
+            snapshot.IsTrailing = IsTrailStopOrder(best);
+            snapshot.IsCompliant = IsProfitFloorStopCompliant(best.StopPrice, floorPrice);
+            return snapshot;
+        }
+
+        private bool HasWorkingProfitTarget(string orderName)
+        {
+            if (Account == null || string.IsNullOrEmpty(orderName))
+                return false;
+
+            foreach (Order order in Account.Orders)
+            {
+                if (order == null || order.Instrument != Instrument)
+                    continue;
+                if (!string.Equals(order.FromEntrySignal, orderName, StringComparison.Ordinal))
+                    continue;
+                if (order.OrderType != OrderType.Limit)
+                    continue;
+                if (order.OrderState == OrderState.Working
+                    || order.OrderState == OrderState.Accepted
+                    || order.OrderState == OrderState.PartFilled)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void ReapplyProfitTargetIfConfigured(string orderName)
+        {
+            if (!UseProfitTarget || ProfitTargetPoints <= 0 || HasWorkingProfitTarget(orderName))
+                return;
+
+            int ticksPerPoint = GetTicksPerPoint();
+            int tpp = ticksPerPoint > 0 ? ticksPerPoint : 4;
+            double targetTicks = ProfitTargetPoints * tpp;
+            SetProfitTarget(orderName, CalculationMode.Ticks, targetTicks);
+        }
+
+        private string FormatWorkingStopSnapshot(WorkingStopSnapshot snapshot)
+        {
+            if (snapshot == null || !snapshot.Found)
+                return "workingStop=none";
+            return $"workingStop={snapshot.Name}/{snapshot.Type} state={snapshot.State} price={snapshot.StopPrice:F2} trailing={snapshot.IsTrailing} compliant={snapshot.IsCompliant}";
+        }
+
+        /// <summary>
+        /// While profit floor is active, keep stop aligned to trailing candidate but never worse than floor.
+        /// </summary>
+        private void ReinforceProfitFloorStopIfNeeded()
+        {
+            if (!IsProfitFloorActive() || Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            string orderName = GetActiveEntrySignal();
+            if (!IsProfitFloorActiveForOrder(orderName))
+                return;
+
+            double floor = Instrument.MasterInstrument.RoundToTickSize(profitFloorStopPrice);
+            SetProfitFloorClampedStop(orderName, floor, "reinforce-calc");
+            WorkingStopSnapshot before = CaptureWorkingStopSnapshot(orderName, floor);
+            bool needEnforce = !before.Found || !before.IsCompliant;
+            if (!needEnforce)
+                return;
+
+            int cancelled = CancelNonCompliantOrTrailStopsForSignal(orderName, floor);
+            SetProfitFloorClampedStop(orderName, floor, "reinforce-enforce");
+            WorkingStopSnapshot after = CaptureWorkingStopSnapshot(orderName, floor);
+
+            bool enforceFailed = !after.Found || !after.IsCompliant;
+            string action = cancelled > 0 ? $"cancel({cancelled})+clampedStop" : "clampedStop";
+
+            if (enforceFailed)
+            {
+                cancelled = CancelNonCompliantOrTrailStopsForSignal(orderName, floor);
+                SetProfitFloorClampedStop(orderName, floor, "reinforce-retry");
+                after = CaptureWorkingStopSnapshot(orderName, floor);
+                enforceFailed = !after.Found || !after.IsCompliant;
+                action = cancelled > 0 ? $"retryCancel({cancelled})+clampedStop" : "retryClampedStop";
+            }
+
+            bool shouldLog = enforceFailed || lastProfitFloorReinforceLogBar != CurrentBar;
+            if (shouldLog)
+            {
+                if (!enforceFailed)
+                    lastProfitFloorReinforceLogBar = CurrentBar;
+                Print($"[MFE_FLOOR_ENFORCE] Bar {CurrentBar}: signal={orderName}, floor={floor:F2}, action={action}, failed={enforceFailed}, Before={FormatWorkingStopSnapshot(before)}; After={FormatWorkingStopSnapshot(after)}");
+            }
+        }
+
+        /// <summary>
+        /// Overwrite NinjaTrader's remembered stop for an entry signal (ticks/trail only — while in position).
+        /// Required after MFE floor used SetStopLoss(Price) on a prior trade with the same signal name.
+        /// </summary>
+        private void RefreshManagedStopOnly(string orderName)
+        {
+            if (IsProfitFloorActiveForOrder(orderName))
+            {
+                ReinforceProfitFloorStopIfNeeded();
+                return;
+            }
+
+            int stopLossTicks = CalculateStopLossTicks();
+            int ticksPerPoint = GetTicksPerPoint();
+            double stopLossPoints = (ticksPerPoint > 0) ? (stopLossTicks / (double)ticksPerPoint) : (stopLossTicks / 4.0);
+
+            if (stopLossTicks <= 0)
+            {
+                stopLossTicks = Math.Max(4, ticksPerPoint);
+                stopLossPoints = (ticksPerPoint > 0) ? (stopLossTicks / (double)ticksPerPoint) : 1.0;
+            }
+
+            currentTradeStopLossPoints = stopLossPoints;
+
+            if (IsProfitFloorActiveForOrder(orderName))
+                SetProfitFloorClampedStop(orderName, profitFloorStopPrice, "refresh");
+            else if (ShouldAllowTrailStop(orderName))
+                SetTrailStop(orderName, CalculationMode.Ticks, stopLossTicks, false);
+            else
+                SetStopLoss(orderName, CalculationMode.Ticks, stopLossTicks, false);
+        }
+
+
         private void ResetExitReason()
         {
             currentTradeExitReason = "";
             lastExitBarIndex = -1;
         }
 
+        private int GetMfeProtectTriggerPoints()
+        {
+            return MfeProtectTrigger > 0 ? MfeProtectTrigger : BreakEvenTrigger;
+        }
+
+        /// <summary>Update peak favorable excursion using current bar high/low (points).</summary>
+        private void UpdateTradeMfePointsFromBar()
+        {
+            if (Position.MarketPosition == MarketPosition.Flat || double.IsNaN(Position.AveragePrice))
+                return;
+
+            double entry = Position.AveragePrice;
+            double barFavorable = Position.MarketPosition == MarketPosition.Long
+                ? High[0] - entry
+                : entry - Low[0];
+            if (barFavorable > currentTradeMfePoints)
+                currentTradeMfePoints = barFavorable;
+        }
+
+        /// <summary>When peak MFE reached the protect trigger, gradient stop must not give back open profit.</summary>
+        private bool ShouldSkipGradientStopForMfeProtection()
+        {
+            if (!UseBreakEven || !UseGradientStopLoss || Position.MarketPosition == MarketPosition.Flat)
+                return false;
+
+            UpdateTradeMfePointsFromBar();
+            int trigger = GetMfeProtectTriggerPoints();
+            if (currentTradeMfePoints < trigger)
+                return false;
+
+            double currentProfit = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points);
+            Print($"[GRADIENT_STOP_MFE_SKIP] Bar {CurrentBar}: Skipping gradient exit - peak MFE={currentTradeMfePoints:F2} >= {trigger}, currentProfit={currentProfit:F2}, profitFloorActive={breakEvenActivated}");
+            return true;
+        }
+
+        private string NextExitTraceId()
+        {
+            if (CurrentBar != exitTraceBatchBar)
+            {
+                exitTraceBatchBar = CurrentBar;
+                exitTraceBatchId++;
+                exitTraceSeq = 0;
+            }
+            exitTraceSeq++;
+            return $"{exitTraceBatchId}.{exitTraceSeq}";
+        }
+
+        private void LogExitTrace(string exitName, string fromEntrySignal, string reason, MarketPosition side)
+        {
+            TrackExitOverlap($"{side}:{exitName}");
+            string traceId = NextExitTraceId();
+            Print($"[EXIT_TRACE] Bar {CurrentBar}: Trace={traceId}, Side={side}, ExitName={exitName}, FromEntry={fromEntrySignal}, Reason={reason}");
+        }
+
+        private void TrackExitOverlap(string reason)
+        {
+            if (CurrentBar != exitOverlapBar)
+            {
+                exitOverlapBar = CurrentBar;
+                exitOverlapReasons.Clear();
+                exitOverlapLogged = false;
+            }
+
+            if (exitOverlapReasons.Add(reason) && exitOverlapReasons.Count > 1 && !exitOverlapLogged)
+            {
+                exitOverlapLogged = true;
+                Print($"[EXIT_OVERLAP] Bar {CurrentBar}: Multiple exits triggered. Reasons={string.Join("; ", exitOverlapReasons)}");
+            }
+        }
+
+        private bool TrySubmitExit(MarketPosition side, string exitName, string fromEntrySignal, string reason)
+        {
+            if (lastExitSubmitBar == CurrentBar && lastExitSubmitSide == side)
+            {
+                Print($"[EXIT_SKIP] Bar {CurrentBar}: Skipping additional {side} exit. ExitName={exitName}, Reason={reason}, AlreadySubmittedSide={lastExitSubmitSide}");
+                return false;
+            }
+
+            lastExitSubmitBar = CurrentBar;
+            lastExitSubmitSide = side;
+            LogExitTrace(exitName, fromEntrySignal, reason, side);
+            if (side == MarketPosition.Long)
+                ExitLong(exitName, fromEntrySignal);
+            else if (side == MarketPosition.Short)
+                ExitShort(exitName, fromEntrySignal);
+            return true;
+        }
+
+        private void ExitLongTrace(string exitName, string fromEntrySignal, string reason)
+        {
+            TrySubmitExit(MarketPosition.Long, exitName, fromEntrySignal, reason);
+        }
+
+        private void ExitShortTrace(string exitName, string fromEntrySignal, string reason)
+        {
+            TrySubmitExit(MarketPosition.Short, exitName, fromEntrySignal, reason);
+        }
+
         private double lastFastEmaGradDeg = double.NaN;
+        private double lastChartScaledGradDeg = double.NaN; // Visual ("eye") angle for the last completed bar
+        private double lastRegressionGradDeg = double.NaN;  // atan(slope) angle for the last completed bar
         private Dictionary<int, double> gradientByBar = new Dictionary<int, double>(); // Store gradient per bar for accurate logging
+        private Dictionary<int, double> chartGradientByBar = new Dictionary<int, double>(); // Visual chart-scaled angle per bar (for label comparison)
         private static readonly System.Threading.SemaphoreSlim dashboardPostSemaphore = new System.Threading.SemaphoreSlim(4, 4);
+        private ATR atr;
 
         // Bar navigation panel
         private System.Windows.Controls.Grid barNavPanel;
         private System.Windows.Controls.TextBox barNavTextBox;
         private System.Windows.Controls.Button barNavButton;
+        private bool barNavPanelDragging;
+        private System.Windows.Point barNavPanelDragStart;
+        private System.Windows.Thickness barNavPanelMarginAtDragStart;
+        private static System.Windows.Thickness? barNavPanelSavedMargin;
+
+        // EMA chart legend overlay
+        private System.Windows.Controls.Border emaLegendPanel;
+        private System.Windows.Controls.TextBlock emaLegendFastLabel;
+        private System.Windows.Controls.TextBlock emaLegendSlowLabel;
+        private System.Windows.Controls.TextBlock emaLegend21Label;
+        private bool emaLegendPanelDragging;
+        private System.Windows.Point emaLegendPanelDragStart;
+        private System.Windows.Thickness emaLegendPanelMarginAtDragStart;
+        private static System.Windows.Thickness? emaLegendPanelSavedMargin;
         
         // Stop loss controls
         private System.Windows.Controls.TextBox stopLossTextBox;
@@ -465,7 +1260,13 @@ namespace NinjaTrader.NinjaScript.Strategies
         // Panel controls
         private System.Windows.Controls.Button pauseTradingButton;
         private System.Windows.Controls.Button flattenButton;
-        private bool pauseTradingFromPanel;
+        private bool pauseTradingFromPanel = true; // start paused; user resumes from the nav panel
+        private System.Windows.Controls.TextBlock positionEntryLine;
+        private System.Windows.Controls.TextBlock positionStopLine;
+        private System.Windows.Controls.TextBlock positionTargetLine;
+        private double lastPanelEntryPrice = double.NaN;
+        private double lastPanelStopPrice = double.NaN;
+        private double lastPanelTargetPrice = double.NaN;
 
         protected override void OnStateChange()
         {
@@ -482,20 +1283,59 @@ namespace NinjaTrader.NinjaScript.Strategies
                 ExitOnSessionCloseSeconds = 30;
                 BarsRequiredToTrade = 4;
                 lastPositionQuantity = int.MinValue;
+                // Prevent NinjaTrader from automatically disabling the strategy on order errors
+                RealtimeErrorHandling = RealtimeErrorHandling.IgnoreAllErrors;
+
+                // Default to Extended Trading Hours behavior (CME index futures style: 18:00 -> 17:00 with 17:00-18:00 break)
+                UseTradingHoursFilter = true;
+                TradingStartHour = 18;
+                TradingStartMinute = 0;
+                TradingEndHour = 17;
+                TradingEndMinute = 0;
+
+                // Keep trades off during very low activity periods even in ETH
+                UseTrafficFilter = true;
+                MinTicksPerMinuteToTrade = 150;
+                TrafficFilterLookbackBars = 3;
+
+                // Take-profit so big moves don't give back everything
+                UseProfitTarget = true;
+                ProfitTargetPoints = 40;
+
+                // Helpful by default so you can see what's blocking trading
+                ShowTradingTrafficStatus = true;
+                TradingTrafficStatusTopPaddingLines = 3;
+
+                // Use chart-scaled (visual) gradient degrees for filters, exits, and labels
+                UseChartScaledFastGradDeg = true;
+
+                // Entry gating defaults: require EMA crossover + directional gradient + minimum EMA gaps
+                UseEmaCrossoverFilter = true;
+                EmaCrossoverRequireCrossover = true;
+                EmaCrossoverMinTicksCloseToFast = 4;
+                EmaCrossoverMinTicksFastToSlow = 4;
+                GradientFilterEnabled = true;
+                SkipLongsBelowGradient = 10;
+                SkipShortsAboveGradient = -10;
             }
             else if (State == State.DataLoaded)
             {
+                strategyRunStartTime = DateTime.Now; // Record run start so state/dashboard and tools can show "running since"
                 emaFast = EMA(FastEmaPeriod);
                 fastEma = emaFast; // Use the same Fast EMA instance for gradient/trailing/crossover
                 
                 // Initialize EMA crossover filter indicators (always initialize, filter is checked at runtime)
                 emaSlow = EMA(EmaSlowPeriod);
+                ema21 = EMA(Ema21Period);
+                atr = ATR(AtrPeriod);
 
                 // Draw EMAs on chart
                 emaFast.Plots[0].Brush = Brushes.Blue;
-                emaSlow.Plots[0].Brush = Brushes.Yellow;
+                emaSlow.Plots[0].Brush = Brushes.DarkOrange;
+                ema21.Plots[0].Brush = Brushes.MediumPurple;
                 AddChartIndicator(emaFast);
                 AddChartIndicator(emaSlow);
+                AddChartIndicator(ema21);
                 
                 InitializeLog();
                 
@@ -509,10 +1349,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Export strategy state for API queries
                 ExportStrategyState();
                 
-                // Initialize bar navigation panel on UI thread
+                // Initialize chart overlays on UI thread
                 if (ChartControl != null)
                 {
-                    ChartControl.Dispatcher.InvokeAsync(() => CreateBarNavPanel());
+                    ChartControl.Dispatcher.InvokeAsync(() =>
+                    {
+                        CreateBarNavPanel();
+                        CreateEmaLegendPanel();
+                    });
                 }
             }
             else if (State == State.Realtime)
@@ -540,6 +1384,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 Print($"[REALTIME_TRANSITION] Real-time bar recording will continue from here");
                 
+                ExportStrategyState();
+                
+                UpdateTradingTrafficStatusLabel(force: true);
+                
                 // When transitioning to real-time, if trading is disabled, cancel any pending orders
                 if (DisableRealTimeTrading)
                 {
@@ -556,6 +1404,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             else if (State == State.Terminated)
             {
+                try { RemoveDrawObject(tradingTrafficStatusLabelTag); } catch { }
+
                 // Clear any accumulated historical bar data
                 lock (historicalBarDataLock)
                 {
@@ -618,20 +1468,50 @@ namespace NinjaTrader.NinjaScript.Strategies
                     catch { }
                     outputLogWriter = null;
                 }
+                if (stopLossResearchWriter != null)
+                {
+                    try
+                    {
+                        stopLossResearchWriter.Flush();
+                        stopLossResearchWriter.Dispose();
+                    }
+                    catch { }
+                    stopLossResearchWriter = null;
+                }
+                if (trafficLogWriter != null)
+                {
+                    try
+                    {
+                        trafficLogWriter.Flush();
+                        trafficLogWriter.Dispose();
+                    }
+                    catch { }
+                    trafficLogWriter = null;
+                }
                 logInitialized = false;
                 opportunityLogInitialized = false;
                 outputLogInitialized = false;
+                trafficLogInitialized = false;
+                stopLossResearchInitialized = false;
                 
-                // Clean up bar navigation panel
-                if (ChartControl != null && barNavPanel != null)
+                // Clean up chart overlays
+                if (ChartControl != null && (barNavPanel != null || emaLegendPanel != null))
                 {
                     ChartControl.Dispatcher.InvokeAsync(() =>
                     {
                         if (ChartControl != null && ChartControl.Parent is System.Windows.Controls.Grid)
                         {
                             var parent = ChartControl.Parent as System.Windows.Controls.Grid;
-                            parent.Children.Remove(barNavPanel);
+                            if (barNavPanel != null)
+                                parent.Children.Remove(barNavPanel);
+                            if (emaLegendPanel != null)
+                                parent.Children.Remove(emaLegendPanel);
                         }
+                        barNavPanel = null;
+                        emaLegendPanel = null;
+                        emaLegendFastLabel = null;
+                        emaLegendSlowLabel = null;
+                        emaLegend21Label = null;
                     });
                 }
             }
@@ -645,6 +1525,10 @@ namespace NinjaTrader.NinjaScript.Strategies
         private int pendingRetraceExitLongBar = -1;
         private bool pendingRetraceExitShort; // postpone short retrace exit by one bar
         private int pendingRetraceExitShortBar = -1;
+        private bool pendingEmaStopReverseLong;
+        private bool pendingEmaStopReverseShort;
+        private int pendingEmaStopReverseBar = -1;
+        private bool pendingEmaStopReverseAllowed;
         
         // Deferred entry tracking - waits one bar to validate against the bar where entry will appear
         private bool deferredLongEntry;       // long entry deferred to next bar for validation
@@ -663,6 +1547,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         protected override void OnBarUpdate()
         {
+            try
+            {
             // If configured to trade real-time only, skip all historical processing (no trades/logs)
             if (TradeRealtimeOnly && State != State.Realtime)
             {
@@ -691,6 +1577,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             // SECTION 1: CSV LOGGING - Process pending logs from previous bar
             // ====================================================================
             ProcessPendingCSVLogs();
+            
+            // Tick traffic counters (used by TrafficLog + bar_samples payload)
+            UpdateTickTrafficCounters();
 
             if (CurrentBar < 1)
                 return; // need a completed bar to score
@@ -700,10 +1589,13 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ====================================================================
             if (!IsFirstTickOfBar)
             {
+                CheckMaintenanceFlatten();
                 ProcessMidBarOperations();
                 
                 // Update retrace/progress on live prices so exits can fire intrabar
                 UpdateTrendLifecycle(Position.MarketPosition, updateOverlay: false);
+                if (Position.MarketPosition != MarketPosition.Flat)
+                    UpdateBarNavPositionLabels();
                 return; // Exit early for mid-bar ticks - bar close logic below
             }
 
@@ -711,10 +1603,20 @@ namespace NinjaTrader.NinjaScript.Strategies
             // SECTION 3: BAR CLOSE PROCESSING
             // ====================================================================
             
+            // 3.0: Flatten before maintenance window (broker rejects orders during CME halt)
+            CheckMaintenanceFlatten();
+
             // 3.1: Calculate market state (trends, gradients, etc.) - DO THIS FIRST so RecordBarSample can use the values
             double prevOpen = Open[1];
             double prevClose = Close[1];
             RecordCompletedBar(prevOpen, prevClose);
+
+            // Traffic log: one row per bar (VolumePerMinute by Hour, DayOfWeek) for predicting activity
+            if (EnableTrafficLog)
+                LogTrafficSample();
+
+            UpdateTradingTrafficStatusLabel();
+            UpdateBarNavPositionLabels();
 
             bool prevGood = prevClose > prevOpen;
             bool prevBad = prevClose < prevOpen;
@@ -744,23 +1646,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             bool allowShortThisBar = !(AvoidShortsOnGoodCandle && prevGood);
             bool allowLongThisBar = !(AvoidLongsOnBadCandle && prevBad);
             
-            // Compute gradient using the bar that just closed ([1])
-            // This ensures the gradient reflects the EMA movement up to the bar that just closed
-            // NOTE: On bar 2408 (CurrentBar=2408), [1] refers to bar 2407 (the bar that just closed)
-            // The gradient calculation uses a lookback window ending at [1], so it reflects movement up to bar 2407
-            // However, for entry decisions, we want to know the gradient at the END of the bar that just closed
-            // So we calculate it here, and it will be used for decisions on the NEXT bar
-            int gradWindow = Math.Max(2, FastGradLookbackBars);
-            double regDeg;
-            lastFastEmaSlope = ComputeFastEmaGradient(gradWindow, out regDeg);
+            // Per-bar gradient of the bar that just closed [1]: EMA[1] vs EMA[2].
+            // On bar 7028, this is the slope of the Fast EMA line on bar 7027.
+            double regDeg, chartDeg;
+            ComputeCompletedBarGradDeg(out regDeg, out chartDeg);
+            lastRegressionGradDeg = regDeg;
+            lastChartScaledGradDeg = chartDeg;
+            lastFastEmaSlope = (fastEma != null && CurrentBar >= 2 && !double.IsNaN(fastEma[1]) && !double.IsNaN(fastEma[2]))
+                ? fastEma[1] - fastEma[2]
+                : double.NaN;
 
-            double chartDeg = double.NaN;
-            if (UseChartScaledFastGradDeg)
-            {
-                chartDeg = ComputeChartScaledFastEmaDeg(gradWindow);
-            }
-
-            lastFastEmaGradDeg = !double.IsNaN(chartDeg) ? chartDeg : regDeg;
+            // Per-bar slope of the bar that just closed [1]: chart-scaled when enabled, else atan(price delta).
+            lastFastEmaGradDeg = (UseChartScaledFastGradDeg && !double.IsNaN(chartDeg)) ? chartDeg : regDeg;
             if (!double.IsNaN(lastFastEmaGradDeg))
                 gradientByBar[CurrentBar] = lastFastEmaGradDeg;
             
@@ -769,6 +1666,14 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar >= 1 && !double.IsNaN(lastFastEmaGradDeg))
             {
                 gradientByBar[CurrentBar - 1] = lastFastEmaGradDeg;
+            }
+
+            // Track the visual angle per-bar too (used by the on-chart label's "eye:" reading)
+            if (!double.IsNaN(chartDeg))
+            {
+                chartGradientByBar[CurrentBar] = chartDeg;
+                if (CurrentBar >= 1)
+                    chartGradientByBar[CurrentBar - 1] = chartDeg;
             }
 
             // Reset mid-bar gradient waiting flags at start of new bar
@@ -811,6 +1716,11 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             // 3.5: CSV Logging (bar snapshots, opportunity analysis)
             ProcessCSVLogging(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown, placedEntry);
+            }
+            catch (Exception ex)
+            {
+                Print($"[OnBarUpdate_ERROR] {ex.GetType().Name}: {ex.Message}");
+            }
         }
         
         #endregion
@@ -888,12 +1798,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double closeOfDecisionBar = Close[1];
                 double openOfDecisionBar = Open[1];
                 double fastEmaOfDecisionBar = emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1] : double.NaN;
+                bool currentBarIsBad = IsCurrentBarDownByMinTicks();
+                string deferredFilterReason;
+                bool deferredFiltersPass = EntryFiltersPass(out deferredFilterReason);
                 
                 Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred LONG - Close[1]={closeOfDecisionBar:F4}, Open[1]={openOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
                 
                 bool closeBelowFastEma = !double.IsNaN(fastEmaOfDecisionBar) && closeOfDecisionBar < fastEmaOfDecisionBar;
                 bool decisionBarWasBad = closeOfDecisionBar < openOfDecisionBar;
                 bool blockedByBadCandle = AvoidLongsOnBadCandle && decisionBarWasBad;
+                double deferredGradDeg;
+                GetCurrentGradient(out deferredGradDeg);
+                bool blockedByGradient = ShouldSkipLongDueToGradient(deferredGradDeg);
                 
                 if (closeBelowFastEma)
                 {
@@ -910,6 +1826,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                     intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
                     pendingLongFromBad = true;
                 }
+                else if (!deferredFiltersPass)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: LONG entry BLOCKED - {deferredFilterReason}");
+                    deferredLongEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else if (AvoidLongsOnBadCandleCurrentBar && currentBarIsBad)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: LONG entry BLOCKED - Current bar down by >= {MinTicksCurrentBarDirection} ticks (Close[0]={Close[0]:F4} < Open[0]={Open[0]:F4}) and AvoidLongsOnBadCandleCurrentBar=True");
+                    deferredLongEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else if (blockedByGradient)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: LONG entry BLOCKED - Current bar gradient {deferredGradDeg:F2}° < {SkipLongsBelowGradient:F2}° (GradientFilterEnabled={GradientFilterEnabled})");
+                    deferredLongEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
                 else
                 {
                     Print($"[DEFERRED_ENTRY_EXECUTE] Bar {CurrentBar}: LONG entry VALIDATED - Close ({closeOfDecisionBar:F4}) >= Fast EMA ({fastEmaOfDecisionBar:F4}), executing entry");
@@ -917,8 +1854,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     currentTradeEntryReason = deferredEntryReason;
                     ResetExitReason();
                     PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (deferred, validated), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
-                    SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                    SubmitLongEntry();
                     lastEntryBarIndex = CurrentBar;
                     lastEntryDirection = MarketPosition.Long;
                     intendedPosition = MarketPosition.Long;
@@ -935,12 +1871,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double closeOfDecisionBar = Close[1];
                 double openOfDecisionBar = Open[1];
                 double fastEmaOfDecisionBar = emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1] : double.NaN;
+                bool currentBarIsGood = IsCurrentBarUpByMinTicks();
+                string deferredFilterReason;
+                bool deferredFiltersPass = EntryFiltersPass(out deferredFilterReason);
                 
                 Print($"[DEFERRED_ENTRY] Bar {CurrentBar}: Validating deferred SHORT - Close[1]={closeOfDecisionBar:F4}, Open[1]={openOfDecisionBar:F4}, FastEMA[1]={fastEmaOfDecisionBar:F4}");
                 
                 bool closeAboveFastEma = !double.IsNaN(fastEmaOfDecisionBar) && closeOfDecisionBar > fastEmaOfDecisionBar;
                 bool decisionBarWasGood = closeOfDecisionBar > openOfDecisionBar;
                 bool blockedByGoodCandle = AvoidShortsOnGoodCandle && decisionBarWasGood;
+                double deferredGradDeg;
+                GetCurrentGradient(out deferredGradDeg);
+                bool blockedByGradient = ShouldSkipShortDueToGradient(deferredGradDeg);
                 
                 if (closeAboveFastEma)
                 {
@@ -957,6 +1899,27 @@ namespace NinjaTrader.NinjaScript.Strategies
                     intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
                     pendingShortFromGood = true;
                 }
+                else if (!deferredFiltersPass)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: SHORT entry BLOCKED - {deferredFilterReason}");
+                    deferredShortEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else if (AvoidShortsOnGoodCandleCurrentBar && currentBarIsGood)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: SHORT entry BLOCKED - Current bar up by >= {MinTicksCurrentBarDirection} ticks (Close[0]={Close[0]:F4} > Open[0]={Open[0]:F4}) and AvoidShortsOnGoodCandleCurrentBar=True");
+                    deferredShortEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
+                else if (blockedByGradient)
+                {
+                    Print($"[DEFERRED_ENTRY_BLOCKED] Bar {CurrentBar}: SHORT entry BLOCKED - Current bar gradient {deferredGradDeg:F2}° > {SkipShortsAboveGradient:F2}° (GradientFilterEnabled={GradientFilterEnabled})");
+                    deferredShortEntry = false;
+                    deferredEntryReason = "";
+                    intendedPosition = MarketPosition.Flat; // Reset since entry was blocked
+                }
                 else
                 {
                     Print($"[DEFERRED_ENTRY_EXECUTE] Bar {CurrentBar}: SHORT entry VALIDATED - Close ({closeOfDecisionBar:F4}) <= Fast EMA ({fastEmaOfDecisionBar:F4}), executing entry");
@@ -964,8 +1927,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     currentTradeEntryReason = deferredEntryReason;
                     ResetExitReason();
                     PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (deferred, validated), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
-                    SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                    EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                    SubmitShortEntry();
                     lastEntryBarIndex = CurrentBar;
                     lastEntryDirection = MarketPosition.Short;
                     intendedPosition = MarketPosition.Short;
@@ -974,6 +1936,53 @@ namespace NinjaTrader.NinjaScript.Strategies
                     deferredEntryReason = "";
                     pendingLongFromBad = false;
                     pendingShortFromGood = false;
+                }
+            }
+
+            // ====================================================================
+            // DEFERRED EMA STOP REVERSAL
+            // Queue reversal to next bar to avoid same-bar exit/entry collisions
+            // ====================================================================
+            if ((pendingEmaStopReverseLong || pendingEmaStopReverseShort) && Position.Quantity == 0 && CurrentBar >= pendingEmaStopReverseBar + 1)
+            {
+                bool isLong = pendingEmaStopReverseLong;
+                bool allowSide = pendingEmaStopReverseAllowed && (isLong ? allowLongThisBar : allowShortThisBar);
+                string sideText = isLong ? "LONG" : "SHORT";
+
+                if (!allowSide)
+                {
+                    Print($"[EMA_STOP_REVERSE_DEFERRED] Bar {CurrentBar}: {sideText} reverse BLOCKED on next bar. allowSide={allowSide}, allowLongThisBar={allowLongThisBar}, allowShortThisBar={allowShortThisBar}");
+                    pendingEmaStopReverseLong = false;
+                    pendingEmaStopReverseShort = false;
+                    pendingEmaStopReverseBar = -1;
+                    pendingEmaStopReverseAllowed = false;
+                }
+                else
+                {
+                    currentTradeEntryReason = $"ReverseFromEmaStopDeferred";
+                    ResetExitReason();
+                    PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering {sideText} (deferred EMA stop reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
+                    if (isLong)
+                    {
+                        SubmitLongEntry();
+                        lastEntryBarIndex = CurrentBar;
+                        lastEntryDirection = MarketPosition.Long;
+                        intendedPosition = MarketPosition.Long;
+                    }
+                    else
+                    {
+                        SubmitShortEntry();
+                        lastEntryBarIndex = CurrentBar;
+                        lastEntryDirection = MarketPosition.Short;
+                        intendedPosition = MarketPosition.Short;
+                    }
+
+                    placedEntry = true;
+                    pendingEmaStopReverseLong = false;
+                    pendingEmaStopReverseShort = false;
+                    pendingEmaStopReverseBar = -1;
+                    pendingEmaStopReverseAllowed = false;
+                    return placedEntry;
                 }
             }
 
@@ -998,7 +2007,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     CaptureDecisionContext(Open[1], Close[1], true, true, trendUp, trendDown);
                     currentTradeExitReason = "BarsOnTheFlowEntryBarOpp";
                     lastExitBarIndex = CurrentBar;
-                    ExitLong("BarsOnTheFlowEntryBarOpp", "BarsOnTheFlowLong");
+                    ExitLongTrace("BarsOnTheFlowEntryBarOpp", GetActiveEntrySignal(), "BarsOnTheFlowEntryBarOpp");
                     intendedPosition = MarketPosition.Flat;
                     RecordExitForCooldown(MarketPosition.Long);
                     return false; // Exit early, no entry placed
@@ -1010,7 +2019,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     CaptureDecisionContext(Open[1], Close[1], true, true, trendUp, trendDown);
                     currentTradeExitReason = "BarsOnTheFlowEntryBarOppS";
                     lastExitBarIndex = CurrentBar;
-                    ExitShort("BarsOnTheFlowEntryBarOppS", "BarsOnTheFlowShort");
+                    ExitShortTrace("BarsOnTheFlowEntryBarOppS", GetActiveEntrySignal(), "BarsOnTheFlowEntryBarOppS");
                     intendedPosition = MarketPosition.Flat;
                     RecordExitForCooldown(MarketPosition.Short);
                     return false; // Exit early, no entry placed
@@ -1024,51 +2033,111 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ====================================================================
             if (UseBreakEven && currentPos != MarketPosition.Flat && !breakEvenActivated)
             {
-                // Uses current position and current price (real-time, not bar-close)
+                UpdateTradeMfePointsFromBar();
                 double currentProfit = Position.GetUnrealizedProfitLoss(PerformanceUnit.Points);
-                
-                if (currentProfit >= BreakEvenTrigger)
+                int mfeTrigger = GetMfeProtectTriggerPoints();
+                bool mfeThresholdReached = currentTradeMfePoints >= mfeTrigger || currentProfit >= BreakEvenTrigger;
+
+                if (mfeThresholdReached)
                 {
-                    // Calculate break-even stop level
+                    // Apply profit floor even when trailing stop is on (replaces wide trail with locked profit).
+                    // EMA trailing stop has its own floor/ceiling logic.
+                    bool canApplyProfitFloor = !UseEmaTrailingStop;
+
                     double entryPrice = Position.AveragePrice;
                     double breakEvenStopPrice;
                     string orderName;
-                    
+
+                    double currentPrice = Close[0];
+                    double tickSize = Instrument.MasterInstrument.TickSize;
+                    double minMove = tickSize > 0 ? tickSize : 0.25;
+                    int ticksPerPoint = GetTicksPerPoint();
+                    double safetyTicks = Math.Max(2, ticksPerPoint);
+                    double safetyMargin = safetyTicks * minMove;
+
                     if (currentPos == MarketPosition.Long)
                     {
                         breakEvenStopPrice = entryPrice + BreakEvenOffset;
-                        orderName = "BarsOnTheFlowLong";
-                        
-                        // If EMA trailing stop is enabled, break-even becomes a floor (minimum stop level)
-                        // Otherwise, set it directly
-                        if (!UseEmaTrailingStop)
+                        orderName = GetActiveEntrySignal();
+
+                        if (canApplyProfitFloor)
                         {
-                        SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
+                            double bid = 0;
+                            try { bid = GetCurrentBid(); } catch { }
+                            double marketRef = bid > 0 ? bid : currentPrice;
+
+                            if (marketRef <= breakEvenStopPrice + minMove)
+                            {
+                                Print($"[MFE_PROTECT_MARKET_EXIT] Bar {CurrentBar}: LONG price already <= profit floor. MarketRef={marketRef:F4}, Floor={breakEvenStopPrice:F4}, PeakMFE={currentTradeMfePoints:F2}");
+                                currentTradeExitReason = "BarsOnTheFlowBreakEvenMkt";
+                                lastExitBarIndex = CurrentBar;
+                                ExitLongTrace("BarsOnTheFlowBreakEvenMkt", GetActiveEntrySignal(), "BarsOnTheFlowBreakEvenMkt");
+                                intendedPosition = MarketPosition.Flat;
+                                RecordExitForCooldown(MarketPosition.Long);
+                                breakEvenActivated = true;
+                                breakEvenEntryPrice = entryPrice;
+                                return false;
+                            }
+
+                            double maxAllowedStop = marketRef - safetyMargin;
+                            if (breakEvenStopPrice > maxAllowedStop)
+                            {
+                                double original = breakEvenStopPrice;
+                                breakEvenStopPrice = Instrument.MasterInstrument.RoundToTickSize(maxAllowedStop);
+                                Print($"[MFE_PROTECT_CLAMP] LONG: adjusted floor from {original:F4} to {breakEvenStopPrice:F4} (market={currentPrice:F4})");
+                            }
+
+                            ApplyProfitFloorStop(orderName, breakEvenStopPrice);
                             currentTradeStopLossPoints = BreakEvenOffset;
                         }
-                        
-                        Print($"[BREAKEVEN] Bar {CurrentBar}: LONG break-even activated! Entry={entryPrice:F2}, Profit={currentProfit:F2}, BreakEvenStop={breakEvenStopPrice:F2} (Entry+{BreakEvenOffset}), UseEmaTrailingStop={UseEmaTrailingStop}");
+
+                        Print($"[MFE_PROTECT] Bar {CurrentBar}: LONG profit floor armed. Entry={entryPrice:F2}, PeakMFE={currentTradeMfePoints:F2}, CurrentProfit={currentProfit:F2}, Floor={breakEvenStopPrice:F2} (Entry+{BreakEvenOffset}), UseTrailingStop={UseTrailingStop}, AppliedFloor={canApplyProfitFloor}");
                     }
-                    else // Short
+                    else
                     {
                         breakEvenStopPrice = entryPrice - BreakEvenOffset;
-                        orderName = "BarsOnTheFlowShort";
-                        
-                        // If EMA trailing stop is enabled, break-even becomes a ceiling (maximum stop level)
-                        // Otherwise, set it directly
-                        if (!UseEmaTrailingStop)
+                        orderName = GetActiveEntrySignal();
+
+                        if (canApplyProfitFloor)
                         {
-                        SetStopLoss(orderName, CalculationMode.Price, breakEvenStopPrice, false);
+                            double ask = 0;
+                            try { ask = GetCurrentAsk(); } catch { }
+                            double marketRef = ask > 0 ? ask : currentPrice;
+
+                            if (marketRef >= breakEvenStopPrice - minMove)
+                            {
+                                Print($"[MFE_PROTECT_MARKET_EXIT] Bar {CurrentBar}: SHORT price already >= profit floor. MarketRef={marketRef:F4}, Floor={breakEvenStopPrice:F4}, PeakMFE={currentTradeMfePoints:F2}");
+                                currentTradeExitReason = "BarsOnTheFlowBreakEvenMktS";
+                                lastExitBarIndex = CurrentBar;
+                                ExitShortTrace("BarsOnTheFlowBreakEvenMktS", GetActiveEntrySignal(), "BarsOnTheFlowBreakEvenMktS");
+                                intendedPosition = MarketPosition.Flat;
+                                RecordExitForCooldown(MarketPosition.Short);
+                                breakEvenActivated = true;
+                                breakEvenEntryPrice = entryPrice;
+                                return false;
+                            }
+
+                            double minAllowedStop = marketRef + safetyMargin;
+                            if (breakEvenStopPrice < minAllowedStop)
+                            {
+                                double original = breakEvenStopPrice;
+                                breakEvenStopPrice = Instrument.MasterInstrument.RoundToTickSize(minAllowedStop);
+                                Print($"[MFE_PROTECT_CLAMP] SHORT: adjusted floor from {original:F4} to {breakEvenStopPrice:F4} (market={currentPrice:F4})");
+                            }
+
+                            ApplyProfitFloorStop(orderName, breakEvenStopPrice);
                             currentTradeStopLossPoints = BreakEvenOffset;
                         }
-                        
-                        Print($"[BREAKEVEN] Bar {CurrentBar}: SHORT break-even activated! Entry={entryPrice:F2}, Profit={currentProfit:F2}, BreakEvenStop={breakEvenStopPrice:F2} (Entry-{BreakEvenOffset}), UseEmaTrailingStop={UseEmaTrailingStop}");
+
+                        Print($"[MFE_PROTECT] Bar {CurrentBar}: SHORT profit floor armed. Entry={entryPrice:F2}, PeakMFE={currentTradeMfePoints:F2}, CurrentProfit={currentProfit:F2}, Floor={breakEvenStopPrice:F2} (Entry-{BreakEvenOffset}), UseTrailingStop={UseTrailingStop}, AppliedFloor={canApplyProfitFloor}");
                     }
-                    
+
                     breakEvenActivated = true;
                     breakEvenEntryPrice = entryPrice;
                 }
             }
+
+            ReinforceProfitFloorStopIfNeeded();
 
             // ====================================================================
             // GUARD 3: EMA Trailing Stop Loss Management
@@ -1088,10 +2157,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 if (!shouldActivateStop)
                 {
-                    // Skip EMA trailing stop management if not activated yet
-                    // Return early without setting stop loss
-                    return false;
+                    // Skip EMA trailing stop management if not activated yet,
+                    // but continue other exit logic this bar.
                 }
+                else
+                {
                 
                 double currentFastEma = fastEma[0]; // Current Fast EMA value
                 double newStopLossPrice = double.NaN;
@@ -1103,7 +2173,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 if (currentPos == MarketPosition.Long)
                 {
-                    orderName = "BarsOnTheFlowLong";
+                    orderName = GetActiveEntrySignal();
                     double entryPrice = Position.AveragePrice;
                     // For longs: stop loss = Fast EMA, but only moves UP (never down)
                     double emaBasedStop = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
@@ -1112,55 +2182,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                     double proposedStop = emaBasedStop;
                     if (EmaStopMinDistanceFromEntry > 0)
                     {
-                        double minStopPrice = entryPrice + EmaStopMinDistanceFromEntry;
-                        // Stop should be at least minStopPrice, but can be higher if EMA is higher
-                        proposedStop = Instrument.MasterInstrument.RoundToTickSize(Math.Max(emaBasedStop, minStopPrice));
+                        // For LONG: protective stop must be BELOW entry by at least EmaStopMinDistanceFromEntry.
+                        // If EMA-based stop is too tight (too high), clamp it DOWN.
+                        double maxAllowedStop = entryPrice - EmaStopMinDistanceFromEntry;
+                        proposedStop = Instrument.MasterInstrument.RoundToTickSize(Math.Min(emaBasedStop, maxAllowedStop));
                     }
                     
                     // Only update if the proposed stop is higher than current (or if current is NaN)
-                    // This allows the stop to trail the EMA upward, but ensures it never goes below entry + minDistance
+                    // This allows the stop to trail the EMA upward, but ensures it never gets tighter than the min distance from entry.
                     if (double.IsNaN(currentEmaStopLoss) || proposedStop > currentEmaStopLoss)
-                    {
-                        newStopLossPrice = proposedStop;
-                        currentEmaStopLoss = newStopLossPrice;
-                        
-                        // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
-                        // Otherwise, set the stop loss normally
-                        if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
-                        {
-                            SetStopLoss(orderName, CalculationMode.Price, newStopLossPrice, false);
-                        }
-                        
-                        currentTradeStopLossPoints = Math.Abs(entryPrice - newStopLossPrice);
-                        if (EmaStopMinDistanceFromEntry > 0 && newStopLossPrice > emaBasedStop)
-                        {
-                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, EMA-based stop={emaBasedStop:F4}, Min distance={EmaStopMinDistanceFromEntry:F4}, Final stop loss={newStopLossPrice:F4} (enforced minimum distance from entry {entryPrice:F4}), TriggerMode={EmaStopTriggerMode}");
-                        }
-                        else
-                        {
-                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, TriggerMode={EmaStopTriggerMode} (EMA trailing stop overrides break-even)");
-                        }
-                    }
-                }
-                else if (currentPos == MarketPosition.Short)
-                {
-                    orderName = "BarsOnTheFlowShort";
-                    double entryPrice = Position.AveragePrice;
-                    // For shorts: stop loss = Fast EMA, but only moves DOWN (never up)
-                    double emaBasedStop = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
-                    
-                    // Calculate proposed stop based on EMA and minimum distance
-                    double proposedStop = emaBasedStop;
-                    if (EmaStopMinDistanceFromEntry > 0)
-                    {
-                        double maxStopPrice = entryPrice - EmaStopMinDistanceFromEntry;
-                        // Stop should be at most maxStopPrice, but can be lower if EMA is lower
-                        proposedStop = Instrument.MasterInstrument.RoundToTickSize(Math.Min(emaBasedStop, maxStopPrice));
-                    }
-                    
-                    // Only update if the proposed stop is lower than current (or if current is NaN)
-                    // This allows the stop to trail the EMA downward, but ensures it never goes above entry - minDistance
-                    if (double.IsNaN(currentEmaStopLoss) || proposedStop < currentEmaStopLoss)
                     {
                         newStopLossPrice = proposedStop;
                         currentEmaStopLoss = newStopLossPrice;
@@ -1175,6 +2205,48 @@ namespace NinjaTrader.NinjaScript.Strategies
                         currentTradeStopLossPoints = Math.Abs(entryPrice - newStopLossPrice);
                         if (EmaStopMinDistanceFromEntry > 0 && newStopLossPrice < emaBasedStop)
                         {
+                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, EMA-based stop={emaBasedStop:F4}, Min distance={EmaStopMinDistanceFromEntry:F4}, Final stop loss={newStopLossPrice:F4} (enforced minimum distance from entry {entryPrice:F4}), TriggerMode={EmaStopTriggerMode}");
+                        }
+                        else
+                        {
+                            Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: LONG - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, TriggerMode={EmaStopTriggerMode} (EMA trailing stop overrides break-even)");
+                        }
+                    }
+                }
+                else if (currentPos == MarketPosition.Short)
+                {
+                    orderName = GetActiveEntrySignal();
+                    double entryPrice = Position.AveragePrice;
+                    // For shorts: stop loss = Fast EMA, but only moves DOWN (never up)
+                    double emaBasedStop = Instrument.MasterInstrument.RoundToTickSize(currentFastEma);
+                    
+                    // Calculate proposed stop based on EMA and minimum distance
+                    double proposedStop = emaBasedStop;
+                    if (EmaStopMinDistanceFromEntry > 0)
+                    {
+                        // For SHORT: protective stop must be ABOVE entry by at least EmaStopMinDistanceFromEntry.
+                        // If EMA-based stop is too tight (too low), clamp it UP.
+                        double minAllowedStop = entryPrice + EmaStopMinDistanceFromEntry;
+                        proposedStop = Instrument.MasterInstrument.RoundToTickSize(Math.Max(emaBasedStop, minAllowedStop));
+                    }
+                    
+                    // Only update if the proposed stop is lower than current (or if current is NaN)
+                    // This allows the stop to trail the EMA downward, but ensures it never gets tighter than the min distance from entry.
+                    if (double.IsNaN(currentEmaStopLoss) || proposedStop < currentEmaStopLoss)
+                    {
+                        newStopLossPrice = proposedStop;
+                        currentEmaStopLoss = newStopLossPrice;
+                        
+                        // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
+                        // Otherwise, set the stop loss normally
+                        if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
+                        {
+                            SetStopLoss(orderName, CalculationMode.Price, newStopLossPrice, false);
+                        }
+                        
+                        currentTradeStopLossPoints = Math.Abs(entryPrice - newStopLossPrice);
+                        if (EmaStopMinDistanceFromEntry > 0 && newStopLossPrice > emaBasedStop)
+                        {
                             Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, EMA-based stop={emaBasedStop:F4}, Min distance={EmaStopMinDistanceFromEntry:F4}, Final stop loss={newStopLossPrice:F4} (enforced minimum distance from entry {entryPrice:F4}), TriggerMode={EmaStopTriggerMode}");
                         }
                         else
@@ -1182,6 +2254,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print($"[EMA_TRAILING_STOP] Bar {CurrentBar}: SHORT - Fast EMA={currentFastEma:F4}, Stop loss={newStopLossPrice:F4}, TriggerMode={EmaStopTriggerMode} (EMA trailing stop overrides break-even)");
                         }
                     }
+                }
                 }
             }
 
@@ -1210,9 +2283,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: EMA trailing stop INACTIVE - Current profit ({activationProfitCheck:F4}) < Min profit required ({EmaStopMinProfitBeforeActivation:F4})");
                     }
-                    return false; // Skip EMA stop check if not activated yet
                 }
-                
+                else
+                {
                 // Use completed bar [1] for the check (matches the bar we're checking)
                 double completedBarHigh = High[1];
                 double completedBarLow = Low[1];
@@ -1352,9 +2425,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         double currentBarClose = Close[0];
                         double currentBarFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
                         bool currentBarAboveEma = !double.IsNaN(currentBarFastEma) && currentBarClose > currentBarFastEma;
-                        int gradWindow = Math.Max(2, FastGradLookbackBars);
                         double currentGradDeg;
-                        ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                        GetCurrentGradient(out currentGradDeg);
                         
                         Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: LONG - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, FullBodyBelow={(bodyTop < effectiveStopLoss && bodyBottom < effectiveStopLoss)}, Trigger={shouldTrigger}");
                         if (shouldTrigger)
@@ -1442,9 +2514,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         double currentBarClose = Close[0];
                         double currentBarFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
                         bool currentBarBelowEma = !double.IsNaN(currentBarFastEma) && currentBarClose < currentBarFastEma;
-                        int gradWindow = Math.Max(2, FastGradLookbackBars);
                         double currentGradDeg;
-                        ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                        GetCurrentGradient(out currentGradDeg);
                         
                         Print($"[EMA_STOP_CHECK] Bar {CurrentBar}: SHORT - BodyOnly mode - Open={completedBarOpen:F4}, Close={completedBarClose:F4}, BodyTop={bodyTop:F4}, BodyBottom={bodyBottom:F4}, StopLoss={effectiveStopLoss:F4}, FullBodyAbove={(bodyTop > effectiveStopLoss && bodyBottom > effectiveStopLoss)}, Trigger={shouldTrigger}");
                         if (shouldTrigger)
@@ -1497,50 +2568,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         currentTradeExitReason = "BarsOnTheFlowEmaStop";
                         lastExitBarIndex = CurrentBar;
-                        ExitLong("BarsOnTheFlowEmaStop", "BarsOnTheFlowLong");
+                        ExitLongTrace("BarsOnTheFlowEmaStop", GetActiveEntrySignal(), "BarsOnTheFlowEmaStop");
                         intendedPosition = MarketPosition.Flat;
                         RecordExitForCooldown(MarketPosition.Long);
 
-                        if (ReverseOnEmaStop && EnableShorts && allowShortOnEmaStop)
+                        if (ReverseOnEmaStop && EnableShorts)
                         {
-                            if (intendedPosition != MarketPosition.Short)
-                            {
-                                currentTradeEntryReason = "ReverseFromEmaStop";
-                                ResetExitReason();
-                                Print($"[EMA_STOP_REVERSE] Bar {CurrentBar}: Reversing to SHORT after EMA stop");
-                                SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
-                                lastEntryBarIndex = CurrentBar;
-                                lastEntryDirection = MarketPosition.Short;
-                                intendedPosition = MarketPosition.Short;
-                                placedEntry = true;
-                            }
+                            pendingEmaStopReverseShort = true;
+                            pendingEmaStopReverseLong = false;
+                            pendingEmaStopReverseBar = CurrentBar;
+                            pendingEmaStopReverseAllowed = allowShortOnEmaStop;
+                            Print($"[EMA_STOP_REVERSE_DEFER] Bar {CurrentBar}: Queued SHORT reversal after EMA stop. allowShortOnEmaStop={allowShortOnEmaStop}");
                         }
                     }
                     else if (currentPos == MarketPosition.Short)
                     {
                         currentTradeExitReason = "BarsOnTheFlowEmaStopS";
                         lastExitBarIndex = CurrentBar;
-                        ExitShort("BarsOnTheFlowEmaStopS", "BarsOnTheFlowShort");
+                        ExitShortTrace("BarsOnTheFlowEmaStopS", GetActiveEntrySignal(), "BarsOnTheFlowEmaStopS");
                         intendedPosition = MarketPosition.Flat;
                         RecordExitForCooldown(MarketPosition.Short);
 
-                        if (ReverseOnEmaStop && allowLongOnEmaStop)
+                        if (ReverseOnEmaStop)
                         {
-                            if (intendedPosition != MarketPosition.Long)
-                            {
-                                currentTradeEntryReason = "ReverseFromEmaStop";
-                                ResetExitReason();
-                                Print($"[EMA_STOP_REVERSE] Bar {CurrentBar}: Reversing to LONG after EMA stop");
-                                SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
-                                lastEntryBarIndex = CurrentBar;
-                                lastEntryDirection = MarketPosition.Long;
-                                intendedPosition = MarketPosition.Long;
-                                placedEntry = true;
-                            }
+                            pendingEmaStopReverseLong = true;
+                            pendingEmaStopReverseShort = false;
+                            pendingEmaStopReverseBar = CurrentBar;
+                            pendingEmaStopReverseAllowed = allowLongOnEmaStop;
+                            Print($"[EMA_STOP_REVERSE_DEFER] Bar {CurrentBar}: Queued LONG reversal after EMA stop. allowLongOnEmaStop={allowLongOnEmaStop}");
                         }
                     }
+                }
                 }
             }
 
@@ -1552,44 +2610,63 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ====================================================================
             if (UseGradientStopLoss && currentPos != MarketPosition.Flat)
             {
-                // IMPORTANT: Recalculate gradient using the bar that just closed ([1])
-                // This ensures we're checking the gradient of the bar where the decision appears
-                // (same timing fix as for entry decisions)
-                int gradWindow = Math.Max(2, FastGradLookbackBars);
-                double currentGradDeg;
-                double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                double currentGradient = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
-                
-                if (currentPos == MarketPosition.Long)
+                int barsSinceEntry = lastEntryBarIndex >= 0 ? (CurrentBar - lastEntryBarIndex) : int.MaxValue;
+
+                if (barsSinceEntry < GradientStopMinBarsDelay)
                 {
-                    Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: LONG - Gradient={currentGradient:F2}° (recalculated), ExitThreshold={ExitLongBelowGradient:F2}°");
-                    
-                    if (!double.IsNaN(currentGradient) && currentGradient < ExitLongBelowGradient)
-                    {
-                        Print($"[GRADIENT_STOP_EXIT] Bar {CurrentBar}: LONG exit triggered - Gradient ({currentGradient:F2}°) < ExitThreshold ({ExitLongBelowGradient:F2}°)");
-                        currentTradeExitReason = "GradientStopLong";
-                        lastExitBarIndex = CurrentBar;
-                        ExitLong("GradientStopLong", "BarsOnTheFlowLong");
-                        intendedPosition = MarketPosition.Flat;
-                        RecordExitForCooldown(MarketPosition.Long);
-                        deferredLongEntry = false;
-                        deferredShortEntry = false;
-                    }
+                    Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: Skipped - only {barsSinceEntry} bars since entry (min={GradientStopMinBarsDelay})");
                 }
-                else if (currentPos == MarketPosition.Short)
+                else
                 {
-                    Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: SHORT - Gradient={currentGradient:F2}° (recalculated), ExitThreshold={ExitShortAboveGradient:F2}°");
+                    double currentGradDeg;
+                    GetCurrentGradient(out currentGradDeg);
+                    double currentGradient = currentGradDeg;
                     
-                    if (!double.IsNaN(currentGradient) && currentGradient > ExitShortAboveGradient)
+                    if (currentPos == MarketPosition.Long)
                     {
-                        Print($"[GRADIENT_STOP_EXIT] Bar {CurrentBar}: SHORT exit triggered - Gradient ({currentGradient:F2}°) > ExitThreshold ({ExitShortAboveGradient:F2}°)");
-                        currentTradeExitReason = "GradientStopShort";
-                        lastExitBarIndex = CurrentBar;
-                        ExitShort("GradientStopShort", "BarsOnTheFlowShort");
-                        intendedPosition = MarketPosition.Flat;
-                        RecordExitForCooldown(MarketPosition.Short);
-                        deferredLongEntry = false;
-                        deferredShortEntry = false;
+                        Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: LONG - Gradient={currentGradient:F2}° (recalculated), ExitThreshold={ExitLongBelowGradient:F2}°, BarsInTrade={barsSinceEntry}");
+                        
+                        if (!double.IsNaN(currentGradient) && currentGradient < ExitLongBelowGradient)
+                        {
+                            if (ShouldSkipGradientStopForMfeProtection())
+                            {
+                                // profit floor stop manages exit
+                            }
+                            else
+                            {
+                            Print($"[GRADIENT_STOP_EXIT] Bar {CurrentBar}: LONG exit triggered - Gradient ({currentGradient:F2}°) < ExitThreshold ({ExitLongBelowGradient:F2}°) after {barsSinceEntry} bars");
+                            currentTradeExitReason = "GradientStopLong";
+                            lastExitBarIndex = CurrentBar;
+                            ExitLongTrace("GradientStopLong", GetActiveEntrySignal(), "GradientStopLong");
+                            intendedPosition = MarketPosition.Flat;
+                            RecordExitForCooldown(MarketPosition.Long);
+                            deferredLongEntry = false;
+                            deferredShortEntry = false;
+                            }
+                        }
+                    }
+                    else if (currentPos == MarketPosition.Short)
+                    {
+                        Print($"[GRADIENT_STOP_CHECK] Bar {CurrentBar}: SHORT - Gradient={currentGradient:F2}° (recalculated), ExitThreshold={ExitShortAboveGradient:F2}°, BarsInTrade={barsSinceEntry}");
+                        
+                        if (!double.IsNaN(currentGradient) && currentGradient > ExitShortAboveGradient)
+                        {
+                            if (ShouldSkipGradientStopForMfeProtection())
+                            {
+                                // profit floor stop manages exit
+                            }
+                            else
+                            {
+                            Print($"[GRADIENT_STOP_EXIT] Bar {CurrentBar}: SHORT exit triggered - Gradient ({currentGradient:F2}°) > ExitThreshold ({ExitShortAboveGradient:F2}°) after {barsSinceEntry} bars");
+                            currentTradeExitReason = "GradientStopShort";
+                            lastExitBarIndex = CurrentBar;
+                            ExitShortTrace("GradientStopShort", GetActiveEntrySignal(), "GradientStopShort");
+                            intendedPosition = MarketPosition.Flat;
+                            RecordExitForCooldown(MarketPosition.Short);
+                            deferredLongEntry = false;
+                            deferredShortEntry = false;
+                            }
+                        }
                     }
                 }
             }
@@ -1610,7 +2687,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
                     currentTradeExitReason = "BarsOnTheFlowExitS";
                     lastExitBarIndex = CurrentBar;
-                    ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
+                    ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                     intendedPosition = MarketPosition.Flat;
                     pendingExitShortOnBad = false;
                     RecordExitForCooldown(MarketPosition.Short);
@@ -1631,9 +2708,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Get current bar conditions for logging
                     double currentClose = Close[0];
                     double currentFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
-                    int gradWindow = Math.Max(2, FastGradLookbackBars);
                     double currentGradDeg;
-                    ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    GetCurrentGradient(out currentGradDeg);
                     bool barAboveEma = !double.IsNaN(currentFastEma) && currentClose > currentFastEma;
                     
                     Print($"[EXIT_DEBUG] Bar {CurrentBar}: pendingExitLongOnGood resolving - prevBad, exiting LONG");
@@ -1645,7 +2721,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     CaptureDecisionContext(prevOpen, prevClose, allowLongThisBar, allowShortThisBar, trendUp, trendDown);
                     currentTradeExitReason = "BarsOnTheFlowExit";
                     lastExitBarIndex = CurrentBar;
-                    ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                    ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                     intendedPosition = MarketPosition.Flat;
                     pendingExitLongOnGood = false;
                     RecordExitForCooldown(MarketPosition.Long);
@@ -1667,10 +2743,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (trendUp)
                 {
                     // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
-                    int gradWindow = Math.Max(2, FastGradLookbackBars);
                     double currentGradDeg;
-                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    double currentGradSlope = GetCurrentGradient(out currentGradDeg);
+                    double gradDegToUse = currentGradDeg;
                     
                     // CRITICAL: If Fast EMA is below Slow EMA on the bar that just closed, block LONG entry
                     bool emaCrossedBelow = false;
@@ -1715,8 +2790,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG from pendingShortFromGood, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}", "ENTRY");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                            SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                            SubmitLongEntry();
                             lastEntryBarIndex = CurrentBar;
                             lastEntryDirection = MarketPosition.Long;
                             intendedPosition = MarketPosition.Long;
@@ -1734,10 +2808,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                 else if (trendDown && prevBad)
                 {
                     // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
-                    int gradWindow = Math.Max(2, FastGradLookbackBars);
                     double currentGradDeg;
-                    double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                    double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                    double currentGradSlope = GetCurrentGradient(out currentGradDeg);
+                    double gradDegToUse = currentGradDeg;
                     
                     // CRITICAL: Block SHORT entry if close is above Fast EMA OR if Fast EMA is above Slow EMA
                     // This ensures shorts only enter when price is below Fast EMA (bearish condition)
@@ -1790,8 +2863,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT from pendingShortFromGood, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}", "ENTRY");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                            SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                            SubmitShortEntry();
                             lastEntryBarIndex = CurrentBar;
                             lastEntryDirection = MarketPosition.Short;
                             intendedPosition = MarketPosition.Short;
@@ -1859,8 +2931,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT from pendingLongFromBad, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                            SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                            EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                            SubmitShortEntry();
                             lastEntryBarIndex = CurrentBar;
                             lastEntryDirection = MarketPosition.Short;
                             intendedPosition = MarketPosition.Short;
@@ -1916,8 +2987,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             ResetExitReason(); // Reset exit reason when entering new trade
                             PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG from pendingLongFromBad, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                             // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                            SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                            EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                            SubmitLongEntry();
                             lastEntryBarIndex = CurrentBar;
                             lastEntryDirection = MarketPosition.Long;
                             intendedPosition = MarketPosition.Long;
@@ -1970,7 +3040,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             // Don't reverse if we would avoid longs on bad candles
                             currentTradeExitReason = "BarsOnTheFlowExitS";
                             lastExitBarIndex = CurrentBar;
-                            ExitShort();
+                            ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                             RecordExitForCooldown(MarketPosition.Short);
                         }
                         else
@@ -1978,10 +3048,9 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT and REVERSING to LONG");
                             
                             // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
-                            int gradWindow = Math.Max(2, FastGradLookbackBars);
                             double currentGradDeg;
-                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            double currentGradSlope = GetCurrentGradient(out currentGradDeg);
+                            double gradDegToUse = currentGradDeg;
                             
                             // ReverseOnTrendBreak overrides gradient filter, but EMA crossover filter still applies
                             PrintAndLog($"[GRADIENT_CHECK] Bar {CurrentBar}: LONG entry (reverse from short) | gradient={gradDegToUse:F2}° (recalculated), threshold={SkipLongsBelowGradient:F2}°, GradientFilterEnabled={GradientFilterEnabled}, BYPASSED (ReverseOnTrendBreak={ReverseOnTrendBreak})", "DEBUG");
@@ -1992,7 +3061,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             
                             currentTradeExitReason = "BarsOnTheFlowExitS";
                             lastExitBarIndex = CurrentBar;
-                            ExitShort();
+                            ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                             RecordExitForCooldown(MarketPosition.Short);
                             if (intendedPosition != MarketPosition.Long && !skipDueToEmaCrossover)
                             {
@@ -2000,8 +3069,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (reverse from short), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
-                                SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                SubmitLongEntry();
                                 lastEntryBarIndex = CurrentBar;
                                 lastEntryDirection = MarketPosition.Long;
                                 intendedPosition = MarketPosition.Long;
@@ -2022,7 +3090,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print($"[EXIT_DEBUG] Bar {CurrentBar}: TrendUp break - exiting SHORT (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         currentTradeExitReason = "BarsOnTheFlowExitS";
                         lastExitBarIndex = CurrentBar;
-                        ExitShort();
+                        ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                         RecordExitForCooldown(MarketPosition.Short);
                     }
                 }
@@ -2037,6 +3105,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (!placedEntry && isActuallyFlat)
                 {
                     Print($"[ENTRY_DEBUG] Bar {CurrentBar}: ENTRY BLOCK REACHED - checking LONG entry conditions");
+                    if (!EntryFiltersPass(out string entryFilterReasonLong))
+                    {
+                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: LONG entry blocked - {entryFilterReasonLong}");
+                    }
+                    else
                     if (AvoidLongsOnBadCandle && prevBad)
                     {
                         if (UseDeferredEntry)
@@ -2054,6 +3127,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (allowLongThisBar)
                     {
+                        bool currentBarIsBad = IsCurrentBarDownByMinTicks();
+                        if (AvoidLongsOnBadCandleCurrentBar && currentBarIsBad)
+                        {
+                            Print($"[ENTRY_DEBUG] Bar {CurrentBar}: LONG entry blocked - current bar down by >= {MinTicksCurrentBarDirection} ticks (Close[0]={Close[0]:F4} < Open[0]={Open[0]:F4}) and AvoidLongsOnBadCandleCurrentBar=True");
+                        }
+                        else
+                        {
                         Print($"[ENTRY_DEBUG] Bar {CurrentBar}: allowLongThisBar=True - proceeding with LONG entry checks");
                         Print($"[ENTRY_DEBUG] Bar {CurrentBar}: No bad candle block - checking gradient and EMA filters");
                         
@@ -2108,8 +3188,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                     currentTradeEntryReason = entryReason;
                                     ResetExitReason();
                                     PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={entryReason}");
-                                    SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                    SubmitLongEntry();
                                     lastEntryBarIndex = CurrentBar;
                                     lastEntryDirection = MarketPosition.Long;
                                     intendedPosition = MarketPosition.Long;
@@ -2133,6 +3212,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         else
                         {
                             Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked by filters - skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
+                        }
                         }
                     }
                     else
@@ -2169,7 +3249,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidShortsOnGoodCandle");
                             currentTradeExitReason = "BarsOnTheFlowExit";
                             lastExitBarIndex = CurrentBar;
-                            ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                            ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                             RecordExitForCooldown(MarketPosition.Long);
                         }
                         else
@@ -2183,22 +3263,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                             PrintAndLog($"[EMA_CROSSOVER_CHECK] Bar {CurrentBar}: SHORT entry (reverse from long) | UseEmaCrossoverFilter={UseEmaCrossoverFilter}, EnableBarsOnTheFlowTrendDetection={EnableBarsOnTheFlowTrendDetection}, skipDueToEmaCrossover={skipDueToEmaCrossover}", "DEBUG");
                             
                             // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
-                            int gradWindow = Math.Max(2, FastGradLookbackBars);
                             double currentGradDeg;
-                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            double currentGradSlope = GetCurrentGradient(out currentGradDeg);
+                            double gradDegToUse = currentGradDeg;
                             
                             currentTradeExitReason = "BarsOnTheFlowExit";
                             lastExitBarIndex = CurrentBar;
-                            ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                            ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                             if (intendedPosition != MarketPosition.Short && !skipDueToEmaCrossover)
                             {
                                 currentTradeEntryReason = BuildEntryReason(false, trendUp, trendDown, prevGood, prevBad, false, skipDueToEmaCrossover, "ReverseFromLong", gradDegToUse);
                                 ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (reverse from long), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
-                                SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                SubmitShortEntry();
                                 lastEntryBarIndex = CurrentBar;
                                 lastEntryDirection = MarketPosition.Short;
                                 intendedPosition = MarketPosition.Short;
@@ -2220,7 +3298,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print($"[Reverse Debug] Bar {CurrentBar}: Not reversing - ReverseOnTrendBreak={ReverseOnTrendBreak}, allowShortThisBar={allowShortThisBar}");
                         currentTradeExitReason = "BarsOnTheFlowExit";
                         lastExitBarIndex = CurrentBar;
-                        ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                        ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                         RecordExitForCooldown(MarketPosition.Long);
                     }
                 }
@@ -2237,7 +3315,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Print($"[ENTRY_DEBUG] Bar {CurrentBar}: ENTRY BLOCK REACHED - checking SHORT entry conditions");
                     Print($"[SHORT_ENTRY_DEBUG] Bar {CurrentBar}: Checking SHORT entry - trendDown={trendDown}, prevBad={prevBad}, prevGood={prevGood}, allowShortThisBar={allowShortThisBar}, AvoidShortsOnGoodCandle={AvoidShortsOnGoodCandle}");
                     
-                    if (AvoidShortsOnGoodCandle && prevGood)
+                    if (!EntryFiltersPass(out string entryFilterReasonShort))
+                    {
+                        Print($"[ENTRY_DEBUG] Bar {CurrentBar}: SHORT entry blocked - {entryFilterReasonShort}");
+                    }
+                    else if (AvoidShortsOnGoodCandle && prevGood)
                     {
                         if (UseDeferredEntry)
                         {
@@ -2254,6 +3336,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                     }
                     else if (allowShortThisBar)
                         {
+                            bool currentBarIsGood = IsCurrentBarUpByMinTicks();
+                            if (AvoidShortsOnGoodCandleCurrentBar && currentBarIsGood)
+                            {
+                                Print($"[ENTRY_DEBUG] Bar {CurrentBar}: SHORT entry blocked - current bar up by >= {MinTicksCurrentBarDirection} ticks (Close[0]={Close[0]:F4} > Open[0]={Open[0]:F4}) and AvoidShortsOnGoodCandleCurrentBar=True");
+                            }
+                            else
+                            {
                             // Recalculate gradient using the bar that just closed ([1]) to ensure we have the most current gradient
                             double gradDegToUse;
                             GetCurrentGradient(out gradDegToUse);
@@ -2298,8 +3387,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                         currentTradeEntryReason = entryReason;
                                         ResetExitReason();
                                         PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT, CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={entryReason}");
-                                        SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                                        EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                        SubmitShortEntry();
                                         lastEntryBarIndex = CurrentBar;
                                         lastEntryDirection = MarketPosition.Short;
                                         intendedPosition = MarketPosition.Short;
@@ -2324,6 +3412,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             {
                                 Print($"[ENTRY_DEBUG] Bar {CurrentBar}: Entry blocked by filters - skipDueToGradient={skipDueToGradient}, skipDueToEmaCrossover={skipDueToEmaCrossover}, AllowMidBarGradientEntry={AllowMidBarGradientEntry}");
                             }
+                            }
                         }
                         else
                         {
@@ -2338,6 +3427,9 @@ namespace NinjaTrader.NinjaScript.Strategies
             // ExitOnTrendBreak only works when BarsOnTheFlow trend detection is enabled
             else if (EnableBarsOnTheFlowTrendDetection && ExitOnTrendBreak && currentPos == MarketPosition.Long)
             {
+                int barsSinceEntryLong = lastEntryBarIndex >= 0 ? (CurrentBar - lastEntryBarIndex) : 0;
+                if (barsSinceEntryLong >= MinBarsBeforeTrendBreakExit)
+                {
                 // Check if this is a marginal trend (2 good, 2 bad) with net positive PnL
                 if (isMarginalTrend && fourBarPnl > 0 && !pendingExitLongOnGood)
                 {
@@ -2357,16 +3449,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG (no reverse due to good candle)");
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidShortsOnGoodCandle");
-                            ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                            ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                             RecordExitForCooldown(MarketPosition.Long);
                         }
                         else
                         {
                             // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
-                            int gradWindow = Math.Max(2, FastGradLookbackBars);
                             double currentGradDeg;
-                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            double currentGradSlope = GetCurrentGradient(out currentGradDeg);
+                            double gradDegToUse = currentGradDeg;
                             
                             // ReverseOnTrendBreak overrides gradient filter, but EMA crossover filter still applies
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG and REVERSING to SHORT");
@@ -2378,7 +3469,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             
                             currentTradeExitReason = "BarsOnTheFlowExit";
                             lastExitBarIndex = CurrentBar;
-                            ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                            ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                             RecordExitForCooldown(MarketPosition.Long);
                             if (intendedPosition != MarketPosition.Short && !skipDueToEmaCrossover)
                             {
@@ -2386,8 +3477,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (ExitOnTrendBreak reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
-                                SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                                EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                                SubmitShortEntry();
                                 lastEntryBarIndex = CurrentBar;
                                 lastEntryDirection = MarketPosition.Short;
                                 intendedPosition = MarketPosition.Short;
@@ -2407,14 +3497,18 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting LONG (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         Print($"[Reverse Debug] Bar {CurrentBar}: Just exiting, no reversal");
-                        ExitLong("BarsOnTheFlowExit", "BarsOnTheFlowLong");
+                        ExitLongTrace("BarsOnTheFlowExit", GetActiveEntrySignal(), "BarsOnTheFlowExit");
                         RecordExitForCooldown(MarketPosition.Long);
                     }
+                }
                 }
             }
             // ExitOnTrendBreak only works when BarsOnTheFlow trend detection is enabled
             else if (EnableBarsOnTheFlowTrendDetection && ExitOnTrendBreak && currentPos == MarketPosition.Short)
             {
+                int barsSinceEntryShort = lastEntryBarIndex >= 0 ? (CurrentBar - lastEntryBarIndex) : 0;
+                if (barsSinceEntryShort >= MinBarsBeforeTrendBreakExit)
+                {
                 // Check if this is a marginal trend (2 good, 2 bad) with net negative PnL
                 if (isMarginalTrend && fourBarPnl < 0 && !pendingExitShortOnBad)
                 {
@@ -2434,16 +3528,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                         {
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT (no reverse due to bad candle)");
                             Print($"[Reverse Debug] Bar {CurrentBar}: Blocked by AvoidLongsOnBadCandle");
-                            ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
+                            ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                             RecordExitForCooldown(MarketPosition.Short);
                         }
                         else
                         {
                             // Recalculate gradient for entry reason (even though gradient filter is bypassed for reversals)
-                            int gradWindow = Math.Max(2, FastGradLookbackBars);
                             double currentGradDeg;
-                            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-                            double gradDegToUse = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
+                            double currentGradSlope = GetCurrentGradient(out currentGradDeg);
+                            double gradDegToUse = currentGradDeg;
                             
                             // ReverseOnTrendBreak overrides gradient filter, but EMA crossover filter still applies
                             Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT and REVERSING to LONG");
@@ -2455,7 +3548,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                             
                             currentTradeExitReason = "BarsOnTheFlowExitS";
                             lastExitBarIndex = CurrentBar;
-                            ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
+                            ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                             RecordExitForCooldown(MarketPosition.Short);
                             if (intendedPosition != MarketPosition.Long && !skipDueToEmaCrossover)
                             {
@@ -2463,8 +3556,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 ResetExitReason(); // Reset exit reason when entering new trade
                                 PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (ExitOnTrendBreak reversal), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                                 // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement) - even during reversals
-                                SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                                EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                                SubmitLongEntry();
                                 lastEntryBarIndex = CurrentBar;
                                 lastEntryDirection = MarketPosition.Long;
                                 intendedPosition = MarketPosition.Long;
@@ -2484,9 +3576,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     {
                         Print($"[EXIT_DEBUG] Bar {CurrentBar}: ExitOnTrendBreak - exiting SHORT (no reverse, ReverseOnTrendBreak={ReverseOnTrendBreak})");
                         Print($"[Reverse Debug] Bar {CurrentBar}: Just exiting, no reversal");
-                        ExitShort("BarsOnTheFlowExitS", "BarsOnTheFlowShort");
+                        ExitShortTrace("BarsOnTheFlowExitS", GetActiveEntrySignal(), "BarsOnTheFlowExitS");
                         RecordExitForCooldown(MarketPosition.Short);
                     }
+                }
                 }
             }
 
@@ -2743,6 +3836,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         /// </summary>
         private void ProcessMidBarOperations()
         {
+            ReinforceProfitFloorStopIfNeeded();
+
             // Handle mid-bar gradient entry and exit checks
             if (GradientFilterEnabled)
             {
@@ -3015,7 +4110,19 @@ namespace NinjaTrader.NinjaScript.Strategies
                 string gradTag = "FastGradLabel_" + prevBarIndex;
                 double gradY = labelBaseY + (labelStackOffset * 12 * TickSize); // 12 ticks spacing between labels
                 labelStackOffset++; // Move offset for next label
-                string gradText = "F:" + gradForLabel.ToString("F1");
+
+                // "F:" shows the exact angle used by the strategy for this bar. When the used
+                // value is NOT already the chart-scaled visual angle, also show "eye:" so you
+                // can compare the number against what the slope looks like on the chart.
+                string gradText = "F:" + gradForLabel.ToString("F1") + "\u00B0";
+                double eyeDeg = double.NaN;
+                if (chartGradientByBar.ContainsKey(prevBarIndex))
+                    eyeDeg = chartGradientByBar[prevBarIndex];
+                else if (!double.IsNaN(lastChartScaledGradDeg))
+                    eyeDeg = lastChartScaledGradDeg;
+                if (!double.IsNaN(eyeDeg) && Math.Abs(eyeDeg - gradForLabel) > 0.05)
+                    gradText += "  eye:" + eyeDeg.ToString("F1") + "\u00B0";
+
                 Draw.Text(this, gradTag, gradText, 1, gradY, Brushes.Black); // barsAgo = 1
             }
 
@@ -3155,12 +4262,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 Print($"[EXIT_FILL_DEBUG] Bar {CurrentBar}: Exit filled - {action}, resetting intendedPosition from {intendedPosition} to Flat");
                 intendedPosition = MarketPosition.Flat;
-                // Reset break-even tracking
-                breakEvenActivated = false;
-                breakEvenEntryPrice = double.NaN;
-                // Reset cooldown tracking when position exits (for stop loss, manual exit, etc.)
+                ResetMfeProtectionState(clearActiveEntrySignal: true);
                 MarketPosition exitedPosition = action == OrderAction.Sell ? MarketPosition.Long : MarketPosition.Short;
                 RecordExitForCooldown(exitedPosition);
+                UpdateBarNavPositionLabels(force: true);
             }
             // Update intendedPosition when entries fill
             else if (isEntry)
@@ -3171,6 +4276,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (fillQty > Math.Max(1, Contracts) || orderQty > Math.Max(1, Contracts) || posQty > Math.Max(1, Contracts))
                 {
                     Print($"[ENTRY_FILL_QTY] Bar {CurrentBar}: Entry fill qty mismatch. FillQty={fillQty}, OrderQty={orderQty}, PositionQty={posQty}, Contracts={Contracts}, OrderName={order.Name}");
+                }
+
+                ResetMfeProtectionState();
+                string entrySignal = !string.IsNullOrEmpty(order.FromEntrySignal)
+                    ? order.FromEntrySignal
+                    : GetActiveEntrySignal();
+                try
+                {
+                    RefreshManagedStopOnly(entrySignal);
+                    Print($"[ENTRY_STOP_REFRESH] Bar {CurrentBar}: Fresh stop applied for {entrySignal} after entry fill @ {execution.Price:F2}");
+                }
+                catch (Exception ex)
+                {
+                    Print($"[ENTRY_STOP_REFRESH] Bar {CurrentBar}: Failed to refresh stop for {entrySignal}: {ex.Message}");
                 }
 
                 if (action == OrderAction.Buy)
@@ -3201,6 +4320,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                         currentTradeContracts = execution.Quantity;
                     }
                 }
+
+                UpdateBarNavPositionLabels(force: true);
             }
 
             string reason = GetOrderReason(order, isEntry, isExit);
@@ -3298,6 +4419,33 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (order == null)
                 return;
 
+            if (EnableOrderAuditLog)
+            {
+                string orderName = order.Name ?? "null";
+                string fromEntrySignal = order.FromEntrySignal ?? "null";
+                string orderId = order.OrderId ?? "null";
+                string oco = order.Oco ?? "null";
+                string action = order.OrderAction.ToString();
+                string type = order.OrderType.ToString();
+                Print($"[ORDER_AUDIT] Bar {CurrentBar}: Name={orderName}, Action={action}, Type={type}, State={orderState}, Qty={quantity}, Filled={filled}, AvgFill={averageFillPrice:F2}, Limit={limitPrice:F2}, Stop={stopPrice:F2}, FromEntrySignal={fromEntrySignal}, OCO={oco}, OrderId={orderId}, Time={time:HH:mm:ss.fff}, Comment={comment}");
+            }
+
+            string activeSignal = GetActiveEntrySignal();
+            if (profitFloorModeActive
+                && IsProfitFloorActiveForOrder(order.FromEntrySignal)
+                && !string.IsNullOrEmpty(activeSignal)
+                && string.Equals(order.FromEntrySignal, activeSignal, StringComparison.Ordinal)
+                && (IsTrailStopOrder(order)
+                    || order.OrderType == OrderType.StopMarket
+                    || order.OrderType == OrderType.StopLimit)
+                && (orderState == OrderState.Working
+                    || orderState == OrderState.Accepted
+                    || orderState == OrderState.PartFilled
+                    || orderState == OrderState.Submitted))
+            {
+                ReinforceProfitFloorStopIfNeeded();
+            }
+
             // Log only when something goes wrong or the order is cancelled/rejected
             if (error != ErrorCode.NoError || orderState == OrderState.Rejected || orderState == OrderState.Cancelled)
             {
@@ -3305,6 +4453,44 @@ namespace NinjaTrader.NinjaScript.Strategies
                       $"State={orderState}, Error={error}, Comment={comment}, Qty={quantity}, Filled={filled}, " +
                       $"AvgFill={averageFillPrice:F2}, Limit={limitPrice:F2}, Stop={stopPrice:F2}");
             }
+
+            // Handle rejected stop orders: re-submit at valid price or exit at market.
+            // NinjaTrader's built-in trailing stop can generate "stop above/below market"
+            // rejections during volatile moves. Rather than freezing, recover gracefully.
+            if (orderState == OrderState.Rejected && order.OrderType == OrderType.StopMarket
+                && Position.MarketPosition != MarketPosition.Flat)
+            {
+                Print($"[REJECTED_STOP_RECOVERY] Bar {CurrentBar}: Stop order rejected ({order.Name} {order.OrderAction} @ {stopPrice:F2}). Re-applying stop at current distance.");
+                try
+                {
+                    int stopLossTicks = CalculateStopLossTicks();
+                    RefreshManagedStopOnly(GetActiveEntrySignal());
+                    Print($"[REJECTED_STOP_RECOVERY] Re-applied {stopLossTicks}-tick stop via CalculationMode.Ticks");
+                }
+                catch (Exception ex)
+                {
+                    Print($"[REJECTED_STOP_RECOVERY] Failed to re-apply stop: {ex.Message}. Exiting at market.");
+                    if (Position.MarketPosition == MarketPosition.Long)
+                    {
+                        currentTradeExitReason = "StopRejectionExit";
+                        ExitLong("StopRejectionExit", GetActiveEntrySignal());
+                    }
+                    else if (Position.MarketPosition == MarketPosition.Short)
+                    {
+                        currentTradeExitReason = "StopRejectionExit";
+                        ExitShort("StopRejectionExit", GetActiveEntrySignal());
+                    }
+                }
+            }
+
+            if (orderState == OrderState.Rejected && order.OrderType == OrderType.Limit
+                && order.Name == "Profit target" && Position.MarketPosition != MarketPosition.Flat)
+            {
+                Print($"[REJECTED_TARGET] Bar {CurrentBar}: Profit target rejected ({order.OrderAction} @ {limitPrice:F2}, OCO={order.Oco}). Bracket was configured pre-entry on signal {GetActiveEntrySignal()}.");
+            }
+
+            if (order.Instrument == Instrument)
+                UpdateBarNavPositionLabels();
         }
 
         protected override void OnPositionUpdate(Cbi.Position position, double averagePrice, int quantity, Cbi.MarketPosition marketPosition)
@@ -3348,6 +4534,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentTradeDirection = marketPosition;
                 currentTradeContracts = Math.Abs(quantity);
                 currentTradeMFE = 0.0;
+                currentTradeMfePoints = 0.0;
                 currentTradeMAE = 0.0;
                 
                 Print($"[TRADE_ENTRY] Bar {currentTradeEntryBar} (baseBar={baseBar}, lastEntryBarIndex={lastEntryBarIndex}, CurrentBar={CurrentBar}): {marketPosition} entry at {averagePrice:F2}, Contracts={currentTradeContracts}");
@@ -3375,6 +4562,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 currentTradeDirection = MarketPosition.Flat;
                 currentTradeContracts = 0;
                 currentTradeMFE = 0.0;
+                currentTradeMfePoints = 0.0;
                 currentTradeMAE = 0.0;
                 currentTradeStopLossPoints = 0.0;
                 
@@ -3413,6 +4601,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             previousPosition = marketPosition;
+            UpdateBarNavPositionLabels();
         }
 
         private void LogPositionSizeMismatch(int quantity, MarketPosition marketPosition, int expectedQty)
@@ -3504,6 +4693,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (unrealizedPnL > currentTradeMFE)
                     currentTradeMFE = unrealizedPnL;
 
+                double favorablePoints = currentTradeDirection == MarketPosition.Long
+                    ? currentPrice - currentTradeEntryPrice
+                    : currentTradeEntryPrice - currentPrice;
+                if (favorablePoints > currentTradeMfePoints)
+                    currentTradeMfePoints = favorablePoints;
+
                 // Update MAE (worst loss)
                 if (unrealizedPnL < currentTradeMAE)
                     currentTradeMAE = unrealizedPnL;
@@ -3531,7 +4726,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     return;
                 }
 
-                // Calculate bars heldmmmmmmmm
+                // Calculate bars held
                 int barsHeld = CurrentBar - currentTradeEntryBar;
                 if (barsHeld < 0) barsHeld = 0;
 
@@ -3541,6 +4736,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 {
                     realizedPoints = lastTrade.ProfitCurrency / Instrument.MasterInstrument.PointValue;
                 }
+
+                double stopLossPointsUsed = currentTradeStopLossPoints; // For stop loss research when trade loses
 
                 // Get exit reason from order name or default, and enhance with stop loss info if applicable
                 string exitReason = "Unknown";
@@ -3584,6 +4781,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                                 stopLossPoints = Math.Max(StopLossPoints, 1.0); // Minimum 1 point
                                 Print($"[SendTradeCompletedToDashboard] Using fallback stop loss: {stopLossPoints:F2} pts");
                             }
+                            stopLossPointsUsed = stopLossPoints;
                         }
                         
                         // For break-even stops, show the offset that was used
@@ -3601,6 +4799,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                             exitReason = $"{exitReason} ({stopType} @ {stopLossPrice:F2}, {stopLossPoints:F2} pts)";
                         }
                     }
+                }
+
+                // When trade closed with negative PnL, run stop loss research (avg bar size, ATR, MFE/MAE, suggestions)
+                if (realizedPoints < 0 && EnableStopLossResearch)
+                {
+                    RunStopLossResearchOnLosingTrade(currentTradeEntryBar, currentTradeEntryPrice, lastTrade.Exit.Price, currentTradeDirection, currentTradeMFE, currentTradeMAE, stopLossPointsUsed, barsHeld, exitReason, realizedPoints);
                 }
 
                 // Capture exit bar data (using [1] since we're on first tick of next bar)
@@ -3734,6 +4938,135 @@ namespace NinjaTrader.NinjaScript.Strategies
             catch (Exception ex)
             {
                 Print($"[TRADE_EXIT] Bar {CurrentBar}: Error preparing trade data: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Compute average bar size (High-Low) in points over the N bars ending at the entry bar.
+        /// Used by stop loss research to see if stop was tighter than typical bar range.
+        /// </summary>
+        private double GetAverageBarSizePointsAtEntryBar(int entryBar1Based, int lookback)
+        {
+            int entryBarIndex = entryBar1Based - 1; // 0-based bar index
+            if (entryBarIndex < 0 || CurrentBar <= entryBarIndex)
+                return 0;
+            int start = Math.Max(0, entryBarIndex - lookback + 1);
+            double sum = 0;
+            int count = 0;
+            for (int i = start; i <= entryBarIndex; i++)
+            {
+                int barsAgo = CurrentBar - i;
+                if (barsAgo >= 0 && barsAgo < CurrentBar)
+                {
+                    sum += High[barsAgo] - Low[barsAgo];
+                    count++;
+                }
+            }
+            return count > 0 ? sum / count : 0;
+        }
+
+        /// <summary>
+        /// When a trade closes with negative PnL, log research data (avg bar size, ATR, MFE/MAE) and suggestions
+        /// to help tune stop loss and avoid being stopped out by normal bar noise.
+        /// </summary>
+        private void RunStopLossResearchOnLosingTrade(int entryBar1Based, double entryPrice, double exitPrice, MarketPosition direction, double mfe, double mae, double stopUsedPoints, int barsHeld, string exitReason, double realizedPoints)
+        {
+            if (!EnableStopLossResearch)
+                return;
+            InitializeLog(); // Ensure log dir and research log exist (may not have been written yet)
+            if (!stopLossResearchInitialized || stopLossResearchWriter == null)
+                return;
+            try
+            {
+                double avgBarSizePrice = GetAverageBarSizePointsAtEntryBar(entryBar1Based, StopLossResearchAvgBarLookback);
+                double atrAtEntryPrice = 0;
+                if (atr != null && CurrentBar >= AtrPeriod)
+                {
+                    int entryBarIndex = entryBar1Based - 1;
+                    int barsAgo = CurrentBar - entryBarIndex;
+                    if (barsAgo >= 0 && barsAgo < CurrentBar)
+                        atrAtEntryPrice = atr[barsAgo];
+                }
+                // Convert price range to points (same units as StopLossPoints) for comparison
+                int tpp = GetTicksPerPoint();
+                double pointSize = (tpp > 0 && Instrument != null && Instrument.MasterInstrument != null) ? (Instrument.MasterInstrument.TickSize * tpp) : 1.0;
+                double avgBarSize = pointSize > 0 ? avgBarSizePrice / pointSize : avgBarSizePrice;
+                double atrAtEntry = pointSize > 0 ? atrAtEntryPrice / pointSize : atrAtEntryPrice;
+
+                string dirStr = direction == MarketPosition.Long ? "Long" : "Short";
+                var analysis = new List<string>();
+                var suggestion = new List<string>();
+
+                if (stopUsedPoints > 0 && avgBarSize > 0 && stopUsedPoints < avgBarSize)
+                {
+                    analysis.Add($"Stop ({stopUsedPoints:F2} pts) was tighter than avg bar size ({avgBarSize:F2} pts)");
+                    suggestion.Add($"Consider MinStopLossPoints >= {Math.Ceiling(avgBarSize)} or StopLossMultiplier > 1 so stop is not narrower than typical bar range.");
+                }
+                if (stopUsedPoints > 0 && atrAtEntry > 0 && stopUsedPoints < atrAtEntry * 0.5)
+                {
+                    analysis.Add($"Stop ({stopUsedPoints:F2} pts) was much smaller than ATR at entry ({atrAtEntry:F2} pts)");
+                    suggestion.Add($"Volatility at entry exceeded stop; consider stop >= 0.5*ATR (e.g. {Math.Max(1, (int)(atrAtEntry * 0.5))} pts) or use dynamic/ATR-based stop.");
+                }
+                if (mae > 0)
+                {
+                    analysis.Add($"MAE was {mae:F2} pts (max adverse excursion)");
+                    if (stopUsedPoints > 0 && mae > stopUsedPoints)
+                        suggestion.Add($"Price went {mae - stopUsedPoints:F2} pts past your stop before exit; stop was hit. A wider stop (e.g. {Math.Ceiling(mae * 1.1)} pts) might have held.");
+                }
+                if (mfe > 0)
+                {
+                    analysis.Add($"MFE was {mfe:F2} pts (trade went in favor then reversed)");
+                    suggestion.Add("Consider trailing stop or profit target to lock in gains when MFE is positive.");
+                }
+                if (barsHeld <= 2)
+                {
+                    analysis.Add($"Very short hold ({barsHeld} bars); possible noise exit.");
+                    suggestion.Add("Review MinBarsBeforeTrendBreakExit or avoid exiting on first bar after entry.");
+                }
+
+                string analysisStr = analysis.Count > 0 ? string.Join("; ", analysis) : "Losing trade";
+                string suggestionStr = suggestion.Count > 0 ? string.Join(" ", suggestion) : "Review stop and entry timing.";
+
+                string timeStr = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+                string exitReasonEsc = (exitReason ?? "").Replace(",", ";").Replace("\"", "'");
+                string line = $"{timeStr},{entryBar1Based},{CurrentBar + 1},{dirStr},{entryPrice:F2},{exitPrice:F2},{realizedPoints:F2},{mfe:F2},{mae:F2},{stopUsedPoints:F2},{barsHeld},{avgBarSize:F2},{atrAtEntry:F2},\"{exitReasonEsc}\",\"{analysisStr}\",\"{suggestionStr}\"";
+                stopLossResearchWriter.WriteLine(line);
+                stopLossResearchWriter.Flush();
+                Print($"[STOP_LOSS_RESEARCH] Losing trade logged: Realized={realizedPoints:F2} pts, MFE={mfe:F2}, MAE={mae:F2}, AvgBar={avgBarSize:F2}, ATR={atrAtEntry:F2}. Suggestion: {suggestionStr}");
+
+                // Live adjustment: nudge MinStopLossPoints and/or StopLossMultiplier so next trades get wider stops (within caps)
+                if (EnableStopLossResearchLiveAdjust)
+                {
+                    double suggestedMinPoints = MinStopLossPoints;
+                    if (stopUsedPoints > 0 && avgBarSize > 0 && stopUsedPoints < avgBarSize)
+                        suggestedMinPoints = Math.Max(suggestedMinPoints, Math.Ceiling(avgBarSize));
+                    if (stopUsedPoints > 0 && atrAtEntry > 0 && stopUsedPoints < atrAtEntry * 0.5)
+                        suggestedMinPoints = Math.Max(suggestedMinPoints, Math.Max(1, (int)(atrAtEntry * 0.5)));
+                    if (mae > stopUsedPoints && stopUsedPoints > 0 && mae > 0)
+                        suggestedMinPoints = Math.Max(suggestedMinPoints, Math.Ceiling(mae * 1.1));
+
+                    int cappedMin = Math.Min((int)Math.Round(suggestedMinPoints), Math.Max(1, StopLossResearchLiveAdjustMaxMinPoints));
+                    if (cappedMin > MinStopLossPoints)
+                    {
+                        MinStopLossPoints = cappedMin;
+                        Print($"[STOP_LOSS_RESEARCH] Live adjust: MinStopLossPoints -> {MinStopLossPoints} (from research: avgBar={avgBarSize:F1}, ATR={atrAtEntry:F1}, MAE={mae:F1})");
+                    }
+
+                    bool stopWasTighterThanVolatility = (stopUsedPoints > 0 && avgBarSize > 0 && stopUsedPoints < avgBarSize) || (stopUsedPoints > 0 && atrAtEntry > 0 && stopUsedPoints < atrAtEntry * 0.5);
+                    if (stopWasTighterThanVolatility && StopLossMultiplier < StopLossResearchLiveAdjustMaxMultiplier)
+                    {
+                        double newMult = Math.Min(StopLossMultiplier + 0.05, StopLossResearchLiveAdjustMaxMultiplier);
+                        if (newMult > StopLossMultiplier)
+                        {
+                            StopLossMultiplier = Math.Round(newMult, 2);
+                            Print($"[STOP_LOSS_RESEARCH] Live adjust: StopLossMultiplier -> {StopLossMultiplier:F2}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[STOP_LOSS_RESEARCH] Error: {ex.Message}");
             }
         }
 
@@ -4162,6 +5495,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 var state = new System.Text.StringBuilder();
                 state.AppendLine("{");
                 state.AppendLine($"  \"timestamp\": \"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\",");
+                state.AppendLine($"  \"runningSince\": \"{(strategyRunStartTime != DateTime.MinValue ? strategyRunStartTime.ToString("yyyy-MM-dd HH:mm:ss") : "")}\",");
                 state.AppendLine($"  \"strategyName\": \"BarsOnTheFlow\",");
                 state.AppendLine($"  \"isRunning\": true,");
                 state.AppendLine($"  \"currentBar\": {CurrentBar},");
@@ -4201,12 +5535,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Break-even settings
                 state.AppendLine($"  \"useBreakEven\": {UseBreakEven.ToString().ToLower()},");
                 state.AppendLine($"  \"breakEvenTrigger\": {BreakEvenTrigger},");
+                state.AppendLine($"  \"mfeProtectTrigger\": {MfeProtectTrigger},");
                 state.AppendLine($"  \"breakEvenOffset\": {BreakEvenOffset},");
                 state.AppendLine($"  \"breakEvenActivated\": {breakEvenActivated.ToString().ToLower()},");
+                state.AppendLine($"  \"minStopLossPoints\": {MinStopLossPoints},");
+                state.AppendLine($"  \"emaStopMinDistanceFromEntry\": {EmaStopMinDistanceFromEntry},");
                 
                 state.AppendLine($"  \"enableShorts\": {EnableShorts.ToString().ToLower()},");
                 state.AppendLine($"  \"avoidLongsOnBadCandle\": {AvoidLongsOnBadCandle.ToString().ToLower()},");
                 state.AppendLine($"  \"avoidShortsOnGoodCandle\": {AvoidShortsOnGoodCandle.ToString().ToLower()},");
+                state.AppendLine($"  \"avoidLongsOnBadCandleCurrentBar\": {AvoidLongsOnBadCandleCurrentBar.ToString().ToLower()},");
+                state.AppendLine($"  \"avoidShortsOnGoodCandleCurrentBar\": {AvoidShortsOnGoodCandleCurrentBar.ToString().ToLower()},");
+                state.AppendLine($"  \"minTicksCurrentBarDirection\": {MinTicksCurrentBarDirection},");
+                state.AppendLine($"  \"useTradingHoursFilter\": {UseTradingHoursFilter.ToString().ToLower()},");
+                state.AppendLine($"  \"tradingStartHour\": {TradingStartHour},");
+                state.AppendLine($"  \"tradingStartMinute\": {TradingStartMinute},");
+                state.AppendLine($"  \"tradingEndHour\": {TradingEndHour},");
+                state.AppendLine($"  \"tradingEndMinute\": {TradingEndMinute},");
+                state.AppendLine($"  \"barTime\": \"{Time[0]:yyyy-MM-dd HH:mm:ss}\",");
+                state.AppendLine($"  \"localNow\": \"{DateTime.Now:yyyy-MM-dd HH:mm:ss}\",");
+                state.AppendLine($"  \"tradingHoursNow\": \"{lastTradingHoursNow:yyyy-MM-dd HH:mm:ss}\",");
+                state.AppendLine($"  \"tradingHoursNowBasis\": \"{lastTradingHoursNowBasis}\",");
+                state.AppendLine($"  \"useAtrFilter\": {UseAtrFilter.ToString().ToLower()},");
+                state.AppendLine($"  \"atrPeriod\": {AtrPeriod},");
+                state.AppendLine($"  \"atrMin\": {AtrMin},");
+                state.AppendLine($"  \"atrMax\": {AtrMax},");
+                state.AppendLine($"  \"useTrafficFilter\": {UseTrafficFilter.ToString().ToLower()},");
+                state.AppendLine($"  \"minTicksPerMinuteToTrade\": {MinTicksPerMinuteToTrade},");
+                state.AppendLine($"  \"trafficFilterLookbackBars\": {TrafficFilterLookbackBars},");
+                state.AppendLine($"  \"lastClosedBarTicksPerMinute\": {(double.IsNaN(lastClosedBarTicksPerMinute) ? -1 : lastClosedBarTicksPerMinute)},");
+                state.AppendLine($"  \"useProfitTarget\": {UseProfitTarget.ToString().ToLower()},");
+                state.AppendLine($"  \"profitTargetPoints\": {ProfitTargetPoints},");
                 state.AppendLine($"  \"exitOnTrendBreak\": {ExitOnTrendBreak.ToString().ToLower()},");
                 state.AppendLine($"  \"reverseOnTrendBreak\": {ReverseOnTrendBreak.ToString().ToLower()},");
                 state.AppendLine($"  \"fastEmaPeriod\": {FastEmaPeriod},");
@@ -4222,6 +5581,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 state.AppendLine($"  \"emaCrossoverMinTicksCloseToFast\": {EmaCrossoverMinTicksCloseToFast},");
                 state.AppendLine($"  \"emaCrossoverMinTicksFastToSlow\": {EmaCrossoverMinTicksFastToSlow},");
                 state.AppendLine($"  \"emaCrossoverRequireBodyBelow\": {EmaCrossoverRequireBodyBelow.ToString().ToLower()},");
+                state.AppendLine($"  \"useDeferredEntry\": {UseDeferredEntry.ToString().ToLower()},");
+                state.AppendLine($"  \"useChartScaledFastGradDeg\": {UseChartScaledFastGradDeg.ToString().ToLower()},");
                 state.AppendLine($"  \"enableBarsOnTheFlowTrendDetection\": {EnableBarsOnTheFlowTrendDetection.ToString().ToLower()},");
                 state.AppendLine($"  \"trendLookbackBars\": {TrendLookbackBars},");
                 state.AppendLine($"  \"minMatchingBars\": {MinMatchingBars},");
@@ -4229,7 +5590,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 state.AppendLine($"  \"pendingLongFromBad\": {pendingLongFromBad.ToString().ToLower()},");
                 state.AppendLine($"  \"pendingShortFromGood\": {pendingShortFromGood.ToString().ToLower()},");
                 state.AppendLine($"  \"recordBarSamplesInHistorical\": {RecordBarSamplesInHistorical.ToString().ToLower()},");
-                state.AppendLine($"  \"barSampleDelayMs\": {BarSampleDelayMs}");
+                state.AppendLine($"  \"barSampleDelayMs\": {BarSampleDelayMs},");
+                state.AppendLine($"  \"useEmaTrailingStop\": {UseEmaTrailingStop.ToString().ToLower()},");
+                state.AppendLine($"  \"emaStopTriggerMode\": \"{EmaStopTriggerMode}\",");
+                state.AppendLine($"  \"reverseOnEmaStop\": {ReverseOnEmaStop.ToString().ToLower()},");
+                state.AppendLine($"  \"useGradientStopLoss\": {UseGradientStopLoss.ToString().ToLower()},");
+                state.AppendLine($"  \"gradientStopMinBarsDelay\": {GradientStopMinBarsDelay},");
+                state.AppendLine($"  \"exitLongBelowGradient\": {ExitLongBelowGradient},");
+                state.AppendLine($"  \"exitShortAboveGradient\": {ExitShortAboveGradient}");
                 state.AppendLine("}");
 
                 File.WriteAllText(statePath, state.ToString());
@@ -4339,11 +5707,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
             
-            // Keep file backup every 10 bars to avoid excessive I/O
-            if (CurrentBar % 10 == 0)
-            {
-                ExportStrategyState();
-            }
+            ExportStrategyState();
         }
 
         /// <summary>
@@ -4485,6 +5849,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             var json = new StringBuilder();
             json.Append("{");
             json.Append("\"timestamp\":\"").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")).Append("\",");
+            json.Append("\"runningSince\":\"").Append(strategyRunStartTime != DateTime.MinValue ? strategyRunStartTime.ToString("yyyy-MM-dd HH:mm:ss") : "").Append("\",");
             json.Append("\"strategyName\":\"BarsOnTheFlow\",");
             json.Append("\"isRunning\":true,");
             json.Append("\"enableDashboardDiagnostics\":").Append(EnableDashboardDiagnostics ? "true" : "false").Append(',');
@@ -4527,6 +5892,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             
             // Stop loss configuration
             json.Append("\"stopLossPoints\":").Append(StopLossPoints).Append(',');
+            json.Append("\"minStopLossPoints\":").Append(MinStopLossPoints).Append(',');
+            json.Append("\"emaStopMinDistanceFromEntry\":").Append(EmaStopMinDistanceFromEntry).Append(',');
             json.Append("\"calculatedStopTicks\":").Append(calcStopTicks).Append(',');
             json.Append("\"calculatedStopPoints\":").Append(calcStopPoints.ToString("F2", ci)).Append(',');
             json.Append("\"useTrailingStop\":").Append(UseTrailingStop ? "true" : "false").Append(',');
@@ -4650,12 +6017,117 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 // Initialize output window log
                 InitializeOutputLog(logDir, ts);
+
+                // Initialize stop loss research log (used when a trade closes with negative PnL)
+                InitializeStopLossResearchLog(logDir, ts);
+
+                // Traffic log: volume per minute by hour/day for predicting activity
+                if (EnableTrafficLog)
+                    InitializeTrafficLog(logDir, ts);
             }
             catch (Exception ex)
             {
                 Print($"[BarsOnTheFlow] Failed to initialize log: {ex.Message}");
                 logWriter = null;
                 logInitialized = false;
+            }
+        }
+
+        private void InitializeStopLossResearchLog(string logDir, string ts)
+        {
+            if (stopLossResearchInitialized)
+                return;
+            try
+            {
+                // Delete old stop loss research CSV files from this folder so they don't accumulate on the drive
+                try
+                {
+                    string pattern = "BarsOnTheFlow_StopLossResearch_*.csv";
+                    string[] oldFiles = Directory.GetFiles(logDir, pattern);
+                    foreach (string f in oldFiles)
+                    {
+                        try
+                        {
+                            File.Delete(f);
+                            Print($"[BarsOnTheFlow] Deleted old stop loss research file: {Path.GetFileName(f)}");
+                        }
+                        catch (Exception exDel)
+                        {
+                            Print($"[BarsOnTheFlow] Could not delete old research file {Path.GetFileName(f)}: {exDel.Message}");
+                        }
+                    }
+                }
+                catch (Exception exCleanup)
+                {
+                    Print($"[BarsOnTheFlow] Cleanup of old research files failed: {exCleanup.Message}");
+                }
+
+                stopLossResearchPath = Path.Combine(logDir, $"BarsOnTheFlow_StopLossResearch_{Instrument.FullName}_{ts}.csv");
+                stopLossResearchWriter = new StreamWriter(stopLossResearchPath, false) { AutoFlush = true };
+                stopLossResearchInitialized = true;
+                string header = "Time,EntryBar,ExitBar,Direction,EntryPrice,ExitPrice,RealizedPoints,MFE,MAE,StopUsedPoints,BarsHeld,AvgBarSizeAtEntry,ATRAtEntry,ExitReason,Analysis,Suggestion";
+                stopLossResearchWriter.WriteLine(header);
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to initialize stop loss research log: {ex.Message}");
+                stopLossResearchWriter = null;
+                stopLossResearchInitialized = false;
+            }
+        }
+
+        private void InitializeTrafficLog(string logDir, string ts)
+        {
+            if (trafficLogInitialized)
+                return;
+            try
+            {
+                string safeInstrument = Instrument?.FullName ?? "Instrument";
+                foreach (char c in Path.GetInvalidFileNameChars())
+                    safeInstrument = safeInstrument.Replace(c, '_');
+
+                // Persistent file across runs/days (append-only). This is the "reference log".
+                trafficLogPath = Path.Combine(logDir, $"BarsOnTheFlow_Traffic_{safeInstrument}.csv");
+
+                bool fileExists = File.Exists(trafficLogPath);
+                trafficLogWriter = new StreamWriter(trafficLogPath, append: true) { AutoFlush = true };
+                trafficLogInitialized = true;
+                if (!fileExists)
+                {
+                    string header = "Date,Time,DayOfWeek,Hour,Minute,Instrument,Volume,BarMinutes,VolumePerMinute,TicksInBar,TicksPerMinute";
+                    trafficLogWriter.WriteLine(header);
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to initialize traffic log: {ex.Message}");
+                trafficLogWriter = null;
+                trafficLogInitialized = false;
+            }
+        }
+
+        private void LogTrafficSample()
+        {
+            if (!trafficLogInitialized || trafficLogWriter == null || CurrentBar < 2)
+                return;
+            try
+            {
+                DateTime barTime = Time[1];
+                double volume = Volume[1];
+                double barMinutes = (Time[1] - Time[2]).TotalMinutes;
+                if (barMinutes <= 0)
+                    barMinutes = 1.0;
+                double volumePerMinute = volume / barMinutes;
+                
+                int ticksInBar = (lastClosedBarIndex == CurrentBar - 1) ? lastClosedBarTicks : 0;
+                double ticksPerMinute = barMinutes > 0 ? (ticksInBar / barMinutes) : 0.0;
+
+                string line = $"{barTime:yyyy-MM-dd},{barTime:HH:mm},{(int)barTime.DayOfWeek},{barTime.Hour},{barTime.Minute},{Instrument.FullName},{volume:F0},{barMinutes:F2},{volumePerMinute:F2},{ticksInBar},{ticksPerMinute:F2}";
+                trafficLogWriter.WriteLine(line);
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Traffic log write failed: {ex.Message}");
             }
         }
 
@@ -4876,10 +6348,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             if (isEntry)
             {
-                if (order.Name == "BarsOnTheFlowLong")
-                    return "TrendUp";
-                if (order.Name == "BarsOnTheFlowShort")
-                    return "TrendDown";
+                if (IsBarsOnTheFlowEntrySignalName(order.Name))
+                    return order.Name.StartsWith("BarsOnTheFlowLong", StringComparison.Ordinal) ? "TrendUp" : "TrendDown";
             }
 
             if (isExit)
@@ -5115,9 +6585,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                     // Get current conditions for logging
                     double currentClose = Close[0];
                     double currentFastEma = fastEma != null && CurrentBar >= FastEmaPeriod ? fastEma[0] : double.NaN;
-                    int gradWindow = Math.Max(2, FastGradLookbackBars);
                     double currentGradDeg;
-                    ComputeFastEmaGradient(gradWindow, out currentGradDeg);
+                    GetCurrentGradient(out currentGradDeg);
                     bool barAboveEma = !double.IsNaN(currentFastEma) && currentClose > currentFastEma;
                     bool deferLongDueToBullishEma = DelayRetraceExitOnBullishEma && currentGradDeg > 0 && barAboveEma;
                     bool deferShortDueToBullishEma = DelayRetraceExitOnBullishEma && currentGradDeg < 0 && !barAboveEma;
@@ -5161,7 +6630,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print($"[RETRACE_EXIT]   MFE={trendMaxProfit:F2}, Current profit={currentProfit:F2}, Retrace fraction={TrendRetraceFraction:F2}");
                         Print($"[RETRACE_EXIT]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, AboveEMA={barAboveEma}, Gradient={currentGradDeg:F2}°");
                         Print($"[RETRACE_EXIT]   NOTE: Retrace exit is based on profit retracement, not current bar conditions");
-                        ExitLong("BarsOnTheFlowRetrace", "BarsOnTheFlowLong");
+                        ExitLongTrace("BarsOnTheFlowRetrace", GetActiveEntrySignal(), "BarsOnTheFlowRetrace");
                         RecordExitForCooldown(MarketPosition.Long);
                     }
                     else if (Position.MarketPosition == MarketPosition.Short)
@@ -5201,7 +6670,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         Print($"[RETRACE_EXIT]   MFE={trendMaxProfit:F2}, Current profit={currentProfit:F2}, Retrace fraction={TrendRetraceFraction:F2}");
                         Print($"[RETRACE_EXIT]   Current bar: Close={currentClose:F2}, FastEMA={currentFastEma:F2}, BelowEMA={!barAboveEma}, Gradient={currentGradDeg:F2}°");
                         Print($"[RETRACE_EXIT]   NOTE: Retrace exit is based on profit retracement, not current bar conditions");
-                        ExitShort("BarsOnTheFlowRetraceS", "BarsOnTheFlowShort");
+                        ExitShortTrace("BarsOnTheFlowRetraceS", GetActiveEntrySignal(), "BarsOnTheFlowRetraceS");
                         RecordExitForCooldown(MarketPosition.Short);
                     }
                 }
@@ -5335,14 +6804,14 @@ namespace NinjaTrader.NinjaScript.Strategies
 
             try
             {
-                // Create main container grid with 2 rows
+                // Create main container grid (position via Margin; drag handle at top)
                 barNavPanel = new System.Windows.Controls.Grid
                 {
-                    HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                     VerticalAlignment = System.Windows.VerticalAlignment.Top,
-                    Margin = new System.Windows.Thickness(0, 10, 100, 0), // Offset left by 100px
+                    Margin = barNavPanelSavedMargin ?? new System.Windows.Thickness(0, 10, 0, 0),
                     Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(230, 30, 30, 30)),
-                    Width = 240
+                    Width = 260
                 };
 
                 // Add rounded corners
@@ -5355,7 +6824,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     BlurRadius = 5
                 };
 
-                // Create row definitions
+                // Create row definitions (row 0 = drag handle)
+                barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+                barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+                barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
                 barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
                 barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
                 barNavPanel.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
@@ -5364,7 +6836,37 @@ namespace NinjaTrader.NinjaScript.Strategies
                 barNavPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star) });
                 barNavPanel.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = System.Windows.GridLength.Auto });
 
-                // ===== ROW 0: BAR NAVIGATION =====
+                // ===== ROW 0: DRAG HANDLE =====
+                var barNavDragHandle = new System.Windows.Controls.Border
+                {
+                    Height = 14,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 45, 45)),
+                    BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(70, 70, 70)),
+                    BorderThickness = new System.Windows.Thickness(0, 0, 0, 1),
+                    Cursor = System.Windows.Input.Cursors.SizeAll,
+                    ToolTip = "Drag to move panel"
+                };
+                System.Windows.Controls.Grid.SetColumn(barNavDragHandle, 0);
+                System.Windows.Controls.Grid.SetRow(barNavDragHandle, 0);
+                System.Windows.Controls.Grid.SetColumnSpan(barNavDragHandle, 2);
+
+                barNavDragHandle.Child = new System.Windows.Controls.TextBlock
+                {
+                    Text = "⋮⋮  BarsOnTheFlow",
+                    FontSize = 9,
+                    FontWeight = System.Windows.FontWeights.SemiBold,
+                    Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                    IsHitTestVisible = false
+                };
+
+                barNavDragHandle.MouseLeftButtonDown += BarNavPanelDragHandle_MouseLeftButtonDown;
+                barNavDragHandle.MouseMove += BarNavPanelDragHandle_MouseMove;
+                barNavDragHandle.MouseLeftButtonUp += BarNavPanelDragHandle_MouseLeftButtonUp;
+                barNavDragHandle.LostMouseCapture += BarNavPanelDragHandle_LostMouseCapture;
+
+                // ===== ROW 1: BAR NAVIGATION =====
                 
                 // Create TextBox for bar number input
                 barNavTextBox = new System.Windows.Controls.TextBox
@@ -5384,7 +6886,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     AcceptsReturn = false
                 };
                 System.Windows.Controls.Grid.SetColumn(barNavTextBox, 0);
-                System.Windows.Controls.Grid.SetRow(barNavTextBox, 0);
+                System.Windows.Controls.Grid.SetRow(barNavTextBox, 1);
                 
                 // Give the textbox focus when clicked
                 barNavTextBox.GotFocus += (sender, e) =>
@@ -5412,12 +6914,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                     ToolTip = "Navigate to bar"
                 };
                 System.Windows.Controls.Grid.SetColumn(barNavButton, 1);
-                System.Windows.Controls.Grid.SetRow(barNavButton, 0);
+                System.Windows.Controls.Grid.SetRow(barNavButton, 1);
 
                 // Handle button click
                 barNavButton.Click += (sender, e) => NavigateToBar();
 
-                // ===== ROW 1: STOP LOSS CONTROLS =====
+                // ===== ROW 2: STOP LOSS CONTROLS =====
                 
                 // Create a horizontal StackPanel for stop loss controls
                 var stopLossPanel = new System.Windows.Controls.StackPanel
@@ -5427,7 +6929,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Margin = new System.Windows.Thickness(5, 0, 5, 5)
                 };
                 System.Windows.Controls.Grid.SetColumn(stopLossPanel, 0);
-                System.Windows.Controls.Grid.SetRow(stopLossPanel, 1);
+                System.Windows.Controls.Grid.SetRow(stopLossPanel, 2);
                 System.Windows.Controls.Grid.SetColumnSpan(stopLossPanel, 2); // Span both columns
                 
                 // Create minus button
@@ -5447,9 +6949,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 stopLossMinusButton.Click += (sender, e) => AdjustStopLoss(-5);
                 
                 // Create stop loss display textbox
+                double initSlPoints = CalculateStopLossTicks() / 4.0;
                 stopLossTextBox = new System.Windows.Controls.TextBox
                 {
-                    Text = StopLossPoints.ToString(),
+                    Text = initSlPoints.ToString("F1"),
                     FontSize = 13,
                     FontWeight = System.Windows.FontWeights.SemiBold,
                     VerticalContentAlignment = System.Windows.VerticalAlignment.Center,
@@ -5462,7 +6965,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Foreground = System.Windows.Media.Brushes.White,
                     BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
                     BorderThickness = new System.Windows.Thickness(1),
-                    ToolTip = "Current stop loss in points",
+                    ToolTip = "Calculated stop loss in points (updates each bar)",
                     IsReadOnly = true,
                     Focusable = false
                 };
@@ -5488,7 +6991,24 @@ namespace NinjaTrader.NinjaScript.Strategies
                 stopLossPanel.Children.Add(stopLossTextBox);
                 stopLossPanel.Children.Add(stopLossPlusButton);
 
-                // ===== ROW 2: TRADING CONTROLS =====
+                // ===== ROW 3: LIVE POSITION / BRACKET PRICES =====
+                var positionInfoPanel = new System.Windows.Controls.StackPanel
+                {
+                    Orientation = System.Windows.Controls.Orientation.Vertical,
+                    Margin = new System.Windows.Thickness(8, 0, 8, 4)
+                };
+                System.Windows.Controls.Grid.SetColumn(positionInfoPanel, 0);
+                System.Windows.Controls.Grid.SetRow(positionInfoPanel, 3);
+                System.Windows.Controls.Grid.SetColumnSpan(positionInfoPanel, 2);
+
+                positionEntryLine = CreatePositionInfoLine("Entry: —", System.Windows.Media.Brushes.White);
+                positionStopLine = CreatePositionInfoLine("Stop: —", new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(248, 113, 113)));
+                positionTargetLine = CreatePositionInfoLine("Target: —", new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(74, 222, 128)));
+                positionInfoPanel.Children.Add(positionEntryLine);
+                positionInfoPanel.Children.Add(positionStopLine);
+                positionInfoPanel.Children.Add(positionTargetLine);
+
+                // ===== ROW 4: TRADING CONTROLS =====
                 var tradingControlPanel = new System.Windows.Controls.StackPanel
                 {
                     Orientation = System.Windows.Controls.Orientation.Horizontal,
@@ -5496,15 +7016,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                     Margin = new System.Windows.Thickness(5, 0, 5, 6)
                 };
                 System.Windows.Controls.Grid.SetColumn(tradingControlPanel, 0);
-                System.Windows.Controls.Grid.SetRow(tradingControlPanel, 2);
+                System.Windows.Controls.Grid.SetRow(tradingControlPanel, 4);
                 System.Windows.Controls.Grid.SetColumnSpan(tradingControlPanel, 2);
 
                 pauseTradingButton = new System.Windows.Controls.Button
                 {
                     Content = "Pause",
-                    FontSize = 12,
+                    FontSize = 11,
                     FontWeight = System.Windows.FontWeights.Bold,
-                    Width = 70,
+                    Width = 48,
                     Height = 28,
                     Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(234, 179, 8)),
                     Foreground = System.Windows.Media.Brushes.Black,
@@ -5525,11 +7045,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                 flattenButton = new System.Windows.Controls.Button
                 {
                     Content = "Flatten",
-                    FontSize = 12,
+                    FontSize = 11,
                     FontWeight = System.Windows.FontWeights.Bold,
-                    Width = 70,
+                    Width = 36,
                     Height = 28,
-                    Margin = new System.Windows.Thickness(6, 0, 0, 0),
+                    Margin = new System.Windows.Thickness(1, 0, 0, 0),
                     Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(239, 68, 68)),
                     Foreground = System.Windows.Media.Brushes.White,
                     BorderThickness = new System.Windows.Thickness(0),
@@ -5544,25 +7064,523 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tradingControlPanel.Children.Add(pauseTradingButton);
                 tradingControlPanel.Children.Add(flattenButton);
 
+                // Live parameter reload: Load Default.xml without restarting strategy
+                var loadDefaultsButton = new System.Windows.Controls.Button
+                {
+                    Content = "Load Default.xml",
+                    FontSize = 10,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 76,
+                    Height = 28,
+                    Margin = new System.Windows.Thickness(2, 0, 0, 0),
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(59, 130, 246)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Load BarsOnTheFlow Default.xml parameters live (no restart)"
+                };
+                loadDefaultsButton.Click += (sender, e) =>
+                {
+                    TriggerCustomEvent(_ => LoadDefaultsFromTemplate(), null);
+                };
+                tradingControlPanel.Children.Add(loadDefaultsButton);
+
+                // ===== ROW 5: MANUAL ENTRY (BUY / SELL) =====
+                var manualEntryPanel = new System.Windows.Controls.StackPanel
+                {
+                    Orientation = System.Windows.Controls.Orientation.Horizontal,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    Margin = new System.Windows.Thickness(5, 0, 5, 8)
+                };
+                System.Windows.Controls.Grid.SetColumn(manualEntryPanel, 0);
+                System.Windows.Controls.Grid.SetRow(manualEntryPanel, 5);
+                System.Windows.Controls.Grid.SetColumnSpan(manualEntryPanel, 2);
+
+                var buyButton = new System.Windows.Controls.Button
+                {
+                    Content = "Buy",
+                    FontSize = 11,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 110,
+                    Height = 28,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(34, 197, 94)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Manually enter LONG at market (uses current Contracts and stop settings)"
+                };
+                buyButton.Click += (sender, e) =>
+                {
+                    TriggerCustomEvent(_ => ManualEntryFromPanel(MarketPosition.Long), null);
+                };
+
+                var sellButton = new System.Windows.Controls.Button
+                {
+                    Content = "Sell",
+                    FontSize = 11,
+                    FontWeight = System.Windows.FontWeights.Bold,
+                    Width = 110,
+                    Height = 28,
+                    Margin = new System.Windows.Thickness(6, 0, 0, 0),
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(239, 68, 68)),
+                    Foreground = System.Windows.Media.Brushes.White,
+                    BorderThickness = new System.Windows.Thickness(0),
+                    Cursor = System.Windows.Input.Cursors.Hand,
+                    ToolTip = "Manually enter SHORT at market (uses current Contracts and stop settings)"
+                };
+                sellButton.Click += (sender, e) =>
+                {
+                    TriggerCustomEvent(_ => ManualEntryFromPanel(MarketPosition.Short), null);
+                };
+
+                manualEntryPanel.Children.Add(buyButton);
+                manualEntryPanel.Children.Add(sellButton);
+
                 // Add all controls to main panel
+                barNavPanel.Children.Add(barNavDragHandle);
                 barNavPanel.Children.Add(barNavTextBox);
                 barNavPanel.Children.Add(barNavButton);
                 barNavPanel.Children.Add(stopLossPanel);
+                barNavPanel.Children.Add(positionInfoPanel);
                 barNavPanel.Children.Add(tradingControlPanel);
+                barNavPanel.Children.Add(manualEntryPanel);
 
                 // Add panel to chart
                 if (ChartControl.Parent is System.Windows.Controls.Grid)
                 {
                     var parent = ChartControl.Parent as System.Windows.Controls.Grid;
                     parent.Children.Add(barNavPanel);
+
+                    if (!barNavPanelSavedMargin.HasValue)
+                    {
+                        barNavPanel.Loaded += BarNavPanel_InitialPositionLoaded;
+                    }
                 }
 
                 UpdatePauseTradingButton();
+                UpdateBarNavPositionLabels(force: true);
             }
             catch (Exception ex)
             {
                 Print($"[BarsOnTheFlow] Failed to create bar navigation panel: {ex.Message}");
             }
+        }
+
+        private void CreateEmaLegendPanel()
+        {
+            if (ChartControl == null || ChartControl.Parent == null || emaLegendPanel != null)
+                return;
+
+            try
+            {
+                emaLegendFastLabel = CreateEmaLegendLabel();
+                emaLegendSlowLabel = CreateEmaLegendLabel();
+                emaLegend21Label = CreateEmaLegendLabel();
+
+                var legendContent = new System.Windows.Controls.StackPanel
+                {
+                    Orientation = System.Windows.Controls.Orientation.Vertical,
+                    IsHitTestVisible = false
+                };
+                legendContent.Children.Add(CreateEmaLegendRow(System.Windows.Media.Brushes.Blue, emaLegendFastLabel));
+                legendContent.Children.Add(CreateEmaLegendRow(System.Windows.Media.Brushes.DarkOrange, emaLegendSlowLabel));
+                legendContent.Children.Add(CreateEmaLegendRow(System.Windows.Media.Brushes.MediumPurple, emaLegend21Label));
+
+                var emaLegendDragHandle = new System.Windows.Controls.Border
+                {
+                    Height = 12,
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(45, 45, 45)),
+                    BorderBrush = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(70, 70, 70)),
+                    BorderThickness = new System.Windows.Thickness(0, 0, 0, 1),
+                    Cursor = System.Windows.Input.Cursors.SizeAll,
+                    ToolTip = "Drag to move EMA legend"
+                };
+                emaLegendDragHandle.Child = new System.Windows.Controls.TextBlock
+                {
+                    Text = "⋮⋮  EMA Legend",
+                    FontSize = 8,
+                    FontWeight = System.Windows.FontWeights.SemiBold,
+                    Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(148, 163, 184)),
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                    IsHitTestVisible = false
+                };
+                emaLegendDragHandle.MouseLeftButtonDown += EmaLegendPanelDragHandle_MouseLeftButtonDown;
+                emaLegendDragHandle.MouseMove += EmaLegendPanelDragHandle_MouseMove;
+                emaLegendDragHandle.MouseLeftButtonUp += EmaLegendPanelDragHandle_MouseLeftButtonUp;
+                emaLegendDragHandle.LostMouseCapture += EmaLegendPanelDragHandle_LostMouseCapture;
+
+                var legendGrid = new System.Windows.Controls.Grid();
+                legendGrid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+                legendGrid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = System.Windows.GridLength.Auto });
+                System.Windows.Controls.Grid.SetRow(emaLegendDragHandle, 0);
+                System.Windows.Controls.Grid.SetRow(legendContent, 1);
+                legendGrid.Children.Add(emaLegendDragHandle);
+                legendGrid.Children.Add(legendContent);
+
+                emaLegendPanel = new System.Windows.Controls.Border
+                {
+                    Child = legendGrid,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                    VerticalAlignment = System.Windows.VerticalAlignment.Top,
+                    Margin = emaLegendPanelSavedMargin ?? new System.Windows.Thickness(8, 10, 0, 0),
+                    Padding = new System.Windows.Thickness(8, 0, 10, 6),
+                    Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(210, 30, 30, 30)),
+                    CornerRadius = new System.Windows.CornerRadius(4)
+                };
+
+                emaLegendPanel.Effect = new System.Windows.Media.Effects.DropShadowEffect
+                {
+                    Color = System.Windows.Media.Colors.Black,
+                    Direction = 320,
+                    ShadowDepth = 2,
+                    Opacity = 0.4,
+                    BlurRadius = 4
+                };
+
+                UpdateEmaLegendLabels();
+
+                if (ChartControl.Parent is System.Windows.Controls.Grid parent)
+                    parent.Children.Add(emaLegendPanel);
+            }
+            catch (Exception ex)
+            {
+                Print($"[BarsOnTheFlow] Failed to create EMA legend: {ex.Message}");
+            }
+        }
+
+        private static System.Windows.Controls.TextBlock CreateEmaLegendLabel()
+        {
+            return new System.Windows.Controls.TextBlock
+            {
+                FontSize = 10,
+                FontWeight = System.Windows.FontWeights.SemiBold,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(226, 232, 240)),
+                VerticalAlignment = System.Windows.VerticalAlignment.Center
+            };
+        }
+
+        private static System.Windows.Controls.StackPanel CreateEmaLegendRow(System.Windows.Media.Brush swatchBrush, System.Windows.Controls.TextBlock label)
+        {
+            var row = new System.Windows.Controls.StackPanel
+            {
+                Orientation = System.Windows.Controls.Orientation.Horizontal,
+                Margin = new System.Windows.Thickness(0, 1, 0, 1)
+            };
+
+            row.Children.Add(new System.Windows.Controls.Border
+            {
+                Width = 18,
+                Height = 3,
+                Background = swatchBrush,
+                Margin = new System.Windows.Thickness(0, 0, 6, 0),
+                VerticalAlignment = System.Windows.VerticalAlignment.Center,
+                CornerRadius = new System.Windows.CornerRadius(1)
+            });
+            row.Children.Add(label);
+            return row;
+        }
+
+        private void UpdateEmaLegendLabels()
+        {
+            if (emaLegendFastLabel != null)
+                emaLegendFastLabel.Text = $"Fast EMA {FastEmaPeriod}";
+            if (emaLegendSlowLabel != null)
+                emaLegendSlowLabel.Text = $"Slow EMA {EmaSlowPeriod}";
+            if (emaLegend21Label != null)
+                emaLegend21Label.Text = $"EMA {Ema21Period}";
+        }
+
+        private void EmaLegendPanelDragHandle_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (emaLegendPanel == null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                return;
+
+            var handle = sender as System.Windows.UIElement;
+            if (handle == null)
+                return;
+
+            var parent = emaLegendPanel.Parent as System.Windows.FrameworkElement;
+            if (parent == null)
+                return;
+
+            emaLegendPanelDragging = true;
+            emaLegendPanelDragStart = e.GetPosition(parent);
+            emaLegendPanelMarginAtDragStart = emaLegendPanel.Margin;
+            handle.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void EmaLegendPanelDragHandle_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!emaLegendPanelDragging || emaLegendPanel == null)
+                return;
+
+            var handle = sender as System.Windows.UIElement;
+            if (handle == null || !handle.IsMouseCaptured)
+                return;
+
+            var parent = emaLegendPanel.Parent as System.Windows.FrameworkElement;
+            if (parent == null)
+                return;
+
+            var current = e.GetPosition(parent);
+            double deltaX = current.X - emaLegendPanelDragStart.X;
+            double deltaY = current.Y - emaLegendPanelDragStart.Y;
+            double panelWidth = emaLegendPanel.ActualWidth > 0 ? emaLegendPanel.ActualWidth : 120;
+            double panelHeight = emaLegendPanel.ActualHeight > 0 ? emaLegendPanel.ActualHeight : 80;
+            double newLeft = emaLegendPanelMarginAtDragStart.Left + deltaX;
+            double newTop = emaLegendPanelMarginAtDragStart.Top + deltaY;
+
+            if (parent.ActualWidth > 0)
+                newLeft = Math.Max(0, Math.Min(newLeft, parent.ActualWidth - panelWidth));
+            if (parent.ActualHeight > 0)
+                newTop = Math.Max(0, Math.Min(newTop, parent.ActualHeight - panelHeight));
+
+            emaLegendPanel.Margin = new System.Windows.Thickness(newLeft, newTop, 0, 0);
+        }
+
+        private void EmaLegendPanelDragHandle_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            EndEmaLegendPanelDrag(sender as System.Windows.UIElement);
+            e.Handled = true;
+        }
+
+        private void EmaLegendPanelDragHandle_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            EndEmaLegendPanelDrag(sender as System.Windows.UIElement);
+        }
+
+        private void EndEmaLegendPanelDrag(System.Windows.UIElement handle)
+        {
+            if (!emaLegendPanelDragging)
+                return;
+
+            emaLegendPanelDragging = false;
+            handle?.ReleaseMouseCapture();
+            if (emaLegendPanel != null)
+                emaLegendPanelSavedMargin = emaLegendPanel.Margin;
+        }
+
+        private void BarNavPanel_InitialPositionLoaded(object sender, System.Windows.RoutedEventArgs e)
+        {
+            if (barNavPanel == null || barNavPanelSavedMargin.HasValue)
+                return;
+
+            barNavPanel.Loaded -= BarNavPanel_InitialPositionLoaded;
+
+            var parent = barNavPanel.Parent as System.Windows.FrameworkElement;
+            if (parent == null || parent.ActualWidth <= 0)
+                return;
+
+            double panelWidth = barNavPanel.ActualWidth > 0 ? barNavPanel.ActualWidth : barNavPanel.Width;
+            double left = Math.Max(0, parent.ActualWidth - panelWidth - 100);
+            var margin = new System.Windows.Thickness(left, 10, 0, 0);
+            barNavPanel.Margin = margin;
+            barNavPanelSavedMargin = margin;
+        }
+
+        private void BarNavPanelDragHandle_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (barNavPanel == null || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed)
+                return;
+
+            var handle = sender as System.Windows.UIElement;
+            if (handle == null)
+                return;
+
+            var parent = barNavPanel.Parent as System.Windows.FrameworkElement;
+            if (parent == null)
+                return;
+
+            barNavPanelDragging = true;
+            barNavPanelDragStart = e.GetPosition(parent);
+            barNavPanelMarginAtDragStart = barNavPanel.Margin;
+            handle.CaptureMouse();
+            e.Handled = true;
+        }
+
+        private void BarNavPanelDragHandle_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            if (!barNavPanelDragging || barNavPanel == null)
+                return;
+
+            var handle = sender as System.Windows.UIElement;
+            if (handle == null || !handle.IsMouseCaptured)
+                return;
+
+            var parent = barNavPanel.Parent as System.Windows.FrameworkElement;
+            if (parent == null)
+                return;
+
+            var current = e.GetPosition(parent);
+            double deltaX = current.X - barNavPanelDragStart.X;
+            double deltaY = current.Y - barNavPanelDragStart.Y;
+            double panelWidth = barNavPanel.ActualWidth > 0 ? barNavPanel.ActualWidth : barNavPanel.Width;
+            double panelHeight = barNavPanel.ActualHeight > 0 ? barNavPanel.ActualHeight : 200;
+            double newLeft = barNavPanelMarginAtDragStart.Left + deltaX;
+            double newTop = barNavPanelMarginAtDragStart.Top + deltaY;
+
+            if (parent.ActualWidth > 0)
+                newLeft = Math.Max(0, Math.Min(newLeft, parent.ActualWidth - panelWidth));
+            if (parent.ActualHeight > 0)
+                newTop = Math.Max(0, Math.Min(newTop, parent.ActualHeight - panelHeight));
+
+            barNavPanel.Margin = new System.Windows.Thickness(newLeft, newTop, 0, 0);
+        }
+
+        private void BarNavPanelDragHandle_MouseLeftButtonUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            EndBarNavPanelDrag(sender as System.Windows.UIElement);
+            e.Handled = true;
+        }
+
+        private void BarNavPanelDragHandle_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+        {
+            EndBarNavPanelDrag(sender as System.Windows.UIElement);
+        }
+
+        private void EndBarNavPanelDrag(System.Windows.UIElement handle)
+        {
+            if (!barNavPanelDragging)
+                return;
+
+            barNavPanelDragging = false;
+            handle?.ReleaseMouseCapture();
+            if (barNavPanel != null)
+                barNavPanelSavedMargin = barNavPanel.Margin;
+        }
+
+        private static System.Windows.Controls.TextBlock CreatePositionInfoLine(string text, System.Windows.Media.Brush foreground)
+        {
+            return new System.Windows.Controls.TextBlock
+            {
+                Text = text,
+                FontSize = 11,
+                FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+                Foreground = foreground,
+                Margin = new System.Windows.Thickness(0, 1, 0, 1)
+            };
+        }
+
+        private static string FormatPanelPrice(double price)
+        {
+            return double.IsNaN(price) || price <= 0 ? "—" : price.ToString("F2");
+        }
+
+        private void TryGetWorkingBracketOrderPrices(MarketPosition pos, string entrySignal,
+            out double stopPrice, out bool hasStop, out double targetPrice, out bool hasTarget)
+        {
+            stopPrice = targetPrice = double.NaN;
+            hasStop = hasTarget = false;
+
+            if (Account == null || pos == MarketPosition.Flat)
+                return;
+
+            foreach (Order order in Account.Orders)
+            {
+                if (order == null || order.Instrument != Instrument)
+                    continue;
+
+                if (order.OrderState != OrderState.Working
+                    && order.OrderState != OrderState.Accepted
+                    && order.OrderState != OrderState.PartFilled)
+                    continue;
+
+                string from = order.FromEntrySignal ?? string.Empty;
+                if (!string.IsNullOrEmpty(entrySignal))
+                {
+                    if (from != entrySignal)
+                        continue;
+                }
+                else if (!IsBarsOnTheFlowEntrySignalName(from))
+                {
+                    continue;
+                }
+
+                if (order.OrderType == OrderType.StopMarket || order.OrderType == OrderType.StopLimit)
+                {
+                    double px = order.StopPrice > 0 ? order.StopPrice : order.LimitPrice;
+                    if (px > 0)
+                    {
+                        stopPrice = px;
+                        hasStop = true;
+                    }
+                    continue;
+                }
+
+                if (order.OrderType != OrderType.Limit || order.LimitPrice <= 0)
+                    continue;
+
+                bool isExitLimit = (pos == MarketPosition.Long && order.OrderAction == OrderAction.Sell)
+                    || (pos == MarketPosition.Short && order.OrderAction == OrderAction.BuyToCover);
+                if (!isExitLimit)
+                    continue;
+
+                if (order.Name == "Profit target" || !hasTarget)
+                {
+                    targetPrice = order.LimitPrice;
+                    hasTarget = true;
+                }
+            }
+        }
+
+        private void UpdateBarNavPositionLabels(bool force = false)
+        {
+            if (positionEntryLine == null || ChartControl == null)
+                return;
+
+            double entry = double.NaN;
+            double stop = double.NaN;
+            double target = double.NaN;
+            bool hasStop = false;
+            bool hasTarget = false;
+            string stopLabel = "Stop";
+            string targetLabel = "Target";
+
+            if (Position.MarketPosition != MarketPosition.Flat)
+            {
+                entry = Position.AveragePrice;
+                TryGetWorkingBracketOrderPrices(Position.MarketPosition, GetActiveEntrySignal(),
+                    out stop, out hasStop, out target, out hasTarget);
+
+                if (Position.MarketPosition == MarketPosition.Long)
+                {
+                    stopLabel = "Sell stop";
+                    targetLabel = "Sell limit";
+                }
+                else
+                {
+                    stopLabel = "Buy stop";
+                    targetLabel = "Buy limit";
+                }
+            }
+
+            double entryKey = entry;
+            double stopKey = hasStop ? stop : double.NaN;
+            double targetKey = hasTarget ? target : double.NaN;
+            if (!force
+                && entryKey == lastPanelEntryPrice
+                && stopKey == lastPanelStopPrice
+                && targetKey == lastPanelTargetPrice)
+                return;
+
+            lastPanelEntryPrice = entryKey;
+            lastPanelStopPrice = stopKey;
+            lastPanelTargetPrice = targetKey;
+
+            string entryText = $"Entry: {FormatPanelPrice(entry)}";
+            string stopText = $"{stopLabel}: {FormatPanelPrice(hasStop ? stop : double.NaN)}";
+            string targetText = $"{targetLabel}: {FormatPanelPrice(hasTarget ? target : double.NaN)}";
+
+            ChartControl.Dispatcher.InvokeAsync(() =>
+            {
+                if (positionEntryLine == null)
+                    return;
+                positionEntryLine.Text = entryText;
+                positionStopLine.Text = stopText;
+                positionTargetLine.Text = targetText;
+            });
         }
 
         private void AdjustStopLoss(int delta)
@@ -5585,10 +7603,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Update stop loss for any active position
                 if (Position.MarketPosition != MarketPosition.Flat)
                 {
-                    string orderName = Position.MarketPosition == MarketPosition.Long ? "BarsOnTheFlowLong" : "BarsOnTheFlowShort";
+                    string orderName = GetActiveEntrySignal();
                     if (newStopLoss > 0)
                     {
-                        if (UseTrailingStop)
+                        if (IsProfitFloorActiveForOrder(orderName))
+                        {
+                            SetProfitFloorClampedStop(orderName, profitFloorStopPrice, "panel-adjust");
+                            Print($"[Stop Loss] Profit floor active @ {profitFloorStopPrice:F2} — applied floor-clamped trail update");
+                        }
+                        else if (ShouldAllowTrailStop(orderName))
                         {
                             SetTrailStop(orderName, CalculationMode.Ticks, newStopLoss * 4, false);
                             Print($"[Stop Loss] Updated active {Position.MarketPosition} position trailing stop to {newStopLoss} points");
@@ -5610,6 +7633,109 @@ namespace NinjaTrader.NinjaScript.Strategies
             catch (Exception ex)
             {
                 Print($"[Stop Loss] Failed to adjust stop loss: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Load key parameters from the BarsOnTheFlow Default.xml template live, without restarting the strategy.
+        /// Applies mainly risk/stop-related settings so you can iterate quickly during a run.
+        /// </summary>
+        private void LoadDefaultsFromTemplate()
+        {
+            try
+            {
+                string userDir = NinjaTrader.Core.Globals.UserDataDir;
+                string templateDir = System.IO.Path.Combine(userDir, "templates", "Strategy", "BarsOnTheFlow");
+                string templatePath = System.IO.Path.Combine(templateDir, "Default.xml");
+                
+                if (!System.IO.File.Exists(templatePath))
+                {
+                    Print($"[LoadDefaults] Default.xml not found at {templatePath}");
+                    return;
+                }
+
+                var doc = System.Xml.Linq.XDocument.Load(templatePath);
+                var botf = doc.Root;
+                if (botf == null)
+                {
+                    Print("[LoadDefaults] Default.xml missing root element");
+                    return;
+                }
+
+                // Navigate to <BarsOnTheFlow> state section (StrategyTemplate/Strategy/BarsOnTheFlow)
+                var barsNode = doc.Descendants("BarsOnTheFlow").FirstOrDefault();
+                if (barsNode == null)
+                {
+                    Print("[LoadDefaults] Default.xml missing <BarsOnTheFlow> state section");
+                    return;
+                }
+
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+
+                double readDouble(string name, double current)
+                {
+                    var el = barsNode.Element(name);
+                    if (el == null || string.IsNullOrWhiteSpace(el.Value))
+                        return current;
+                    if (double.TryParse(el.Value, System.Globalization.NumberStyles.Any, ci, out double v))
+                        return v;
+                    return current;
+                }
+
+                int readInt(string name, int current)
+                {
+                    var el = barsNode.Element(name);
+                    if (el == null || string.IsNullOrWhiteSpace(el.Value))
+                        return current;
+                    if (int.TryParse(el.Value, System.Globalization.NumberStyles.Any, ci, out int v))
+                        return v;
+                    return current;
+                }
+
+                bool readBool(string name, bool current)
+                {
+                    var el = barsNode.Element(name);
+                    if (el == null || string.IsNullOrWhiteSpace(el.Value))
+                        return current;
+                    if (bool.TryParse(el.Value, out bool v))
+                        return v;
+                    return current;
+                }
+
+                // Apply the most important risk / stop parameters live
+                double newMinStopLossPoints = readDouble("MinStopLossPoints", MinStopLossPoints);
+                double newEmaStopMinDist = readDouble("EmaStopMinDistanceFromEntry", EmaStopMinDistanceFromEntry);
+                int newStopLossPoints = readInt("StopLossPoints", StopLossPoints);
+                bool newUseEmaTrailingStop = readBool("UseEmaTrailingStop", UseEmaTrailingStop);
+                bool newUseBreakEven = readBool("UseBreakEven", UseBreakEven);
+                int newBreakEvenTrigger = readInt("BreakEvenTrigger", BreakEvenTrigger);
+                int newBreakEvenOffset = readInt("BreakEvenOffset", BreakEvenOffset);
+                bool newUseChartScaledFastGradDeg = readBool("UseChartScaledFastGradDeg", UseChartScaledFastGradDeg);
+
+                MinStopLossPoints = newMinStopLossPoints;
+                EmaStopMinDistanceFromEntry = newEmaStopMinDist;
+                StopLossPoints = newStopLossPoints;
+                UseEmaTrailingStop = newUseEmaTrailingStop;
+                UseBreakEven = newUseBreakEven;
+                BreakEvenTrigger = newBreakEvenTrigger;
+                BreakEvenOffset = newBreakEvenOffset;
+                UseChartScaledFastGradDeg = newUseChartScaledFastGradDeg;
+
+                Print($"[LoadDefaults] Applied Default.xml: StopLossPoints={StopLossPoints}, MinStopLossPoints={MinStopLossPoints}, EmaStopMinDistanceFromEntry={EmaStopMinDistanceFromEntry}, UseEmaTrailingStop={UseEmaTrailingStop}, UseBreakEven={UseBreakEven}, BreakEvenTrigger={BreakEvenTrigger}, BreakEvenOffset={BreakEvenOffset}, UseChartScaledFastGradDeg={UseChartScaledFastGradDeg}");
+
+                // Re-apply stop loss to any open position using the updated parameters
+                if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    string orderName = GetActiveEntrySignal();
+                    ApplyStopLoss(orderName);
+                }
+
+                // Refresh strategy state file so dashboard/state page sees the new parameters
+                ExportStrategyState();
+            }
+            catch (Exception ex)
+            {
+                Print($"[LoadDefaults] Failed to load Default.xml: {ex.Message}");
             }
         }
 
@@ -5640,6 +7766,41 @@ namespace NinjaTrader.NinjaScript.Strategies
             });
         }
 
+        private void ManualEntryFromPanel(MarketPosition direction)
+        {
+            try
+            {
+                if (Position.MarketPosition != MarketPosition.Flat)
+                {
+                    Print($"[PANEL] Manual {direction} entry ignored - already in {Position.MarketPosition} position (flatten first)");
+                    return;
+                }
+
+                if (direction == MarketPosition.Long)
+                {
+                    Print($"[PANEL] Manual entry requested - LONG {Math.Max(1, Contracts)} @ market");
+                    currentTradeEntryReason = "ManualPanelEntry";
+                    SubmitLongEntry();
+                    lastEntryBarIndex = CurrentBar;
+                    lastEntryDirection = MarketPosition.Long;
+                    intendedPosition = MarketPosition.Long;
+                }
+                else
+                {
+                    Print($"[PANEL] Manual entry requested - SHORT {Math.Max(1, Contracts)} @ market");
+                    currentTradeEntryReason = "ManualPanelEntry";
+                    SubmitShortEntry();
+                    lastEntryBarIndex = CurrentBar;
+                    lastEntryDirection = MarketPosition.Short;
+                    intendedPosition = MarketPosition.Short;
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[PANEL] Manual entry error: {ex.Message}");
+            }
+        }
+
         private void FlattenFromPanel()
         {
             try
@@ -5658,12 +7819,12 @@ namespace NinjaTrader.NinjaScript.Strategies
                 if (Position.MarketPosition == MarketPosition.Long)
                 {
                     Print($"[PANEL] Flatten requested - exiting LONG");
-                    ExitLong("BarsOnTheFlowManualFlatten", "BarsOnTheFlowLong");
+                    ExitLongTrace("BarsOnTheFlowManualFlatten", GetActiveEntrySignal(), "BarsOnTheFlowManualFlatten");
                 }
                 else if (Position.MarketPosition == MarketPosition.Short)
                 {
                     Print($"[PANEL] Flatten requested - exiting SHORT");
-                    ExitShort("BarsOnTheFlowManualFlattenS", "BarsOnTheFlowShort");
+                    ExitShortTrace("BarsOnTheFlowManualFlattenS", GetActiveEntrySignal(), "BarsOnTheFlowManualFlattenS");
                 }
 
                 intendedPosition = MarketPosition.Flat;
@@ -5823,43 +7984,57 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (UseEmaTrailingStop && fastEma != null && CurrentBar >= FastEmaPeriod)
             {
                 entryFastEmaValue = fastEma[0]; // Use current bar's EMA value
-                currentEmaStopLoss = entryFastEmaValue; // Initialize stop loss to entry EMA value
-                
-                // Set stop loss to Fast EMA price
+                double entryPrice = Close[0]; // Approximate entry price (we're about to enter)
                 double stopLossPrice = Instrument.MasterInstrument.RoundToTickSize(entryFastEmaValue);
-                
-                // If requiring full candle below, don't set automatic stop loss (we'll check manually on bar close)
-                // Otherwise, set the stop loss normally
+
+                // Enforce minimum distance from entry so the initial stop isn't tighter than EmaStopMinDistanceFromEntry
+                // (otherwise the stop order can be hit by noise before activation delay/min profit even apply)
+                if (EmaStopMinDistanceFromEntry > 0)
+                {
+                    if (direction == MarketPosition.Long)
+                    {
+                        // For LONG: protective stop must be BELOW entry. If EMA stop is too tight (too high),
+                        // clamp it DOWN so it stays at least EmaStopMinDistanceFromEntry below entry.
+                        double maxAllowedStop = entryPrice - EmaStopMinDistanceFromEntry;
+                        if (stopLossPrice > maxAllowedStop)
+                            stopLossPrice = Instrument.MasterInstrument.RoundToTickSize(maxAllowedStop);
+                    }
+                    else
+                    {
+                        // For SHORT: protective stop must be ABOVE entry. If EMA stop is too tight (too low),
+                        // clamp it UP so it stays at least EmaStopMinDistanceFromEntry above entry.
+                        double minAllowedStop = entryPrice + EmaStopMinDistanceFromEntry;
+                        if (stopLossPrice < minAllowedStop)
+                            stopLossPrice = Instrument.MasterInstrument.RoundToTickSize(minAllowedStop);
+                    }
+                }
+
+                currentEmaStopLoss = stopLossPrice;
+
                 if (EmaStopTriggerMode == EmaStopTriggerModeType.CloseOnly)
                 {
                     SetStopLoss(orderName, CalculationMode.Price, stopLossPrice, false);
                 }
-                
-                Print($"[SetInitialStopLoss] EMA Trailing Stop: Setting stop loss to Fast EMA value at entry: {entryFastEmaValue:F4} (price: {stopLossPrice:F4}), Direction={direction}, TriggerMode={EmaStopTriggerMode}");
-                
-                // Store stop loss points for reporting (calculate distance from entry)
-                double entryPrice = Close[0]; // Approximate entry price
+
                 currentTradeStopLossPoints = Math.Abs(entryPrice - stopLossPrice);
-                
-                return; // EMA trailing stop is set, no need for other stop loss logic
+                Print($"[SetInitialStopLoss] EMA Trailing Stop: stop at {stopLossPrice:F4} (EMA={entryFastEmaValue:F4}, min dist={EmaStopMinDistanceFromEntry}), Direction={direction}, ~{currentTradeStopLossPoints:F2} pts from entry, TriggerMode={EmaStopTriggerMode}");
+                return;
             }
             
             int stopLossTicks = CalculateStopLossTicks();
-            double stopLossPoints = stopLossTicks / 4.0; // Convert ticks to points (4 ticks per point for MNQ)
+            int ticksPerPoint = GetTicksPerPoint();
+            double stopLossPoints = (ticksPerPoint > 0) ? (stopLossTicks / (double)ticksPerPoint) : (stopLossTicks / 4.0);
             
-            // CRITICAL: Stop loss should NEVER be zero - enforce minimum
             if (stopLossTicks <= 0)
             {
-                Print($"[SetInitialStopLoss] ERROR: Calculated stop loss is {stopLossTicks} ticks - enforcing minimum of 4 ticks (1 point)");
-                stopLossTicks = 4; // Minimum 1 point
-                stopLossPoints = 1.0;
+                stopLossTicks = Math.Max(4, ticksPerPoint);
+                stopLossPoints = (ticksPerPoint > 0) ? (stopLossTicks / (double)ticksPerPoint) : 1.0;
+                Print($"[SetInitialStopLoss] ERROR: Calculated stop was <=0 - enforcing minimum {stopLossTicks} ticks ({stopLossPoints:F2} pts)");
             }
             
-            // Store the stop loss distance for later use in exit reason
             currentTradeStopLossPoints = stopLossPoints;
-            
-            Print($"[SetInitialStopLoss] Setting stop loss BEFORE entry: {orderName}, Direction={direction}, StopLossTicks={stopLossTicks}, StopLossPoints={stopLossPoints:F2}, UseTrailingStop={UseTrailingStop}");
-            
+            Print($"[SetInitialStopLoss] Setting stop loss: {orderName}, Direction={direction}, StopLossTicks={stopLossTicks}, StopLossPoints={stopLossPoints:F2}, UseTrailingStop={UseTrailingStop}");
+
             // Set stop loss BEFORE entry (position is still Flat at this point)
             if (UseTrailingStop)
             {
@@ -5871,6 +8046,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 SetStopLoss(orderName, CalculationMode.Ticks, stopLossTicks, false);
                 Print($"[SetInitialStopLoss] Set STATIC stop loss: {stopLossPoints:F2} points ({stopLossTicks} ticks)");
             }
+
+            if (UseProfitTarget && ProfitTargetPoints > 0)
+            {
+                int tpp = ticksPerPoint > 0 ? ticksPerPoint : 4;
+                double targetTicks = ProfitTargetPoints * tpp;
+                SetProfitTarget(orderName, CalculationMode.Ticks, targetTicks);
+                Print($"[SetInitialStopLoss] Set PROFIT TARGET: {ProfitTargetPoints:F2} points ({targetTicks:F0} ticks, signal={orderName})");
+            }
         }
         
         /// <summary>
@@ -5880,24 +8063,31 @@ namespace NinjaTrader.NinjaScript.Strategies
         private void ApplyStopLoss(string orderName)
         {
             int stopLossTicks = CalculateStopLossTicks();
-            double stopLossPoints = stopLossTicks / 4.0; // Convert ticks to points (4 ticks per point for MNQ)
-            Print($"[ApplyStopLoss] Called for {orderName}, StopLossTicks={stopLossTicks}, StopLossPoints={stopLossPoints:F2}, Position={Position.MarketPosition}, UseTrailingStop={UseTrailingStop}, UseDynamicStopLoss={UseDynamicStopLoss}");
+            int ticksPerPoint = GetTicksPerPoint();
+            double stopLossPoints = (ticksPerPoint > 0) ? (stopLossTicks / (double)ticksPerPoint) : (stopLossTicks / 4.0);
+            Print($"[ApplyStopLoss] {orderName}, StopLossTicks={stopLossTicks}, StopLossPoints={stopLossPoints:F2}, Position={Position.MarketPosition}, UseTrailingStop={UseTrailingStop}, UseDynamicStopLoss={UseDynamicStopLoss}");
             
-            // CRITICAL: Stop loss should NEVER be zero - enforce minimum
             if (stopLossTicks <= 0)
             {
-                Print($"[ApplyStopLoss] ERROR: Calculated stop loss is {stopLossTicks} ticks - enforcing minimum of 4 ticks (1 point)");
-                stopLossTicks = 4; // Minimum 1 point
-                stopLossPoints = 1.0;
+                stopLossTicks = Math.Max(4, ticksPerPoint);
+                stopLossPoints = (ticksPerPoint > 0) ? (stopLossTicks / (double)ticksPerPoint) : 1.0;
+                Print($"[ApplyStopLoss] ERROR: Enforcing minimum {stopLossTicks} ticks ({stopLossPoints:F2} pts)");
             }
             
             // This method is for adjusting stop loss when position is already open
             if (Position.MarketPosition != MarketPosition.Flat)
             {
+                if (IsProfitFloorActiveForOrder(orderName))
+                {
+                    ReinforceProfitFloorStopIfNeeded();
+                    Print($"[ApplyStopLoss] Profit floor active @ {profitFloorStopPrice:F2} — maintaining floor-clamped stop");
+                    return;
+                }
+
                 // Store the stop loss distance for later use in exit reason
                 currentTradeStopLossPoints = stopLossPoints;
                 
-                if (UseTrailingStop)
+                if (ShouldAllowTrailStop(orderName))
                 {
                     SetTrailStop(orderName, CalculationMode.Ticks, stopLossTicks, false);
                     Print($"[ApplyStopLoss] Set TRAILING stop loss: {stopLossPoints:F2} points ({stopLossTicks} ticks)");
@@ -5916,96 +8106,117 @@ namespace NinjaTrader.NinjaScript.Strategies
 
         // Cache for volume-aware stop to avoid repeated API calls
         private int cachedVolumeAwareStopTicks = 0;
-        private int cachedVolumeAwareStopHour = -1;
+        private int cachedVolumeAwareStopMinuteOfDay = -1;
         private DateTime cachedVolumeAwareStopTime = DateTime.MinValue;
+
+        /// <summary>Ticks per point from instrument (e.g. 4 for ES/MNQ with 0.25 tick size).</summary>
+        private int GetTicksPerPoint()
+        {
+            double tickSize = Instrument.MasterInstrument.TickSize;
+            if (tickSize <= 0) return 4;
+            return Math.Max(1, (int)Math.Round(1.0 / tickSize));
+        }
+
+        /// <summary>Enforce minimum stop: MinStopLossPoints (if set) or at least 1 point in ticks.</summary>
+        private int EnforceMinStopTicks(int ticks)
+        {
+            int ticksPerPoint = GetTicksPerPoint();
+            int minTicks = 1 * ticksPerPoint; // default 1 point minimum
+            if (MinStopLossPoints > 0)
+            {
+                int minFromPoints = (int)Math.Round(MinStopLossPoints * ticksPerPoint);
+                if (minFromPoints > minTicks) minTicks = minFromPoints;
+            }
+            return Math.Max(ticks, minTicks);
+        }
 
         private int CalculateStopLossTicks()
         {
+            int ticksPerPoint = GetTicksPerPoint();
+
             if (!UseDynamicStopLoss || CurrentBar < DynamicStopLookback)
             {
-                // Use fixed stop loss
-                int fixedStopTicks = StopLossPoints * 4; // Convert points to ticks
-                // Enforce minimum: Never allow 0 stop loss (minimum 4 ticks = 1 point)
-                // Even if user sets StopLossPoints to 0, we enforce a minimum for safety
-                return Math.Max(fixedStopTicks, 4); // Minimum 1 point (4 ticks)
+                // Fixed stop: StopLossPoints -> ticks using instrument tick size, then multiplier
+                int fixedStopTicks = (int)Math.Round(StopLossPoints * (double)ticksPerPoint);
+                if (StopLossMultiplier != 1.0)
+                    fixedStopTicks = Math.Max(1, (int)Math.Round(fixedStopTicks * StopLossMultiplier));
+                return EnforceMinStopTicks(Math.Max(fixedStopTicks, 1));
             }
 
             // Try volume-aware stop from API first
+            // NOTE: API already applies its own 1.2x scaling to avg_range, so we only
+            // apply StopLossMultiplier (user headroom knob), NOT DynamicStopMultiplier.
             if (UseVolumeAwareStop)
             {
                 int volumeAwareStop = GetVolumeAwareStopTicks();
                 if (volumeAwareStop > 0)
                 {
-                    // Apply multiplier
-                    int adjustedStop = (int)Math.Round(volumeAwareStop * DynamicStopMultiplier);
-                    Print($"[DynamicStopLoss] Volume-aware stop: {volumeAwareStop} ticks * {DynamicStopMultiplier} = {adjustedStop} ticks");
-                    return Math.Max(adjustedStop, 4); // Minimum 1 point
+                    int adjustedStop = volumeAwareStop;
+                    if (StopLossMultiplier != 1.0)
+                        adjustedStop = Math.Max(1, (int)Math.Round(adjustedStop * StopLossMultiplier));
+                    adjustedStop = EnforceMinStopTicks(adjustedStop);
+                    Print($"[DynamicStopLoss] Volume-aware: {volumeAwareStop} ticks * SLMult={StopLossMultiplier} -> {adjustedStop} ticks (min={MinStopLossPoints}pts)");
+                    return adjustedStop;
                 }
             }
 
-            // Fallback: Calculate average range of recent candles
+            // Fallback: average range of recent candles
             double totalRange = 0;
             int barsToCheck = Math.Min(DynamicStopLookback, CurrentBar);
-            
             for (int i = 1; i <= barsToCheck; i++)
-            {
-                double candleRange = High[i] - Low[i];
-                totalRange += candleRange;
-            }
-
+                totalRange += High[i] - Low[i];
             double averageRange = totalRange / barsToCheck;
             double stopLossPrice = averageRange * DynamicStopMultiplier;
-            
-            // Convert price to ticks (4 ticks per point for MNQ)
-            int stopLossTicks = (int)Math.Round(stopLossPrice * 4);
-            
-            Print($"[DynamicStopLoss] Fallback: Avg range of last {barsToCheck} bars: {averageRange:F2}, Multiplier: {DynamicStopMultiplier}, Stop: {stopLossPrice:F2} ({stopLossTicks} ticks)");
-            
-            return Math.Max(stopLossTicks, 4); // Minimum 1 point (4 ticks)
+            int stopLossTicks = (int)Math.Round(stopLossPrice * ticksPerPoint);
+            if (StopLossMultiplier != 1.0)
+                stopLossTicks = Math.Max(1, (int)Math.Round(stopLossTicks * StopLossMultiplier));
+            stopLossTicks = EnforceMinStopTicks(stopLossTicks);
+            Print($"[DynamicStopLoss] Fallback: Avg range {averageRange:F2} -> {stopLossTicks} ticks");
+            return stopLossTicks;
         }
 
         private int GetVolumeAwareStopTicks()
         {
             try
             {
-                // Cache for 1 minute per hour to avoid spamming API
                 int currentHour = Time[0].Hour;
-                if (cachedVolumeAwareStopTicks > 0 && 
-                    cachedVolumeAwareStopHour == currentHour &&
-                    (DateTime.Now - cachedVolumeAwareStopTime).TotalMinutes < 1)
+                int currentMinute = Time[0].Minute;
+                int minuteOfDay = currentHour * 60 + currentMinute;
+                // .NET DayOfWeek: Sunday=0 … Saturday=6 → Python weekday: Monday=0 … Sunday=6
+                int dow = ((int)Time[0].DayOfWeek + 6) % 7;
+
+                if (cachedVolumeAwareStopTicks > 0 &&
+                    cachedVolumeAwareStopMinuteOfDay == minuteOfDay &&
+                    (DateTime.Now - cachedVolumeAwareStopTime).TotalSeconds < 30)
                 {
                     return cachedVolumeAwareStopTicks;
                 }
 
                 EnsureHttpClient();
-                
-                // Get current volume from the last completed bar
+
                 long currentVolume = (long)Volume[1];
-                
-                string url = $"{DashboardBaseUrl.TrimEnd('/')}/api/volatility/recommended-stop?hour={currentHour}&volume={currentVolume}&symbol=MNQ";
-                
+
+                string url = $"{DashboardBaseUrl.TrimEnd('/')}/api/volatility/recommended-stop?hour={currentHour}&minute={currentMinute}&dow={dow}&volume={currentVolume}&symbol=MNQ";
+
                 var task = sharedClient.GetStringAsync(url);
-                if (!task.Wait(200)) // 200ms timeout
+                if (!task.Wait(200))
                 {
                     Print("[VolumeAwareStop] API timeout");
                     return 0;
                 }
-                
+
                 string json = task.Result;
-                
-                // Simple JSON parsing (avoiding Newtonsoft dependency)
-                // Look for "recommended_stop_ticks": N
+
                 int startIdx = json.IndexOf("\"recommended_stop_ticks\":");
                 if (startIdx < 0) return 0;
-                
+
                 startIdx += "\"recommended_stop_ticks\":".Length;
                 int endIdx = json.IndexOfAny(new[] { ',', '}' }, startIdx);
                 if (endIdx < 0) return 0;
-                
+
                 string ticksStr = json.Substring(startIdx, endIdx - startIdx).Trim();
                 if (int.TryParse(ticksStr, out int ticks))
                 {
-                    // Extract volume condition for logging
                     string volumeCondition = "NORMAL";
                     int vcStart = json.IndexOf("\"volume_condition\":\"");
                     if (vcStart >= 0)
@@ -6015,8 +8226,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (vcEnd > vcStart)
                             volumeCondition = json.Substring(vcStart, vcEnd - vcStart);
                     }
-                    
-                    // Extract confidence
+
                     string confidence = "UNKNOWN";
                     int confStart = json.IndexOf("\"confidence\":\"");
                     if (confStart >= 0)
@@ -6026,14 +8236,23 @@ namespace NinjaTrader.NinjaScript.Strategies
                         if (confEnd > confStart)
                             confidence = json.Substring(confStart, confEnd - confStart);
                     }
-                    
-                    Print($"[VolumeAwareStop] Hour={currentHour}, Volume={currentVolume}, Condition={volumeCondition}, Confidence={confidence}, Stop={ticks} ticks");
-                    
-                    // Cache the result
+
+                    string source = "?";
+                    int srcStart = json.IndexOf("\"source\":\"");
+                    if (srcStart >= 0)
+                    {
+                        srcStart += "\"source\":\"".Length;
+                        int srcEnd = json.IndexOf("\"", srcStart);
+                        if (srcEnd > srcStart)
+                            source = json.Substring(srcStart, srcEnd - srcStart);
+                    }
+
+                    Print($"[VolumeAwareStop] {Time[0]:HH:mm} dow={dow} vol={currentVolume} cond={volumeCondition} conf={confidence} src={source} -> {ticks} ticks");
+
                     cachedVolumeAwareStopTicks = ticks;
-                    cachedVolumeAwareStopHour = currentHour;
+                    cachedVolumeAwareStopMinuteOfDay = minuteOfDay;
                     cachedVolumeAwareStopTime = DateTime.Now;
-                    
+
                     return ticks;
                 }
             }
@@ -6041,7 +8260,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Print($"[VolumeAwareStop] Error: {ex.Message}");
             }
-            
+
             return 0;
         }
 
@@ -6075,6 +8294,330 @@ namespace NinjaTrader.NinjaScript.Strategies
         private bool ShouldSkipShortDueToGradient(double gradDeg)
         {
             return GradientFilterEnabled && !double.IsNaN(gradDeg) && gradDeg > SkipShortsAboveGradient;
+        }
+
+        private bool IsCurrentBarDownByMinTicks()
+        {
+            if (MinTicksCurrentBarDirection <= 0)
+                return Close[0] < Open[0];
+            return Close[0] <= Open[0] - (MinTicksCurrentBarDirection * TickSize);
+        }
+
+        private bool IsCurrentBarUpByMinTicks()
+        {
+            if (MinTicksCurrentBarDirection <= 0)
+                return Close[0] > Open[0];
+            return Close[0] >= Open[0] + (MinTicksCurrentBarDirection * TickSize);
+        }
+
+        private DateTime lastTradingHoursNow = DateTime.MinValue;
+        private string lastTradingHoursNowBasis = "";
+
+        private DateTime GetTradingHoursNow()
+        {
+            // By default, use bar time (Time[0]) which is in the chart/data-series time zone.
+            // Problem: users often set chart time zone to local time, but ETH windows like 18:00->17:00 are typically
+            // specified in US Eastern (CME futures). If we treat those as local, we incorrectly block trades.
+            //
+            // Heuristic: if the window is the common CME ETH pattern (18:00->17:00), interpret "now" in Eastern Time
+            // when bar time appears to match local machine time (within a few minutes).
+            DateTime barNow = Time[0];
+            lastTradingHoursNowBasis = "BarTime";
+            lastTradingHoursNow = barNow;
+
+            bool looksLikeCmeEth =
+                TradingStartHour == 18 && TradingStartMinute == 0 &&
+                TradingEndHour == 17 && TradingEndMinute == 0;
+
+            if (!looksLikeCmeEth)
+                return barNow;
+
+            try
+            {
+                // If bar time is essentially local clock time, convert to Eastern.
+                double deltaMin = Math.Abs((barNow - DateTime.Now).TotalMinutes);
+                if (deltaMin > 5)
+                    return barNow;
+
+                var eastern = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
+                DateTime easternNow = TimeZoneInfo.ConvertTime(barNow, TimeZoneInfo.Local, eastern);
+                lastTradingHoursNowBasis = "EasternTime";
+                lastTradingHoursNow = easternNow;
+                return easternNow;
+            }
+            catch
+            {
+                return barNow;
+            }
+        }
+
+        private const int MaintenanceFlattenMinutesBefore = 2;
+
+        private bool IsWithinTradingHours()
+        {
+            if (!UseTradingHoursFilter)
+                return true;
+
+            DateTime now = GetTradingHoursNow();
+            int currentMinutes = now.Hour * 60 + now.Minute;
+            int startMinutes = TradingStartHour * 60 + TradingStartMinute;
+            int endMinutes = TradingEndHour * 60 + TradingEndMinute;
+
+            if (startMinutes == endMinutes)
+                return true;
+
+            if (startMinutes < endMinutes)
+                return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
+
+            return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
+        }
+
+        private bool IsApproachingMaintenance()
+        {
+            if (!UseTradingHoursFilter)
+                return false;
+
+            DateTime now = GetTradingHoursNow();
+            int currentMinutes = now.Hour * 60 + now.Minute;
+            int endMinutes = TradingEndHour * 60 + TradingEndMinute;
+
+            int minutesUntilClose = endMinutes - currentMinutes;
+            if (minutesUntilClose < 0)
+                minutesUntilClose += 24 * 60;
+
+            return minutesUntilClose <= MaintenanceFlattenMinutesBefore && minutesUntilClose >= 0;
+        }
+
+        private bool maintenanceFlattenDone = false;
+
+        private void CheckMaintenanceFlatten()
+        {
+            if (!UseTradingHoursFilter || Position.MarketPosition == MarketPosition.Flat)
+            {
+                if (!IsApproachingMaintenance())
+                    maintenanceFlattenDone = false;
+                return;
+            }
+
+            if (maintenanceFlattenDone)
+                return;
+
+            if (!IsApproachingMaintenance())
+            {
+                maintenanceFlattenDone = false;
+                return;
+            }
+
+            maintenanceFlattenDone = true;
+            DateTime now = GetTradingHoursNow();
+            Print($"[MAINTENANCE_FLATTEN] Bar {CurrentBar}: Flattening position {MaintenanceFlattenMinutesBefore} min before session close ({TradingEndHour:D2}:{TradingEndMinute:D2} ET). Now={now:HH:mm}");
+
+            if (Position.MarketPosition == MarketPosition.Long)
+            {
+                currentTradeExitReason = "MaintenanceFlatten";
+                ExitLongTrace("MaintenanceFlatten", GetActiveEntrySignal(), "MaintenanceFlatten");
+            }
+            else if (Position.MarketPosition == MarketPosition.Short)
+            {
+                currentTradeExitReason = "MaintenanceFlatten";
+                ExitShortTrace("MaintenanceFlattenS", GetActiveEntrySignal(), "MaintenanceFlattenS");
+            }
+        }
+
+        private bool IsAtrWithinRange(out double atrValue)
+        {
+            atrValue = double.NaN;
+            if (!UseAtrFilter || atr == null)
+                return true;
+
+            atrValue = atr[0];
+            if (double.IsNaN(atrValue))
+                return false;
+
+            if (AtrMin > 0 && atrValue < AtrMin)
+                return false;
+            if (AtrMax > 0 && atrValue > AtrMax)
+                return false;
+
+            return true;
+        }
+
+        private bool IsTrafficWithinRange(out double ticksPerMinuteAvg, out double ticksPerMinuteLast)
+        {
+            ticksPerMinuteLast = lastClosedBarTicksPerMinute;
+            ticksPerMinuteAvg = double.NaN;
+
+            if (!UseTrafficFilter || MinTicksPerMinuteToTrade <= 0)
+                return true;
+
+            if (recentTicksPerMinute == null || recentTicksPerMinute.Count == 0)
+                return true; // not enough data yet - don't block startup
+
+            int n = Math.Max(1, TrafficFilterLookbackBars);
+            // Average of last N values (queue is small; iterate)
+            double sum = 0;
+            int count = 0;
+            int skip = Math.Max(0, recentTicksPerMinute.Count - n);
+            int i = 0;
+            foreach (var v in recentTicksPerMinute)
+            {
+                if (i++ < skip)
+                    continue;
+                if (double.IsNaN(v) || v <= 0)
+                    continue;
+                sum += v;
+                count++;
+            }
+
+            if (count <= 0)
+                return true;
+
+            ticksPerMinuteAvg = sum / count;
+            return ticksPerMinuteAvg >= MinTicksPerMinuteToTrade;
+        }
+
+        private bool EntryFiltersPass(out string blockReason)
+        {
+            blockReason = "";
+
+            if (!IsWithinTradingHours())
+            {
+                blockReason = $"TradingHoursFilter blocked (window {TradingStartHour:D2}:{TradingStartMinute:D2}-{TradingEndHour:D2}:{TradingEndMinute:D2}, now {Time[0]:HH:mm}/{lastTradingHoursNow:HH:mm} {lastTradingHoursNowBasis})";
+                return false;
+            }
+
+            if (UseAtrFilter)
+            {
+                if (!IsAtrWithinRange(out double atrValue))
+                {
+                    blockReason = $"AtrFilter blocked (ATR={atrValue:F2}, min={AtrMin:F2}, max={AtrMax:F2})";
+                    return false;
+                }
+            }
+
+            if (UseTrafficFilter && MinTicksPerMinuteToTrade > 0)
+            {
+                if (!IsTrafficWithinRange(out double tpmAvg, out double tpmLast))
+                {
+                    string avgStr = double.IsNaN(tpmAvg) ? "n/a" : tpmAvg.ToString("F0");
+                    string lastStr = double.IsNaN(tpmLast) ? "n/a" : tpmLast.ToString("F0");
+                    blockReason = $"TrafficFilter blocked (ticksPerMin avg{Math.Max(1, TrafficFilterLookbackBars)}={avgStr}, last={lastStr}, min={MinTicksPerMinuteToTrade:F0})";
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private void UpdateTradingTrafficStatusLabel(bool force = false)
+        {
+            if (BarsInProgress != 0)
+                return;
+
+            if (!ShowTradingTrafficStatus)
+            {
+                try { RemoveDrawObject(tradingTrafficStatusLabelTag); } catch { }
+                return;
+            }
+
+            if (!force && lastTradingTrafficStatusLabelBar == CurrentBar)
+                return;
+
+            lastTradingTrafficStatusLabelBar = CurrentBar;
+
+            bool withinHours = IsWithinTradingHours();
+            bool atrOk = IsAtrWithinRange(out double atrValue);
+            bool trafficOk = IsTrafficWithinRange(out double tpmAvgFilter, out double tpmLast);
+
+            // Always compute traffic stats for display, even when the traffic filter is OFF.
+            double tpmAvg = tpmAvgFilter;
+            if (double.IsNaN(tpmAvg))
+            {
+                int n = Math.Max(1, TrafficFilterLookbackBars);
+                if (recentTicksPerMinute != null && recentTicksPerMinute.Count > 0)
+                {
+                    double sum = 0;
+                    int count = 0;
+                    int skip = Math.Max(0, recentTicksPerMinute.Count - n);
+                    int i = 0;
+                    foreach (var v in recentTicksPerMinute)
+                    {
+                        if (i++ < skip)
+                            continue;
+                        if (double.IsNaN(v) || v <= 0)
+                            continue;
+                        sum += v;
+                        count++;
+                    }
+                    if (count > 0)
+                        tpmAvg = sum / count;
+                }
+            }
+
+            bool tradingAllowed = withinHours && atrOk && trafficOk;
+
+            var sb = new StringBuilder(256);
+            sb.AppendLine($"TrafficLog: {(EnableTrafficLog ? "ON" : "OFF")}");
+            sb.AppendLine($"Trading: {(tradingAllowed ? "ENABLED" : "DISABLED")}");
+
+            // Show a single "BlockedBy" line; if nothing is blocking, say "No restrictions".
+            var blocked = new List<string>(3);
+            if (UseTradingHoursFilter && !withinHours) blocked.Add("TradingHours");
+            if (UseAtrFilter && !atrOk) blocked.Add("ATR");
+            if (UseTrafficFilter && MinTicksPerMinuteToTrade > 0 && !trafficOk) blocked.Add("Traffic");
+            sb.AppendLine(blocked.Count == 0 ? "BlockedBy: No restrictions" : $"BlockedBy: {string.Join(", ", blocked.ToArray())}");
+
+            if (UseTradingHoursFilter)
+                sb.AppendLine($"Hours: {TradingStartHour:D2}:{TradingStartMinute:D2}-{TradingEndHour:D2}:{TradingEndMinute:D2}  Now: {Time[0]:HH:mm} / {lastTradingHoursNow:HH:mm} ({lastTradingHoursNowBasis}) ({(withinHours ? "IN" : "OUT")})");
+            else
+                sb.AppendLine("Hours: (no restriction)");
+
+            if (UseAtrFilter)
+                sb.AppendLine($"ATR({AtrPeriod}): {(double.IsNaN(atrValue) ? "n/a" : atrValue.ToString("F2"))}  Range: {AtrMin:F2}-{AtrMax:F2} ({(atrOk ? "OK" : "BLOCK")})");
+            else
+                sb.AppendLine("ATR: (no restriction)");
+
+            int trafficN = Math.Max(1, TrafficFilterLookbackBars);
+            string avgStr2 = double.IsNaN(tpmAvg) ? "n/a" : tpmAvg.ToString("F0");
+            string lastStr2 = double.IsNaN(tpmLast) ? "n/a" : tpmLast.ToString("F0");
+            if (UseTrafficFilter && MinTicksPerMinuteToTrade > 0)
+                sb.AppendLine($"Traffic: avg{trafficN}={avgStr2}  last={lastStr2}  Min={MinTicksPerMinuteToTrade:F0} ({(trafficOk ? "OK" : "BLOCK")})");
+            else
+                sb.AppendLine($"Traffic: avg{trafficN}={avgStr2}  last={lastStr2} (no restriction)");
+
+            int slTicks = CalculateStopLossTicks();
+            double slPoints = slTicks / 4.0;
+            string slSource = UseDynamicStopLoss ? (UseVolumeAwareStop ? "API" : "BarRange") : "Fixed";
+            sb.AppendLine($"SL: {slPoints:F1} pts ({slTicks}t) [{slSource}]  Trail: {(UseTrailingStop ? "ON" : "OFF")}  BE: {(UseBreakEven ? $"+{BreakEvenTrigger}" : "OFF")}");
+
+            if (UseProfitTarget && ProfitTargetPoints > 0)
+                sb.AppendLine($"Target: +{ProfitTargetPoints:F2} pts");
+            else
+                sb.AppendLine("Target: (none)");
+
+            if (stopLossTextBox != null && ChartControl != null)
+            {
+                ChartControl.Dispatcher.InvokeAsync(() =>
+                {
+                    if (stopLossTextBox != null)
+                        stopLossTextBox.Text = slPoints.ToString("F1");
+                });
+            }
+
+            Brush textBrush = tradingAllowed ? Brushes.LimeGreen : Brushes.OrangeRed;
+            string labelText = sb.ToString().TrimEnd();
+            if (TradingTrafficStatusTopPaddingLines > 0)
+                labelText = new string('\n', TradingTrafficStatusTopPaddingLines) + labelText;
+            Draw.TextFixed(
+                this,
+                tradingTrafficStatusLabelTag,
+                labelText,
+                TextPosition.TopLeft,
+                textBrush,
+                new NinjaTrader.Gui.Tools.SimpleFont("Consolas", 14),
+                Brushes.Transparent,
+                Brushes.Transparent,
+                0);
         }
 
         /// <summary>
@@ -6636,13 +9179,38 @@ namespace NinjaTrader.NinjaScript.Strategies
                 // Fire and forget - don't wait for response
                 // Get gradient degree for this bar (use the gradient calculated on this bar, which represents trend ending at previous bar)
                 double gradDeg = double.NaN;
-                if (gradientByBar.ContainsKey(CurrentBar))
+                double gradRecorded = double.NaN;
+                double gradCurrent = double.NaN;
+                string gradSource = "none";
+                int gradBarIndex = -1;
+
+                if (gradientByBar.TryGetValue(barIndexToRecord, out double gradForRecordedBar))
                 {
-                    gradDeg = gradientByBar[CurrentBar];
+                    gradRecorded = gradForRecordedBar;
+                }
+
+                if (gradientByBar.TryGetValue(CurrentBar, out double gradForCurrentBar))
+                {
+                    gradCurrent = gradForCurrentBar;
+                }
+
+                if (!double.IsNaN(gradRecorded))
+                {
+                    gradDeg = gradRecorded;
+                    gradSource = "bar_index";
+                    gradBarIndex = barIndexToRecord;
+                }
+                else if (!double.IsNaN(gradCurrent))
+                {
+                    gradDeg = gradCurrent;
+                    gradSource = "current_bar";
+                    gradBarIndex = CurrentBar;
                 }
                 else if (!double.IsNaN(lastFastEmaGradDeg))
                 {
                     gradDeg = lastFastEmaGradDeg;
+                    gradSource = "last_fast_ema";
+                    gradBarIndex = barIndexToRecord;
                 }
                 
                 // Calculate stop loss value - always show the configured/calculated stop loss, not just when in trade
@@ -6716,6 +9284,16 @@ namespace NinjaTrader.NinjaScript.Strategies
                 
                 // Build JSON string for bar data
                 // Use barIndexToRecord (CurrentBar - 1) to match the OHLC data from [1]
+                double barMinutes = double.NaN;
+                if (CurrentBar >= 2)
+                {
+                    barMinutes = (Time[1] - Time[2]).TotalMinutes;
+                    if (barMinutes <= 0) barMinutes = double.NaN;
+                }
+                double volumePerMinute = (!double.IsNaN(barMinutes) && barMinutes > 0) ? ((long)Volume[1] / barMinutes) : double.NaN;
+                int ticksInBar = (lastClosedBarIndex == barIndexToRecord) ? lastClosedBarTicks : 0;
+                double ticksPerMinute = (!double.IsNaN(barMinutes) && barMinutes > 0 && ticksInBar > 0) ? (ticksInBar / barMinutes) : double.NaN;
+
                 string barJson = $"{{\"timestamp\":\"{Time[1]:yyyy-MM-dd HH:mm:ss}\"," +
                     $"\"bar_index\":{barIndexToRecord}," +
                     $"\"symbol\":\"MNQ\"," +
@@ -6724,6 +9302,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                     $"\"low\":{Low[1]}," +
                     $"\"close\":{Close[1]}," +
                     $"\"volume\":{(long)Volume[1]}," +
+                    $"\"bar_minutes\":{(double.IsNaN(barMinutes) ? "null" : barMinutes.ToString("F4"))}," +
+                    $"\"volume_per_minute\":{(double.IsNaN(volumePerMinute) ? "null" : volumePerMinute.ToString("F2"))}," +
+                    $"\"ticks_in_bar\":{ticksInBar}," +
+                    $"\"ticks_per_minute\":{(double.IsNaN(ticksPerMinute) ? "null" : ticksPerMinute.ToString("F2"))}," +
                     $"\"direction\":\"{Position.MarketPosition}\"," +
                     $"\"in_trade\":{(Position.MarketPosition != MarketPosition.Flat).ToString().ToLower()}," +
                     $"\"ema_fast_period\":{EmaFastPeriod}," +
@@ -6731,6 +9313,11 @@ namespace NinjaTrader.NinjaScript.Strategies
                     $"\"ema_fast_value\":{(emaFast != null && CurrentBar >= EmaFastPeriod ? emaFast[1].ToString("F4") : "null")}," +
                     $"\"ema_slow_value\":{(emaSlow != null && CurrentBar >= EmaSlowPeriod ? emaSlow[1].ToString("F4") : "null")}," +
                     $"\"fast_ema_grad_deg\":{(double.IsNaN(gradDeg) ? "null" : gradDeg.ToString("F2"))}," +
+                    $"\"grad_source\":\"{gradSource}\"," +
+                    $"\"grad_bar_index\":{gradBarIndex}," +
+                    $"\"grad_recorded\":{(double.IsNaN(gradRecorded) ? "null" : gradRecorded.ToString("F2"))}," +
+                    $"\"grad_current\":{(double.IsNaN(gradCurrent) ? "null" : gradCurrent.ToString("F2"))}," +
+                    $"\"grad_last\":{(double.IsNaN(lastFastEmaGradDeg) ? "null" : lastFastEmaGradDeg.ToString("F2"))}," +
                     $"\"stop_loss_points\":{stopLossPointsValue.ToString("F2")}," +
                     $"\"candle_type\":\"{candleType}\"," +
                     $"\"trend_up\":{trendUp.ToString().ToLower()}," +
@@ -7142,8 +9729,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     currentTradeEntryReason = $"MidBarGradient; GradientOK({currentGradDeg:F1}°)";
                     PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering LONG (mid-bar gradient), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                     // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                    SetInitialStopLoss("BarsOnTheFlowLong", MarketPosition.Long);
-                    EnterLong(Math.Max(1, Contracts), "BarsOnTheFlowLong");
+                    SubmitLongEntry();
                     lastEntryBarIndex = CurrentBar;
                     lastEntryDirection = MarketPosition.Long;
                     intendedPosition = MarketPosition.Long;
@@ -7163,8 +9749,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                     currentTradeEntryReason = $"MidBarGradient; GradientOK({currentGradDeg:F1}°)";
                     PrintAndLog($"[ENTRY] Bar {CurrentBar}: Entering SHORT (mid-bar gradient), CurrentPos={Position.Quantity}, Contracts={Contracts}, EntryReason={currentTradeEntryReason}");
                     // CRITICAL: Set stop loss BEFORE entering (NinjaTrader requirement)
-                    SetInitialStopLoss("BarsOnTheFlowShort", MarketPosition.Short);
-                    EnterShort(Math.Max(1, Contracts), "BarsOnTheFlowShort");
+                    SubmitShortEntry();
                     lastEntryBarIndex = CurrentBar;
                     lastEntryDirection = MarketPosition.Short;
                     intendedPosition = MarketPosition.Short;
@@ -7254,7 +9839,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Print($"[EXIT_DEBUG] Bar {CurrentBar}: waitingToExitLongOnGradient resolving - gradient dropped {currentGradDeg:F2}° < {SkipLongsBelowGradient:F2}° - Exiting LONG");
                 Print($"[MidBar Exit] Bar {CurrentBar}: Long gradient dropped! {currentGradDeg:F2}° < {SkipLongsBelowGradient:F2}° - Exiting");
-                ExitLong("BarsOnTheFlowGradExit", "BarsOnTheFlowLong");
+                ExitLongTrace("BarsOnTheFlowGradExit", GetActiveEntrySignal(), "BarsOnTheFlowGradExit");
                 RecordExitForCooldown(MarketPosition.Long);
                 waitingToExitLongOnGradient = false;
             }
@@ -7263,67 +9848,76 @@ namespace NinjaTrader.NinjaScript.Strategies
             {
                 Print($"[EXIT_DEBUG] Bar {CurrentBar}: waitingToExitShortOnGradient resolving - gradient rose {currentGradDeg:F2}° > {SkipShortsAboveGradient:F2}° - Exiting SHORT");
                 Print($"[MidBar Exit] Bar {CurrentBar}: Short gradient rose! {currentGradDeg:F2}° > {SkipShortsAboveGradient:F2}° - Exiting");
-                ExitShort("BarsOnTheFlowGradExitS", "BarsOnTheFlowShort");
+                ExitShortTrace("BarsOnTheFlowGradExitS", GetActiveEntrySignal(), "BarsOnTheFlowGradExitS");
                 RecordExitForCooldown(MarketPosition.Short);
                 waitingToExitShortOnGradient = false;
             }
         }
 
         /// <summary>
-        /// Helper method to get current gradient with fallback to last known value.
-        /// Reduces repetition of gradient recalculation pattern.
-        /// For entry decisions, uses the CURRENT bar's EMA [0] to check the bar where entry will appear.
+        /// Per-bar gradient of the bar that just closed [1]: slope from EMA[2] → EMA[1].
+        /// Matches the visual slope of the Fast EMA line on that single completed bar.
+        /// </summary>
+        private void ComputeCompletedBarGradDeg(out double regDeg, out double chartDeg)
+        {
+            regDeg = double.NaN;
+            chartDeg = double.NaN;
+
+            if (fastEma == null || CurrentBar < 2)
+                return;
+
+            double emaRecent = fastEma[1]; // bar that just closed
+            double emaPrior = fastEma[2];  // prior bar
+            if (double.IsNaN(emaRecent) || double.IsNaN(emaPrior))
+                return;
+
+            double slope = emaRecent - emaPrior;
+            regDeg = Math.Atan(slope) * (180.0 / Math.PI);
+
+            if (ChartControl == null || ChartBars == null || ChartPanel == null)
+                return;
+
+            int barRecent = CurrentBar - 1;
+            int barPrior = CurrentBar - 2;
+
+            double xRecent = ChartControl.GetXByBarIndex(ChartBars, barRecent);
+            double xPrior = ChartControl.GetXByBarIndex(ChartBars, barPrior);
+
+            double panelHeight = ChartPanel.H;
+            double priceMax = ChartPanel.MaxValue;
+            double priceMin = ChartPanel.MinValue;
+            double priceRange = priceMax - priceMin;
+            if (priceRange <= 0 || panelHeight <= 0)
+                return;
+
+            double dx = Math.Abs(xRecent - xPrior);
+            if (dx < 1e-6)
+                return;
+
+            double yRecent = panelHeight * (priceMax - emaRecent) / priceRange;
+            double yPrior = panelHeight * (priceMax - emaPrior) / priceRange;
+            double dyPixels = yPrior - yRecent; // positive when price rose
+            chartDeg = Math.Atan2(dyPixels, dx) * (180.0 / Math.PI);
+        }
+
+        /// <summary>
+        /// Returns the 1-bar gradient of the bar that just closed [1] (same value shown on the F: label).
         /// </summary>
         private double GetCurrentGradient(out double gradDeg)
         {
-            int gradWindow = Math.Max(2, FastGradLookbackBars);
-            double currentGradDeg;
-            
-            // For entry decisions, check gradient using CURRENT bar [0] to see the bar where entry will appear
-            // This ensures we check bar 2676's gradient, not bar 2675's gradient
-            if (fastEma != null && CurrentBar >= gradWindow && !double.IsNaN(fastEma[0]))
-            {
-                // Calculate gradient including current bar [0] as the most recent point
-                double sumX = 0.0;
-                double sumY = 0.0;
-                double sumXY = 0.0;
-                double sumXX = 0.0;
-                int validPoints = 0;
-                
-                for (int i = 0; i < gradWindow; i++)
-                {
-                    double x = i;
-                    int barsAgo = gradWindow - 1 - i; // i=0 -> [0] (current), i=1 -> [1], etc.
-                    if (barsAgo > CurrentBar)
-                        continue;
-                    double y = fastEma[barsAgo];
-                    if (double.IsNaN(y))
-                        continue;
-                    sumX += x;
-                    sumY += y;
-                    sumXY += x * y;
-                    sumXX += x * x;
-                    validPoints++;
-                }
-                
-                if (validPoints >= 2)
-                {
-                    double denom = (validPoints * sumXX) - (sumX * sumX);
-                    if (Math.Abs(denom) >= 1e-8)
-                    {
-                        double slope = ((validPoints * sumXY) - (sumX * sumY)) / denom;
-                        double angleRad = Math.Atan(slope);
-                        currentGradDeg = angleRad * (180.0 / Math.PI);
-                        gradDeg = currentGradDeg;
-                        return slope;
-                    }
-                }
-            }
-            
-            // Fallback to standard calculation using completed bars [1]
-            double currentGradSlope = ComputeFastEmaGradient(gradWindow, out currentGradDeg);
-            gradDeg = !double.IsNaN(currentGradDeg) ? currentGradDeg : lastFastEmaGradDeg;
-            return currentGradSlope;
+            double regDeg, chartDeg;
+            ComputeCompletedBarGradDeg(out regDeg, out chartDeg);
+
+            double deg = regDeg;
+            if (UseChartScaledFastGradDeg && !double.IsNaN(chartDeg))
+                deg = chartDeg;
+
+            gradDeg = !double.IsNaN(deg) ? deg : lastFastEmaGradDeg;
+
+            double slope = double.NaN;
+            if (fastEma != null && CurrentBar >= 2 && !double.IsNaN(fastEma[1]) && !double.IsNaN(fastEma[2]))
+                slope = fastEma[1] - fastEma[2];
+            return slope;
         }
 
         /// <summary>
